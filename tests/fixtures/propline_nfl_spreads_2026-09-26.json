@@ -1,0 +1,130 @@
+[
+ {
+  "home_team_key": "steelers",
+  "away_team_key": "bengals",
+  "home_team_id": "espn.nfl:23",
+  "away_team_id": "espn.nfl:4",
+  "home_team_logo_url": "https://a.espncdn.com/i/teamlogos/nfl/500/23.png",
+  "away_team_logo_url": "https://a.espncdn.com/i/teamlogos/nfl/500/4.png",
+  "id": "32649",
+  "sport_key": "football_nfl",
+  "home_team": "Pittsburgh Steelers",
+  "away_team": "Cincinnati Bengals",
+  "commence_time": "2026-09-27T17:00:00Z",
+  "live": false,
+  "is_outright": false,
+  "tournament": null,
+  "tour": null,
+  "last_update": "2026-09-26T18:04:28.926625Z",
+  "merged_from_event_ids": null,
+  "bookmakers": [
+   {
+    "key": "pinnacle",
+    "title": "Pinnacle",
+    "last_update": "2026-09-26T18:04:28.926625Z",
+    "link": null,
+    "app_link": null,
+    "pregame_only": false,
+    "book_event_id": null,
+    "markets": [
+     {
+      "key": "spreads",
+      "description": "Spread",
+      "last_update": "2026-09-26T18:04:28.926625Z",
+      "period": null,
+      "suspended_at": null,
+      "team": null,
+      "outcomes": [
+       {
+        "name": "Pittsburgh Steelers",
+        "description": "",
+        "price": -115,
+        "point": 3.5,
+        "book_updated_at": null,
+        "book_version": 3742712283,
+        "payout_multiplier": null,
+        "dfs_odds_type": null,
+        "last_change_at": "2026-09-26T14:40:50.806398Z",
+        "last_seen_at": "2026-09-26T18:04:28.926625Z",
+        "liquidity": 30000,
+        "liquidity_updated_at": null,
+        "line_gap": null,
+        "book_outcome_id": null,
+        "outcome_id": null,
+        "player_id": null,
+        "side": "home"
+       },
+       {
+        "name": "Cincinnati Bengals",
+        "description": "",
+        "price": 102,
+        "point": -3.5,
+        "book_updated_at": null,
+        "book_version": 3742712283,
+        "payout_multiplier": null,
+        "dfs_odds_type": null,
+        "last_change_at": "2026-09-26T14:40:50.806398Z",
+        "last_seen_at": "2026-09-26T18:04:28.926625Z",
+        "liquidity": 30000,
+        "liquidity_updated_at": null,
+        "line_gap": null,
+        "book_outcome_id": null,
+        "outcome_id": null,
+        "player_id": null,
+        "side": "away"
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "description": "Spread +1",
+      "last_update": "2026-09-26T18:04:28.926625Z",
+      "period": null,
+      "suspended_at": null,
+      "team": null,
+      "outcomes": [
+       {
+        "name": "Pittsburgh Steelers",
+        "description": "",
+        "price": 141,
+        "point": 1,
+        "book_updated_at": null,
+        "book_version": 3742712283,
+        "payout_multiplier": null,
+        "dfs_odds_type": null,
+        "last_change_at": "2026-09-26T14:40:50.806398Z",
+        "last_seen_at": "2026-09-26T18:04:28.926625Z",
+        "liquidity": 30000,
+        "liquidity_updated_at": null,
+        "line_gap": null,
+        "book_outcome_id": null,
+        "outcome_id": null,
+        "player_id": null,
+        "side": "home"
+       },
+       {
+        "name": "Cincinnati Bengals",
+        "description": "",
+        "price": -165,
+        "point": -1,
+        "book_updated_at": null,
+        "book_version": 3742712283,
+        "payout_multiplier": null,
+        "dfs_odds_type": null,
+        "last_change_at": "2026-09-26T14:40:50.806398Z",
+        "last_seen_at": "2026-09-26T18:04:28.926625Z",
+        "liquidity": 30000,
+        "liquidity_updated_at": null,
+        "line_gap": null,
+        "book_outcome_id": null,
+        "outcome_id": null,
+        "player_id": null,
+        "side": "away"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+]
