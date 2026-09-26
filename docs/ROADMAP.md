@@ -10,7 +10,17 @@ Status as of 2026-09-26.
 | 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), a market-anchored model (no significant edge), and EPA and QB-change features from play-by-play (adopted; they close a third of Elo's margin-error gap to the market, but no edge against it). All stay DEVELOPMENT and the test seasons are still sealed (docs/MODELS.md). Next: timestamped odds history |
 | 5. Monte Carlo | Reusable score simulation (seeded, reproducible), line sensitivity, maximum acceptable line | |
 | 6. Daily card | Qualified opportunities, filters, Why-Not view, data-quality scoring | **Started.** `ttk card` and `/api/card` cover NFL spreads, with qualification, Why-Not, data quality, uncertainty, bettable books, line movement and prediction snapshots. The first UI is at `/` (Today, Bet Tracker and Performance tabs). Still to do: filters, and moneyline/total markets once models exist |
-| 7. Parlay Lab | Cross-sport slips, joint probability, correlation warnings, same-game simulation | |
+| 7. Parlay Lab | Cross-sport slips, joint probability, correlation warnings, same-game simulation | **Started.** Built:
+
+- cross-sport slips at one book, with manual prices;
+- model or market leg probabilities;
+- joint probability (flagged as independent);
+- rule-based same-game correlation (LOW, MODERATE, HIGH or UNKNOWN);
+- EV and per-leg diagnostics;
+- saving, settlement with push repricing, and parlay performance;
+- the UI tab.
+
+Still to do: same-game joint probability from Monte Carlo (Phase 5) |
 | 8. Bet tracker / bankroll | Bets, settlement, ROI, CLV from closing snapshots, drawdown, bankroll limits | **Started.** Single bets are done: recording with model and market beliefs as of bet time, automatic settlement, CLV from the collector's closes, performance with sample sizes, CLI, API and UI. Still to do: parlays (Phase 7), bankroll limits and Kelly sizing |
 | 9. Multi-sport | NFL, then NBA, CFB, NCAAB models in the governance order | |
 | 10. Performance Lab | Threshold lab (52-60%), calibration drift, CLV trends | |

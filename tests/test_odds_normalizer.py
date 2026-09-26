@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from ttk.domain import Market, Selection, Sport
 from ttk.providers.odds_api_format import normalize_events
 
@@ -146,3 +148,25 @@ def test_side_field_wins_over_abbreviated_names() -> None:
         (Selection.AWAY, 3.5),
     }
     assert fetch.skipped == {}
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Team Total Points - J'ville St",
+        "Alternate Total Points (line 30.5) - J'ville St",
+        "Alternate Total Points (line 0.5) - C Arkansas",
+    ],
+)
+def test_untagged_team_totals_are_skipped(description: str) -> None:
+    # Real FanDuel CFB descriptions (PropLine, 2026-09-26) that arrived with team=null.
+    over_under = [
+        {"name": "Over", "price": -111, "point": 30.5},
+        {"name": "Under", "price": -115, "point": 30.5},
+    ]
+    game_total = _market("totals", over_under, description="Alternate Total Points (line 52.5)")
+    team_total = _market("totals", over_under, description=description, team=None)
+    event = _event([{"key": "fanduel", "title": "FanDuel", "markets": [game_total, team_total]}])
+    fetch = normalize_events([event], provider="propline", sport=Sport.CFB)
+    assert len(fetch.quotes) == 2  # only the real game total survives
+    assert fetch.skipped == {"team_total_untagged": 1}

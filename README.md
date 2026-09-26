@@ -28,7 +28,7 @@ ttk import-nfl-history           # nflverse games 1999+, results, reported lines
 ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per season)
 ttk card [--date YYYY-MM-DD] [--why]  # the daily card; saves prediction snapshots
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
-ttk bets list | settle | summary  # the collector also settles bets on every pass
+ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
 ```
 

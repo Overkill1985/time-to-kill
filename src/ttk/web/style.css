@@ -110,7 +110,29 @@ button:disabled { opacity: .5; cursor: progress; }
 .why ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .82rem; }
 .why li.fail { color: var(--nobet); }
 .why li.ok { color: var(--muted); }
-.entry .track { align-self: flex-start; }
+.entry-actions { display: flex; gap: .5rem; }
+.count { background: var(--accent); color: #051423; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 800; }
+.count:empty { display: none; }
+h2.section { margin-top: 1.5rem; }
+.lab { display: grid; grid-template-columns: minmax(300px, 2fr) 3fr; gap: 1rem; align-items: start; }
+.slip { margin: .5rem 0; padding-left: 1.25rem; }
+.slip li { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .35rem 0; border-bottom: 1px solid var(--border); }
+.slip li span { flex: 1; }
+.leg-odds { width: 7rem; }
+.offers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .4rem; }
+.offers button { text-align: left; font-weight: 500; }
+.offers button.main { border-color: var(--accent); }
+.offers .group { grid-column: 1 / -1; color: var(--muted); font-size: .75rem; text-transform: uppercase; margin-top: .4rem; }
+.tiles.small .tile .value { font-size: 1.1rem; }
+.warnings { padding-left: 1.1rem; color: var(--lean); font-size: .85rem; }
+#lab-legs, #parlays-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+#lab-legs th, #lab-legs td, #parlays-table th, #parlays-table td { padding: .45rem .5rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+#lab-legs th, #parlays-table th { color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.tag { display: inline-block; font-size: .68rem; font-weight: 700; padding: .05rem .35rem; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); margin: .1rem .2rem 0 0; }
+.tag.good { color: var(--qualified); border-color: var(--qualified); }
+.tag.bad { color: var(--nobet); border-color: var(--nobet); }
+#parlay-form { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+@media (max-width: 900px) { .lab { grid-template-columns: 1fr; } }
 
 .unmodeled { margin-top: 1.25rem; }
 .unmodeled li { color: var(--muted); font-size: .9rem; }

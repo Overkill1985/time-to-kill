@@ -18,14 +18,23 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
-from ttk.db.models import Bet, Game, IngestionRun, Sportsbook, Team, utcnow
+from ttk.db.models import Bet, Game, IngestionRun, Parlay, Sportsbook, Team, utcnow
 from ttk.db.session import make_engine, make_session_factory
 from ttk.domain import BetResult, Market, Selection, Sport
 from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
-from ttk.services.daily_card import build_card
+from ttk.services.daily_card import build_card, card_window
 from ttk.services.line_history import PricePoint, line_history
 from ttk.services.market import SideMarket, main_lines, side_markets
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
+from ttk.services.parlay_lab import (
+    LegInput,
+    ParlayError,
+    book_offers,
+    evaluate_parlay,
+    parlay_performance,
+    save_parlay,
+    settle_parlays,
+)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -193,6 +202,62 @@ def _bet_out(session: Session, bet: Bet) -> BetOut:
     )
 
 
+class LegIn(BaseModel):
+    game_id: int
+    market: Market
+    selection: Selection
+    line: float | None = None
+    american_odds: float | None = None
+
+
+class ParlayIn(BaseModel):
+    sportsbook: str
+    legs: list[LegIn] = Field(min_length=2, max_length=12)
+
+
+class ParlaySave(ParlayIn):
+    stake: float = Field(gt=0)
+    american_odds: float | None = None
+    """The price actually taken; default is the product of the legs."""
+    placed_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+def _legs(body: ParlayIn) -> list[LegInput]:
+    return [LegInput(**leg.model_dump()) for leg in body.legs]
+
+
+def _parlay_out(session: Session, parlay: Parlay) -> dict[str, object]:
+    book = session.get(Sportsbook, parlay.sportsbook_id) if parlay.sportsbook_id else None
+    legs = session.scalars(select(Bet).where(Bet.parlay_id == parlay.id).order_by(Bet.id))
+    return {
+        "id": parlay.id,
+        "placed_at": parlay.placed_at,
+        "sportsbook": book.key if book else None,
+        "american_odds": bm.format_american(parlay.american_odds)
+        if parlay.american_odds is not None
+        else None,
+        "stake": parlay.stake,
+        "joint_probability": parlay.model_joint_probability,
+        "market_joint_probability": parlay.market_joint_probability,
+        "expected_value": parlay.expected_value,
+        "correlation_risk": parlay.correlation_risk,
+        "result": parlay.result,
+        "profit_loss": parlay.profit_loss,
+        "settled_at": parlay.settled_at,
+        "notes": parlay.notes,
+        "legs": [
+            {
+                "description": leg.description,
+                "american_odds": bm.format_american(leg.american_odds),
+                "result": leg.result,
+                "clv": leg.clv,
+            }
+            for leg in legs
+        ],
+    }
+
+
 class EvaluateIn(BaseModel):
     model_probability: float = Field(ge=0, le=1)
     american_odds: float
@@ -284,6 +349,7 @@ def _register_routes(app: FastAPI) -> None:
         session: SessionDep,
         sport: Sport | None = None,
         include_started: bool = False,
+        day: Annotated[date | None, Query(alias="date")] = None,
     ) -> list[GameOut]:
         home, away = aliased(Team), aliased(Team)
         stmt = (
@@ -296,6 +362,9 @@ def _register_routes(app: FastAPI) -> None:
             stmt = stmt.where(Game.sport == sport)
         if not include_started:
             stmt = stmt.where(Game.commence_time > utcnow())
+        if day is not None:
+            start, end = card_window(day)
+            stmt = stmt.where(Game.commence_time >= start, Game.commence_time < end)
         return [
             GameOut(
                 id=g.id,
@@ -418,10 +487,15 @@ def _register_routes(app: FastAPI) -> None:
         return _bet_out(session, bet)
 
     @app.post("/api/bets/settle")
-    def settle(session: SessionDep) -> list[BetOut]:
-        settled = settle_bets(session)
+    def settle(session: SessionDep) -> dict[str, object]:
+        """Settle finished single bets and parlays."""
+        bets = settle_bets(session)
+        parlays = settle_parlays(session)
         session.commit()
-        return [_bet_out(session, b) for b in settled]
+        return {
+            "bets": [_bet_out(session, b) for b in bets],
+            "parlays": [_parlay_out(session, p) for p in parlays],
+        }
 
     @app.get("/api/performance")
     def get_performance(
@@ -433,7 +507,59 @@ def _register_routes(app: FastAPI) -> None:
         perf = performance(
             session, sport=sport, market=market, unit_size=request.app.state.settings.unit_size
         )
-        return asdict(perf)
+        return {**asdict(perf), "parlays": asdict(parlay_performance(session))}
+
+    @app.get("/api/games/{game_id}/offers")
+    def game_offers(game_id: int, book: str, session: SessionDep) -> list[dict[str, object]]:
+        """Every line ``book`` currently quotes for a game, main line flagged."""
+        if session.get(Game, game_id) is None:
+            raise HTTPException(404, "Game not found")
+        try:
+            return [asdict(o) for o in book_offers(session, game_id, book)]
+        except ParlayError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.post("/api/parlays/evaluate")
+    def parlay_evaluate(body: ParlayIn, session: SessionDep, request: Request) -> dict[str, object]:
+        """Price and analyze a slip. Read-only (POST only because it takes a body)."""
+        settings: Settings = request.app.state.settings
+        try:
+            analysis = evaluate_parlay(
+                session,
+                _legs(body),
+                body.sportsbook,
+                predictor=_cached_predictor(request.app, session),
+                max_odds_age=settings.qualification_rules().max_odds_age,
+            )
+        except ParlayError as exc:
+            raise HTTPException(422, str(exc)) from None
+        finally:
+            session.rollback()
+        return asdict(analysis)
+
+    @app.post("/api/parlays", status_code=201)
+    def parlay_save(body: ParlaySave, session: SessionDep, request: Request) -> dict[str, object]:
+        try:
+            parlay = save_parlay(
+                session,
+                _legs(body),
+                body.sportsbook,
+                body.stake,
+                american_odds=body.american_odds,
+                placed_at=body.placed_at,
+                notes=body.notes,
+                predictor=_cached_predictor(request.app, session),
+            )
+        except ParlayError as exc:
+            session.rollback()
+            raise HTTPException(422, str(exc)) from None
+        session.commit()
+        return _parlay_out(session, parlay)
+
+    @app.get("/api/parlays")
+    def list_parlays(session: SessionDep) -> list[dict[str, object]]:
+        rows = session.scalars(select(Parlay).order_by(Parlay.placed_at.desc(), Parlay.id.desc()))
+        return [_parlay_out(session, p) for p in rows]
 
     @app.post("/api/math/evaluate")
     def evaluate(body: EvaluateIn) -> EvaluateOut:

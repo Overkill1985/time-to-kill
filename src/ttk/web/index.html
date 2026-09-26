@@ -11,6 +11,7 @@
     <div class="brand">TIME-TO-KILL</div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="today" aria-selected="true">Today</button>
+      <button role="tab" data-tab="parlay" aria-selected="false">Parlay Lab <span id="slip-count" class="count"></span></button>
       <button role="tab" data-tab="bets" aria-selected="false">Bet Tracker</button>
       <button role="tab" data-tab="performance" aria-selected="false">Performance</button>
     </nav>
@@ -27,6 +28,62 @@
       <div id="card-header" class="summary"></div>
       <div id="card-entries" class="cards"></div>
       <div id="card-unmodeled"></div>
+    </section>
+
+    <!-- PARLAY LAB -->
+    <section id="tab-parlay" class="tab" role="tabpanel" hidden>
+      <div class="lab">
+        <div class="panel">
+          <h2>Slip</h2>
+          <div class="toolbar">
+            <label>Book <select id="slip-book"></select></label>
+            <button id="slip-clear" class="secondary">Clear slip</button>
+          </div>
+          <ol id="slip-legs" class="slip"></ol>
+          <p id="slip-empty" class="muted">Add legs from the Today card, or pick them below. Any sport, any mix.</p>
+
+          <h2>Add a leg</h2>
+          <div class="toolbar">
+            <label>Date <input type="date" id="pick-date"></label>
+            <label>Sport
+              <select id="pick-sport"><option value="">All</option><option>NFL</option>
+                <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
+            </label>
+            <label>Game <select id="pick-game"></select></label>
+          </div>
+          <div id="pick-offers" class="offers"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Analysis</h2>
+          <div id="lab-status" class="muted" aria-live="polite">Add at least two legs.</div>
+          <div id="lab-summary" class="tiles small"></div>
+          <ul id="lab-warnings" class="warnings"></ul>
+          <div class="table-wrap">
+            <table id="lab-legs">
+              <thead><tr>
+                <th>Leg</th><th>Odds</th><th>Prob</th><th>Source</th><th class="num">Edge</th>
+                <th class="num">EV</th><th>Correlation</th><th></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <form id="parlay-form" autocomplete="off">
+            <h2>Record this parlay</h2>
+            <div class="grid">
+              <label>Stake <input name="stake" type="number" step="0.01" min="0.01" required></label>
+              <label>Odds taken <input name="american_odds" type="number" placeholder="product of legs"></label>
+              <label>Placed at <input name="placed_at" type="datetime-local"></label>
+              <label class="wide">Notes <input name="notes" maxlength="2000"></label>
+            </div>
+            <div class="actions">
+              <button type="submit">Record parlay</button>
+              <span id="parlay-form-status" aria-live="polite"></span>
+            </div>
+          </form>
+        </div>
+      </div>
     </section>
 
     <!-- BET TRACKER -->
@@ -79,6 +136,17 @@
           <tbody></tbody>
         </table>
       </div>
+      <h2 class="section">Parlays</h2>
+      <div class="table-wrap">
+        <table id="parlays-table">
+          <thead><tr>
+            <th>Placed</th><th>Legs</th><th>Book</th><th>Odds</th><th class="num">Stake</th>
+            <th class="num">Joint prob</th><th class="num">EV</th><th>Correlation</th>
+            <th>Result</th><th class="num">P/L</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- PERFORMANCE -->
@@ -94,6 +162,8 @@
         </label>
       </div>
       <div id="perf-tiles" class="tiles"></div>
+      <h2 class="section">Parlays</h2>
+      <div id="perf-parlay-tiles" class="tiles"></div>
       <p class="muted">Closing-line value (CLV) is the long-run diagnostic: a positive average CLV over
         a large sample is the best evidence of an edge. Every figure shows its sample size.</p>
     </section>
@@ -113,7 +183,10 @@
       </div>
       <dl class="stats"></dl>
       <details class="why"><summary>Why</summary><ul></ul></details>
-      <button class="track secondary">Track</button>
+      <div class="entry-actions">
+        <button class="track secondary">Track</button>
+        <button class="add-leg secondary">Add to parlay</button>
+      </div>
     </article>
   </template>
 

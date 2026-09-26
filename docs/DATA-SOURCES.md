@@ -26,6 +26,11 @@ Timestamped odds history (verified 2026-09-26):
   - **NBA: 90 days.** On 2026-09-26 PropLine listed 41 NBA regular-season games from October 20 to December 25, with 9–16 books each.
   - **NFL and CFB: 7 days**, because PropLine only lists them about a week ahead.
   - An empty 8-day ESPN schedule doesn't stop polling a sport with a wider window.
+- **Untagged team totals (FanDuel college football, 2026-09-26):** PropLine sent 977 FanDuel team-total markets with `team` empty, apparently wherever it couldn't match FanDuel's abbreviations ("J'ville St", "C Arkansas").
+  - Their descriptions still show it ("Team Total Points - J'ville St", "Alternate Total Points (line 30.5) - J'ville St"), so the normalizer now skips them as `team_total_untagged`.
+  - Before the fix they sat under the game-total key. A team total of about 30.5 looked like FanDuel's "main" game total, and colliding lines overwrote real game-total prices. College football duplicate collisions per poll fell from about 1,236 to 274.
+  - The change log corrected itself on the next poll (1,905 withdrawals, 15,563 corrected prices). Rows from before the fix stay in history as they arrived.
+  - NFL feeds were clean.
 - **Quota:** one request per sport per poll. Four sports every 15 minutes is 384 requests a day, within PropLine's free 1,000. The collector stops when fewer than 20 requests remain.
 - **Storage is change-only** (see ARCHITECTURE.md). A book that no longer lists a game has all its quotes for that game withdrawn. A book that pulled its line before kickoff has no closing price.
 - **Live check, 2026-09-26:** PropLine's NFL feed has about 36,000 quotes per poll across 34 games and about 25 books, roughly 35 alternate spread lines per book per game.

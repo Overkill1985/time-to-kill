@@ -384,17 +384,28 @@ class Prediction(Base):
 
 
 class Parlay(Base):
+    """A placed parlay at one book. Its legs are Bet rows with parlay_id set; each
+    leg keeps its own beliefs as of placed_at and its own graded result."""
+
     __tablename__ = "parlays"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    placed_at: Mapped[datetime | None]
     sportsbook_id: Mapped[int | None] = mapped_column(ForeignKey("sportsbooks.id"))
     american_odds: Mapped[float | None] = mapped_column(Float)
+    """The price actually taken (a book's same-game parlay price may differ from the
+    product of leg prices)."""
     stake: Mapped[float | None] = mapped_column(Float)
     model_joint_probability: Mapped[float | None] = mapped_column(Float)
+    """Product of leg probabilities: an independence assumption, flagged when legs
+    share a game."""
+    market_joint_probability: Mapped[float | None] = mapped_column(Float)
+    expected_value: Mapped[float | None] = mapped_column(Float)
     correlation_risk: Mapped[str | None] = mapped_column(String(20))
     result: Mapped[str] = mapped_column(String(10), default="PENDING")
     profit_loss: Mapped[float | None] = mapped_column(Float)
+    settled_at: Mapped[datetime | None]
     notes: Mapped[str | None] = mapped_column(Text)
 
 

@@ -215,6 +215,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.providers.espn import EspnScheduleProvider
     from ttk.services.bets import settle_bets
     from ttk.services.collector import collect_once, refresh_schedules
+    from ttk.services.parlay_lab import settle_parlays
 
     log_file = None
     if args.log is not None:
@@ -255,6 +256,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
                     emit(
                         f"settled bet {bet.id}: {bet.result} {bet.description} "
                         f"P/L {bet.profit_loss or 0:+.2f}"
+                    )
+                for parlay in settle_parlays(session):
+                    emit(
+                        f"settled parlay {parlay.id}: {parlay.result} "
+                        f"P/L {parlay.profit_loss or 0:+.2f}"
                     )
                 session.commit()
             result = collect_once(factory, provider, sports, remaining=remaining)

@@ -7,6 +7,11 @@ PropLine adds optional fields that this normalizer honors when present:
 
 - ``markets[].suspended_at``: book pulled the market; its prices are not bettable.
 - ``markets[].team``: set on a TEAM total (same ``totals`` key as the game total).
+  Not always set: verified 2026-09-26, FanDuel CFB sent 977 team-total markets
+  with ``team`` null (where PropLine could not match "J'ville St"). Their
+  description still says so ("Team Total Points - J'ville St", "Alternate Total
+  Points (line 30.5) - J'ville St"), and they are skipped too; left in, they
+  masqueraded as a ~30.5 game total and corrupted the consensus.
 - ``outcomes[].payout_multiplier``: DFS pick'em boosts; only 1.0 / null are real prices.
 - ``markets[].period``: non-null for quarter/half markets, which are out of scope.
 - Several lines per market key (alternates share the ``spreads`` key).
@@ -19,6 +24,7 @@ PropLine adds optional fields that this normalizer honors when present:
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from datetime import datetime
@@ -31,6 +37,11 @@ MARKET_KEYS = {"h2h": Market.MONEYLINE, "spreads": Market.SPREAD, "totals": Mark
 
 # DFS pick'em and similar books whose "odds" are not sportsbook prices.
 DEFAULT_EXCLUDED_BOOKS = frozenset({"underdog", "prizepicks", "sleeper", "dabble", "betr", "rebet"})
+
+
+# A team total the provider did not tag with ``team``: "Team Total Points - X" or
+# "Alternate Total Points (line 30.5) - J'ville St" (a team suffix after the line).
+_TEAM_TOTAL_DESCRIPTION = re.compile(r"^team total|\) - \S", re.IGNORECASE)
 
 
 def parse_timestamp(value: str | None) -> datetime | None:
@@ -118,6 +129,12 @@ def normalize_events(
                     # A team total rides the totals key; never mix it into the game total.
                     # Storing it needs the team on the quote, which is not modeled yet.
                     skipped["team_total_not_supported"] += 1
+                    continue
+                if market is Market.TOTAL and _TEAM_TOTAL_DESCRIPTION.search(
+                    mkt.get("description") or ""
+                ):
+                    # Same, but the provider failed to tag the team (seen on FanDuel CFB).
+                    skipped["team_total_untagged"] += 1
                     continue
                 ts = parse_timestamp(mkt.get("last_update") or book.get("last_update"))
                 for outcome in mkt.get("outcomes") or []:

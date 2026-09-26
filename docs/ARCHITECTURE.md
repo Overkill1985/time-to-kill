@@ -48,6 +48,7 @@ src/ttk/
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card: evaluate, qualify, explain, snapshot predictions
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
+    parlay_lab.py      Parlays: price at one book, correlation, joint prob, EV, save, settle
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
@@ -107,14 +108,26 @@ Built so far: every step except Monte Carlo, for NFL spreads.
 | POST | `/api/bets` | Record a bet (rejected at or after kickoff) |
 | PATCH | `/api/bets/{id}` | Notes, or void a pending bet |
 | POST | `/api/bets/settle` | Grade bets on finished games and record CLV |
-| GET | `/api/performance?sport=&market=` | Record, ROI, units, CLV, edge, EV and drawdown, each with its sample size |
+| GET | `/api/performance?sport=&market=` | Record, ROI, units, CLV, edge, EV and drawdown, each with its sample size, plus a parlay summary |
+| GET | `/api/games?date=&sport=` | Upcoming games (the date uses the card's US Eastern day) |
+| GET | `/api/games/{id}/offers?book=` | Every line a book quotes for a game, with its main line flagged |
+| POST | `/api/parlays/evaluate` | Analyze a slip. Read-only (it's a POST only because it takes a body) |
+| POST | `/api/parlays` | Record a placed parlay, with its legs' beliefs as of bet time |
+| GET | `/api/parlays` | Recorded parlays with their legs |
+
+`POST /api/bets/settle` settles both single bets and parlays.
 
 ## UI
 
 Open `ttk serve`, then http://127.0.0.1:8800. It has three tabs:
 
-- **Today:** the card, with model and market bars, stats, and a Why list per bet. *Track* prefills a bet from any entry.
-- **Bet Tracker:** record a bet, list pending and settled bets, settle finished games, and void a bet.
+- **Today:** the card, with model and market bars, stats, and a Why list per bet. *Track* prefills a bet from any entry, and *Add to parlay* puts it on the slip.
+- **Parlay Lab:**
+  - A slip priced at one book, with an optional price you enter per leg.
+  - A leg picker (date, sport, game, then that book's lines).
+  - Live analysis: odds, joint probability, fair odds, EV, correlation, and the strongest, weakest and costliest legs.
+  - Suggested removals are buttons you choose to click; the lab never changes the slip itself. The slip is saved in your browser.
+- **Bet Tracker:** record a bet, list pending and settled bets (and parlays), settle finished games, and void a bet.
 - **Performance:** summary tiles, filterable by sport and market.
 
 Plain HTML, CSS and ES modules, with no build step and no external requests. Every value is inserted with `textContent`, never raw HTML.
