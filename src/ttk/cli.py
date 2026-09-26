@@ -8,9 +8,10 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from ttk.config import get_settings
+from ttk.config import Settings, get_settings
 from ttk.domain import Sport
 from ttk.models.metrics import Score
+from ttk.providers.base import OddsProvider
 from ttk.research.nfl_elo import SplitReport
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -183,12 +184,85 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
     return 0
 
 
+def _odds_provider(settings: Settings, requested: str | None) -> OddsProvider | None:
+    name = settings.odds_provider_name(requested)
+    if name == "propline" and settings.propline_api_key is not None:
+        from ttk.providers.propline import PropLineProvider
+
+        return PropLineProvider(settings.propline_api_key.get_secret_value())
+    if name == "the-odds-api" and settings.odds_api_key is not None:
+        from ttk.providers.the_odds_api import TheOddsApiProvider
+
+        return TheOddsApiProvider(settings.odds_api_key.get_secret_value())
+    wanted = {"propline": "TTK_PROPLINE_API_KEY", "the-odds-api": "TTK_ODDS_API_KEY"}
+    print(
+        f"No odds provider key configured ({wanted.get(name or '', 'TTK_PROPLINE_API_KEY')}).",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _remaining(provider: OddsProvider) -> object:
+    return getattr(provider, "daily_remaining", getattr(provider, "requests_remaining", None))
+
+
+def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
+    import time
+
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.propline import RateLimited
+    from ttk.services.collector import collect_once
+
+    provider = _odds_provider(settings, args.provider)
+    if provider is None:
+        return 2
+    sports = [Sport(s.strip().upper()) for s in args.sports.split(",") if s.strip()]
+    factory = make_session_factory(make_engine(settings.database_url))
+    remaining: int | None = None
+    while True:
+        started = time.monotonic()
+        try:
+            result = collect_once(factory, provider, sports, remaining=remaining)
+        except RateLimited as exc:
+            wait = exc.retry_after or 60.0
+            print(f"Rate limited; waiting {wait:.0f} s", file=sys.stderr)
+            time.sleep(wait)
+            continue
+        remaining = result.remaining
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        for run in result.runs:
+            print(
+                f"{stamp} {run.sport}: {run.status} {run.records_written} snapshots"
+                + (f", error={run.error}" if run.error else "")
+            )
+        for sport, why in result.skipped.items():
+            print(f"{stamp} {sport}: skipped ({why})")
+        print(f"{stamp} quota remaining: {remaining}")
+        if args.loop_minutes is None:
+            return 0 if all(r.status == "SUCCESS" for r in result.runs) else 1
+        time.sleep(max(args.loop_minutes * 60 - (time.monotonic() - started), 0))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ttk")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate", help="Apply database migrations")
-    ingest = sub.add_parser("ingest-odds", help="Fetch and store odds snapshots")
+    ingest = sub.add_parser("ingest-odds", help="Fetch and store one odds snapshot")
     ingest.add_argument("--sport", type=Sport, choices=list(Sport), required=True)
+    ingest.add_argument("--provider", choices=["propline", "the-odds-api"])
+    collect = sub.add_parser(
+        "collect-odds",
+        help="Poll odds for sports with upcoming games (builds timestamped line history)",
+    )
+    collect.add_argument(
+        "--sports", default="NFL,CFB,NBA,NCAAB", help="Comma-separated (default: all four)"
+    )
+    collect.add_argument("--provider", choices=["propline", "the-odds-api"])
+    collect.add_argument(
+        "--loop-minutes",
+        type=float,
+        help="Keep polling every N minutes until stopped (default: one pass)",
+    )
     schedule = sub.add_parser(
         "ingest-schedule", help="Fetch games, status and scores from ESPN (no API key)"
     )
@@ -232,21 +306,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest-odds":
         from ttk.db.session import make_engine, make_session_factory
-        from ttk.providers.the_odds_api import TheOddsApiProvider
         from ttk.services.odds_ingest import run_odds_ingestion
 
-        if settings.odds_api_key is None:
-            print("TTK_ODDS_API_KEY is not set; no odds provider is configured.", file=sys.stderr)
+        provider = _odds_provider(settings, args.provider)
+        if provider is None:
             return 2
-        provider = TheOddsApiProvider(settings.odds_api_key.get_secret_value())
         factory = make_session_factory(make_engine(settings.database_url))
         run = run_odds_ingestion(factory, provider, args.sport)
         print(
             f"{run.status}: {run.records_written} snapshots, skipped={run.skipped}, "
-            f"credits remaining={provider.requests_remaining}"
+            f"stats={run.stats}, quota remaining={_remaining(provider)}"
             + (f", error={run.error}" if run.error else "")
         )
         return 0 if run.status == "SUCCESS" else 1
+
+    if args.command == "collect-odds":
+        return _collect_odds(args, settings)
 
     if args.command == "ingest-schedule":
         from ttk.db.session import make_engine, make_session_factory

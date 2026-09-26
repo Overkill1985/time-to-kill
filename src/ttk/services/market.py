@@ -1,7 +1,8 @@
-"""Read the current market for a game from stored snapshots.
+"""Read the current market for a game from the odds change log.
 
-"Current" = each book's most recent observation of this game. Lines a book
-posted in an earlier poll but not in its latest one are treated as withdrawn.
+"Current" = each book's state as of its latest observation (see odds_state):
+quotes it withdrew are gone; freshness is when the book was last seen, not when
+a price last changed (an unchanged price seen a minute ago is fresh).
 """
 
 from __future__ import annotations
@@ -10,12 +11,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk.consensus import MarketConsensus, TwoSidedQuote, market_consensus
 from ttk.db.models import OddsSnapshot, Sportsbook
 from ttk.domain import Market, Selection
+from ttk.services.odds_state import book_timelines
 
 # Selection -> its opposite side, and how the opposite side's line relates.
 _OPPOSITE = {
@@ -39,32 +41,29 @@ class SideMarket:
     line: float | None
     consensus: MarketConsensus
     oldest_observation: datetime
-    """Oldest price used; the market is only as fresh as this."""
+    """When the least recently seen book used here was last seen; the market is
+    only as fresh as this."""
 
 
-def current_snapshots(session: Session, game_id: int) -> list[OddsSnapshot]:
-    latest_per_book = (
-        select(OddsSnapshot.sportsbook_id, func.max(OddsSnapshot.observed_at).label("latest"))
-        .where(OddsSnapshot.game_id == game_id)
-        .group_by(OddsSnapshot.sportsbook_id)
-        .subquery()
-    )
-    stmt = (
-        select(OddsSnapshot)
-        .join(
-            latest_per_book,
-            (OddsSnapshot.sportsbook_id == latest_per_book.c.sportsbook_id)
-            & (OddsSnapshot.observed_at == latest_per_book.c.latest),
-        )
-        .where(OddsSnapshot.game_id == game_id)
-    )
-    return list(session.scalars(stmt))
+def current_snapshots(
+    session: Session, game_id: int
+) -> tuple[list[OddsSnapshot], dict[int, datetime]]:
+    """Quotes on the board now, and when each book was last seen."""
+    rows: list[OddsSnapshot] = []
+    last_seen: dict[int, datetime] = {}
+    for book_id, timeline in book_timelines(session, game_id).items():
+        seen = timeline.last_seen()
+        if seen is None:
+            continue
+        last_seen[book_id] = seen
+        rows.extend(timeline.state_now().values())
+    return rows, last_seen
 
 
 def side_markets(session: Session, game_id: int) -> list[SideMarket]:
     """Consensus for every (market, selection, line) that at least one book prices on
     both sides. Alternate lines are included; see ``main_lines`` to pick one per market."""
-    snaps = current_snapshots(session, game_id)
+    snaps, last_seen = current_snapshots(session, game_id)
     book_keys = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
     index = {(s.sportsbook_id, s.market, s.selection, s.line): s for s in snaps}
     grouped: dict[tuple[Market, Selection, float | None], list[OddsSnapshot]] = defaultdict(list)
@@ -89,7 +88,7 @@ def side_markets(session: Session, game_id: int) -> list[SideMarket]:
             selection=sel,
             line=line,
             consensus=market_consensus(quotes),
-            oldest_observation=min(s.observed_at for s in grouped[(m, sel, line)]),
+            oldest_observation=min(last_seen[s.sportsbook_id] for s in grouped[(m, sel, line)]),
         )
         for (m, sel, line), quotes in pairs.items()
     ]

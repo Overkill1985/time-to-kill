@@ -117,3 +117,32 @@ def test_null_collections_are_empty() -> None:
     assert (
         normalize_events([_event([book, market_null])], provider="t", sport=Sport.CFB).quotes == []
     )
+
+
+def test_side_field_wins_over_abbreviated_names() -> None:
+    # DraftKings via PropLine: "PIT Steelers", not the event's "Pittsburgh Steelers".
+    event = {
+        **_event(
+            [
+                {
+                    "key": "draftkings",
+                    "title": "DraftKings",
+                    "markets": [
+                        _market(
+                            "spreads",
+                            [
+                                {"name": "HOM FC", "price": -112, "point": -3.5, "side": "home"},
+                                {"name": "AWY FC", "price": -108, "point": 3.5, "side": "away"},
+                            ],
+                        ),
+                    ],
+                },
+            ]
+        ),
+    }
+    fetch = normalize_events([event], provider="propline", sport=Sport.NFL)
+    assert {(q.selection, q.line) for q in fetch.quotes} == {
+        (Selection.HOME, -3.5),
+        (Selection.AWAY, 3.5),
+    }
+    assert fetch.skipped == {}

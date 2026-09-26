@@ -21,7 +21,8 @@ cp .env.example .env                               # add TTK_ODDS_API_KEY if you
 
 ```bash
 ttk ingest-schedule --sport NFL  # ESPN games/status/scores; no key; --from/--to YYYY-MM-DD
-ttk ingest-odds --sport NFL      # needs TTK_ODDS_API_KEY; ~3 API credits per call
+ttk ingest-odds --sport NFL      # one snapshot; uses TTK_PROPLINE_API_KEY (or TTK_ODDS_API_KEY)
+ttk collect-odds --loop-minutes 15  # keep polling sports with games this week (line history)
 ttk serve                        # http://127.0.0.1:8800/docs
 ttk import-nfl-history           # nflverse games 1999+, results, reported lines (~20 s)
 ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per season)

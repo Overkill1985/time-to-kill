@@ -14,7 +14,8 @@ from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
 from ttk.db.models import Game, IngestionRun, Team, utcnow
 from ttk.db.session import make_engine, make_session_factory
-from ttk.domain import Sport
+from ttk.domain import Market, Selection, Sport
+from ttk.services.line_history import PricePoint, line_history
 from ttk.services.market import SideMarket, main_lines, side_markets
 
 
@@ -82,6 +83,33 @@ class EvaluateOut(BaseModel):
     ev_per_unit: float
     ev_percent: float
     full_kelly_fraction: float
+
+
+class PricePointOut(BaseModel):
+    observed_at: datetime
+    line: float | None
+    american_odds: str
+    no_vig_probability: float | None
+
+
+class LineHistoryOut(BaseModel):
+    sportsbook: str
+    opening: PricePointOut
+    previous: PricePointOut | None
+    current: PricePointOut | None
+    """Null when the book has taken the market down."""
+    closing: PricePointOut | None
+    """Last price at or before kickoff; null until the game has started."""
+    observations: int
+
+
+def _point_out(p: PricePoint) -> PricePointOut:
+    return PricePointOut(
+        observed_at=p.observed_at,
+        line=p.line,
+        american_odds=bm.format_american(p.american_odds),
+        no_vig_probability=p.no_vig_probability,
+    )
 
 
 def _market_out(sm: SideMarket, max_age: timedelta) -> MarketOut:
@@ -168,6 +196,28 @@ def _register_routes(app: FastAPI) -> None:
         max_age = request.app.state.settings.qualification_rules().max_odds_age
         out = [_market_out(sm, max_age) for sm in markets]
         return sorted(out, key=lambda m: (m.market, m.selection, m.line or 0.0))
+
+    @app.get("/api/games/{game_id}/line-history")
+    def game_line_history(
+        game_id: int, market: Market, selection: Selection, session: SessionDep
+    ) -> list[LineHistoryOut]:
+        if session.get(Game, game_id) is None:
+            raise HTTPException(404, "Game not found")
+        try:
+            histories = line_history(session, game_id, market, selection)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return [
+            LineHistoryOut(
+                sportsbook=h.sportsbook,
+                opening=_point_out(h.opening),
+                previous=_point_out(h.previous) if h.previous else None,
+                current=_point_out(h.current) if h.current else None,
+                closing=_point_out(h.closing) if h.closing else None,
+                observations=h.observations,
+            )
+            for h in histories
+        ]
 
     @app.post("/api/math/evaluate")
     def evaluate(body: EvaluateIn) -> EvaluateOut:

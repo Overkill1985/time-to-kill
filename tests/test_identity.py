@@ -117,7 +117,7 @@ def test_odds_link_to_espn_game_by_normalized_name(session_factory: sessionmaker
     )
     run = run_odds_ingestion(session_factory, odds, Sport.CFB)
 
-    assert run.stats == {"linked_by_teams_and_time": 1}
+    assert run.stats is not None and run.stats["linked_by_teams_and_time"] == 1
     assert count(session_factory, Game) == 1
     assert count(session_factory, Team) == 2  # no provisional duplicates
     with session_factory() as s:

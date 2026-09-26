@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///data/time_to_kill.db"
     odds_api_key: SecretStr | None = None
+    propline_api_key: SecretStr | None = None
     # No auth: the API must only answer on loopback (also blocks DNS rebinding).
     allowed_hosts: list[str] = ["127.0.0.1", "localhost", "[::1]"]
 
@@ -23,6 +24,17 @@ class Settings(BaseSettings):
     min_edge: float = 0.02
     min_ev: float = 0.0
     min_data_quality: DataQuality = DataQuality.ACCEPTABLE
+
+    def odds_provider_name(self, requested: str | None = None) -> str | None:
+        """The provider to use: the requested one, else PropLine, else The Odds API,
+        whichever has a key. None when no key is configured."""
+        if requested:
+            return requested
+        if self.propline_api_key is not None:
+            return "propline"
+        if self.odds_api_key is not None:
+            return "the-odds-api"
+        return None
 
     def qualification_rules(self) -> QualificationRules:
         return QualificationRules(

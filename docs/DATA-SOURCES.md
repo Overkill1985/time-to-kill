@@ -7,12 +7,25 @@ immutable snapshots.
 | Provider | Data | Auth | Refresh | Limits / licensing | Fallback | Freshness expectation | Status |
 |---|---|---|---|---|---|---|---|
 | The Odds API v4 | Moneyline, spread, total for NFL, NCAAF, NBA, NCAAB across US books | `TTK_ODDS_API_KEY` | On demand: `ttk ingest-odds --sport X` | Free tier 500 credits/month; 1 credit per region per market per call (3 per sport per poll). Personal use | PropLine | Pregame odds <= 30 min old to qualify (`TTK_ODDS_MAX_AGE_MINUTES`) | **Adapter built and unit-tested with mocked HTTP. Not yet run against the live API** (no key configured) |
-| PropLine | Same markets across 27 books incl. Pinnacle; history, closing lines, movement | PropLine API key (REST) | - | Per PropLine terms | The Odds API | Same | Normalizer verified on a real payload captured via MCP (`tests/fixtures/`). **REST adapter not built** - its endpoint must be confirmed from PropLine docs first |
+| PropLine | Live moneyline, spread and total odds from up to 27 books, including Pinnacle | `TTK_PROPLINE_API_KEY`, sent in the `X-API-Key` header | `ttk collect-odds` every N minutes (see below) | Free: 1,000 requests/day, burst 10, 5/s. **Line history, closing lines and movement are paid** (Hobby $9/mo+); the archive starts April 2026 | The Odds API | Our own snapshots: opening = first poll, closing = last poll before kickoff | **REST adapter built** and tested against a real captured payload (mocked HTTP). **Not yet run live**; it needs your key |
 | ESPN site API | **Schedule authority**: games, status, final scores, neutral site, season, ESPN team ids (NFL/NBA/CFB/NCAAB) | None (undocumented public API) | On demand: `ttk ingest-schedule --sport X` (default: 2 days back to 7 ahead) | Unofficial; may change without notice | NCAA API, sports-hub | Scores within an hour of final | **Built and run live** (NFL 16 games, CFB 236 games). Injuries not yet |
 | nflverse `nfldata/games.csv` | NFL games 1999–present: results, neutral site, week, ESPN event ids, **reported** spread/total/moneyline | None | On demand: `ttk import-nfl-history` (idempotent, ~20 s) | See the upstream repo | ESPN for schedule | Updated through the season | **Built and imported**: 7,548 games, 7,340 line rows (5,359 with moneylines, from 2006) |
 | nflverse play-by-play (`nflverse-data` release `pbp`) | Per-game team offense (EPA, success, dropbacks, rushes) and QB dropback EPA, aggregated from ~48k plays per season | None | On demand: `ttk import-nfl-pbp --from-season Y --to-season Y` (~15 MB download per season; raw plays are discarded) | See the upstream repo | - | Previous week complete by Tuesday | **Built** (1999–2026 imported) |
 | nflverse games: starting QBs | `home_qb_id` / `away_qb_id` for every played game, and for upcoming games once listed | None | With `ttk import-nfl-history` | See the upstream repo | - | Known at kickoff | **Built** |
 | Open-Meteo | Weather for outdoor football | None | 4 h | Free non-commercial | - | Forecast <= 16 days out | Planned (NFL/CFB features) |
+
+Timestamped odds history (verified 2026-09-26):
+
+- **No free source exists.**
+  - PropLine's history and closing endpoints return redacted data on the free tier (checked through the MCP: every price and point was `null` and flagged `redacted`). Its archive only starts in April 2026.
+  - The Odds API's historical odds are a paid tier.
+- **So Time-to-Kill builds its own history.** `ttk collect-odds --loop-minutes 15` polls sports that have games in the next 7 days. Every price is stored as an immutable snapshot, and `services/line_history.py` derives the opening, previous, current and closing prices, plus CLV.
+- **Quota:** one request per sport per poll. Four sports every 15 minutes is 384 requests a day, within PropLine's free 1,000. The collector stops when fewer than 20 requests remain.
+- **Storage is change-only** (see ARCHITECTURE.md). A book that no longer lists a game has all its quotes for that game withdrawn. A book that pulled its line before kickoff has no closing price.
+- **Live check, 2026-09-26:** PropLine's NFL feed has about 36,000 quotes per poll across 34 games and about 25 books, roughly 35 alternate spread lines per book per game.
+  - Before the `side` fix, 3,669 outcomes were unparseable, including every DraftKings spread. After it, 2.
+  - A poll repeated after one minute wrote 629 changes. The rate at 15-minute polls still needs measuring.
+- **Our history is only as good as our polling.** The opening is our first poll, not the book's true open (`opening_at` shows when it was taken). The close is our last poll before kickoff (`close_minutes_before_kickoff` shows how close to kickoff that was).
 
 ESPN behaviors verified 2026-09-26 (`src/ttk/providers/espn.py`):
 

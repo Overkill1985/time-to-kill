@@ -10,6 +10,9 @@ PropLine adds optional fields that this normalizer honors when present:
 - ``outcomes[].payout_multiplier``: DFS pick'em boosts; only 1.0 / null are real prices.
 - ``markets[].period``: non-null for quarter/half markets, which are out of scope.
 - Several lines per market key (alternates share the ``spreads`` key).
+- ``outcomes[].side`` (home/away): used before the name, because books abbreviate
+  team names ("PIT Steelers"). Verified 2026-09-26: present on every NFL
+  moneyline/spread outcome and in agreement with full-name matches 15,517/15,517.
 - ``espn_event_id`` and ``home_team_id``/``away_team_id`` like ``espn.ncaaf:2309``:
   ESPN ids used to link games and teams to the ESPN schedule without name matching.
 """
@@ -43,9 +46,17 @@ def _espn_team_id(value: object) -> str | None:
     return None
 
 
-def _selection(outcome_name: str, market: Market, event: Mapping[str, Any]) -> Selection | None:
+def _selection(
+    outcome: Mapping[str, Any], market: Market, event: Mapping[str, Any]
+) -> Selection | None:
+    outcome_name = str(outcome.get("name", ""))
     if market in (Market.TOTAL, Market.TEAM_TOTAL):
         return {"over": Selection.OVER, "under": Selection.UNDER}.get(outcome_name.lower())
+    # PropLine's explicit side: books name teams inconsistently ("PIT Steelers" at
+    # DraftKings, "Steelers" at Polymarket), so the name alone drops their prices.
+    side = outcome.get("side")
+    if side in ("home", "away"):
+        return Selection.HOME if side == "home" else Selection.AWAY
     if outcome_name == event["home_team"]:
         return Selection.HOME
     if outcome_name == event["away_team"]:
@@ -114,7 +125,7 @@ def normalize_events(
                     if multiplier is not None and multiplier != 1.0:
                         skipped["boosted_or_discounted_price"] += 1
                         continue
-                    selection = _selection(outcome["name"], market, event)
+                    selection = _selection(outcome, market, event)
                     price = outcome.get("price")
                     if selection is None or price is None or -100 < price < 100:
                         skipped["unparseable_outcome"] += 1

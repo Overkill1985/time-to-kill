@@ -18,7 +18,8 @@ src/ttk/
   providers/
     base.py            Normalized records (TeamRef, NormalizedGame, quotes) + provider Protocols
     odds_api_format.py Normalizer for Odds-API-shaped payloads (The Odds API, PropLine)
-    the_odds_api.py    Odds HTTP adapter
+    the_odds_api.py    Odds HTTP adapter (The Odds API)
+    propline.py        Odds HTTP adapter (PropLine; key in header; quota + Retry-After)
     espn.py            Schedule/results adapter (the schedule authority)
     nflverse.py        NFL history 1999+: results, reported lines, starting QBs
     nflverse_pbp.py    Play-by-play -> per-game team and QB EPA aggregates (streamed)
@@ -40,11 +41,18 @@ src/ttk/
     history_import.py  nflverse -> games + reported_lines + game_starters (idempotent)
     pbp_import.py      nflverse play-by-play -> team_game_stats, qb_game_stats (per season)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
+    odds_state.py      Replays the odds change log: state at any time, last seen
+    collector.py       Polling passes: sports with upcoming games, quota-aware
+    line_history.py    Opening/previous/current/closing per book; CLV at the bet's own line
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes (loopback-only via TrustedHostMiddleware)
-  cli.py               ttk migrate | ingest-schedule | ingest-odds | import-nfl-history | import-nfl-pbp
+  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp
                            | backtest-nfl-elo | serve
-migrations/            Alembic. 0001 creates the schema + append-only triggers. 0002 adds ESPN team identity and swapped game links.
+migrations/            Alembic.
+                       - 0001: the schema and append-only triggers.
+                       - 0002: ESPN team identity and swapped game links.
+                       - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0005: change-only odds (a `withdrawn` flag and `book_observations`). Its column is added natively so the table's triggers survive.
                        On SQLite, migrations turn off foreign-key enforcement while batch mode rebuilds tables, then run the foreign-key integrity check.
 tests/                 pytest; DB tests run the real migration on a temp SQLite file
 ```
@@ -54,8 +62,13 @@ tests/                 pytest; DB tests run the real migration on a temp SQLite 
 - **Pure core, thin edges.** Math, consensus and qualification are pure functions with
   no I/O. Providers do I/O and normalize. Services join them to the database.
 - **One math module.** Nothing outside `betting_math.py` converts odds or computes EV.
-- **History is immutable.** `odds_snapshots`, `injury_reports` and `predictions` are
-  append-only, enforced by database triggers. Re-runs add rows.
+- **History is immutable.** `odds_snapshots`, `book_observations`, `injury_reports` and `predictions` are append-only, enforced by database triggers. Re-runs add rows.
+- **Odds are a change log.**
+  - `odds_snapshots` stores a row only when a quote appears, changes price, or is withdrawn.
+  - `book_observations` records when each book was seen in each poll.
+  - `services/odds_state.py` rebuilds any book's prices at any time by replaying its changes.
+  - Freshness comes from the last observation, not from the last price change.
+  - On live NFL data, a poll one minute after the previous one wrote 629 rows for 36,323 quotes seen (98% fewer).
 - **Provenance everywhere.** Every snapshot has provider, source timestamp, ingestion
   time and ingestion run. Predictions store their features and `inputs_as_of`.
 - **No Claude at runtime.** MCP servers are used during development only (docs/TOOLING.md).
@@ -81,6 +94,7 @@ Not built yet: features, models, calibration, simulation, data-quality scoring.
 | GET | `/api/health` | Status + last ingestion run |
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
+| GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |
 | POST | `/api/math/evaluate` | EV, edge, fair odds and Kelly for a probability and price |
 
 ## Relationship to nfl-parlay-advisor

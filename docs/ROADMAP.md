@@ -39,7 +39,11 @@ Status as of 2026-09-26.
    - The market-anchored model shows no edge (z −0.2).
 7. **New information for the market-anchored model**, each judged by its paired z against the market on validation:
    - ~~quarterback status~~ and ~~EPA from play-by-play~~ **done 2026-09-26:** signal confirmed, no edge against the (probably closing) reported lines;
-   - **timestamped odds history (highest priority):** opening, intraday and closing prices, so models can be tested against early lines and measured by closing-line value;
+   - **timestamped odds history (highest priority):** opening, intraday and closing prices, so models can be tested against early lines and measured by closing-line value.
+     - **Built 2026-09-26:** the PropLine adapter, `ttk collect-odds`, line history and CLV.
+     - **Done 2026-09-26:** the PropLine key is configured and verified live, change-only storage is built, and the DraftKings/exchange name bug is fixed.
+     - **Waiting on you:** choosing how to keep `ttk collect-odds --loop-minutes 15` running (a terminal, or a Windows scheduled task).
+     - After that, each week of collection adds opening-to-closing data. One NFL season is roughly 270 games;
    - injuries at bet time;
    - rest, travel and weather;
    - timestamped odds, so bets can be scored by closing-line value.

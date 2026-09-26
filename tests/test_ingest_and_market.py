@@ -7,7 +7,7 @@ from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import Session, sessionmaker
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, IngestionRun, OddsSnapshot, Team
+from ttk.db.models import BookObservation, Game, IngestionRun, OddsSnapshot, Team
 from ttk.domain import Market, Selection, Sport
 from ttk.providers.base import (
     NormalizedGame,
@@ -58,25 +58,33 @@ def test_ingest_appends_and_market_uses_latest(session_factory: sessionmaker[Ses
         q("b", Selection.HOME, -1.5, -125),
         q("b", Selection.AWAY, 1.5, +105),  # alternate
     )
-    second = spread_fetch(  # book a moves to -3; book b not in this poll
+    second = spread_fetch(  # book a moves to -3; book b unchanged
         q("a", Selection.HOME, -3.0, -110),
         q("a", Selection.AWAY, 3.0, -110),
+        q("b", Selection.HOME, -2.5, -105),
+        q("b", Selection.AWAY, 2.5, -115),
+        q("b", Selection.HOME, -1.5, -125),
+        q("b", Selection.AWAY, 1.5, +105),
     )
     provider = FakeProvider([first, second])
     run1 = run_odds_ingestion(session_factory, provider, Sport.NFL)
     run2 = run_odds_ingestion(session_factory, provider, Sport.NFL)
     assert (run1.status, run1.records_written) == ("SUCCESS", 6)
-    assert (run2.status, run2.records_written) == ("SUCCESS", 2)
+    # Only changes: a's new -3 pair and a's withdrawn -2.5 pair. b's 4 quotes are unchanged.
+    assert (run2.status, run2.records_written) == ("SUCCESS", 4)
+    assert run2.stats is not None
+    assert (run2.stats["new"], run2.stats["withdrawn"], run2.stats["unchanged"]) == (2, 2, 4)
 
     with session_factory() as s:
-        assert s.scalar(select(func.count()).select_from(OddsSnapshot)) == 8  # nothing overwritten
+        assert s.scalar(select(func.count()).select_from(OddsSnapshot)) == 10  # append-only
+        assert s.scalar(select(func.count()).select_from(BookObservation)) == 4  # 2 books x 2
         assert s.scalar(select(func.count()).select_from(Game)) == 1  # game resolved once
         assert s.scalar(select(func.count()).select_from(Team)) == 2
         game_id = s.scalars(select(Game.id)).one()
 
         markets = side_markets(s, game_id)
         home = {m.line: m for m in markets if m.selection is Selection.HOME}
-        # Book a's withdrawn -2.5 is gone; book b's latest poll still has -2.5 and -1.5.
+        # Book a's withdrawn -2.5 is gone; book b still shows -2.5 and -1.5 (unchanged).
         assert set(home) == {-3.0, -2.5, -1.5}
         assert home[-2.5].consensus.books_reporting == 1
         assert home[-2.5].consensus.best.sportsbook == "b"
@@ -85,6 +93,42 @@ def test_ingest_appends_and_market_uses_latest(session_factory: sessionmaker[Ses
         # Three lines each priced by one book: tie broken by closest to 50/50 (a's -3 at -110).
         assert main[Selection.HOME].line == -3.0
         assert main[Selection.HOME].consensus.consensus_no_vig_probability == pytest.approx(0.5)
+
+
+def test_book_missing_from_poll_is_withdrawn(session_factory: sessionmaker[Session]) -> None:
+    first = spread_fetch(
+        q("a", Selection.HOME, -2.5, -110),
+        q("a", Selection.AWAY, 2.5, -110),
+        q("b", Selection.HOME, -2.5, -105),
+        q("b", Selection.AWAY, 2.5, -115),
+    )
+    second = spread_fetch(q("a", Selection.HOME, -2.5, -110), q("a", Selection.AWAY, 2.5, -110))
+    provider = FakeProvider([first, second])
+    run_odds_ingestion(session_factory, provider, Sport.NFL)
+    run2 = run_odds_ingestion(session_factory, provider, Sport.NFL)
+    assert run2.records_written == 2 and run2.stats is not None
+    assert run2.stats["withdrawn"] == 2
+    with session_factory() as s:
+        game_id = s.scalars(select(Game.id)).one()
+        home = next(m for m in side_markets(s, game_id) if m.selection is Selection.HOME)
+        assert home.consensus.books_reporting == 1  # only book a is on the board
+
+
+def test_unchanged_poll_writes_nothing_but_refreshes_freshness(
+    session_factory: sessionmaker[Session],
+) -> None:
+    same = spread_fetch(q("a", Selection.HOME, -2.5, -110), q("a", Selection.AWAY, 2.5, -110))
+    provider = FakeProvider([same, same])
+    run_odds_ingestion(session_factory, provider, Sport.NFL)
+    run2 = run_odds_ingestion(session_factory, provider, Sport.NFL)
+    assert run2.records_written == 0
+    with session_factory() as s:
+        game_id = s.scalars(select(Game.id)).one()
+        seen = s.scalars(select(BookObservation.observed_at)).all()
+        home = next(m for m in side_markets(s, game_id) if m.selection is Selection.HOME)
+        # freshness is the latest observation, not the (older) price row
+        assert home.oldest_observation == max(seen)
+        assert s.scalar(select(func.count()).select_from(OddsSnapshot)) == 2
 
 
 def test_consensus_across_books(session_factory: sessionmaker[Session]) -> None:

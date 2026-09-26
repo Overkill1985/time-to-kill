@@ -169,12 +169,26 @@ class IngestionRun(Base):
 
 
 class OddsSnapshot(Base):
-    """One observed price. Immutable: every poll appends; nothing is overwritten.
-    Opening/closing lines are the first/last snapshots before commence_time."""
+    """A change to one quote: (game, book, provider, market, selection, line).
+
+    Change log, append-only: a row is written when a quote first appears, when its
+    price changes, and when it disappears (``withdrawn``). A quote's state at time
+    T is its latest row at or before T; it is on the board iff that row is not
+    withdrawn. When a book was *seen* (freshness, closing time) comes from
+    ``book_observations``, not from these rows."""
 
     __tablename__ = "odds_snapshots"
     __table_args__ = (
         Index("ix_odds_lookup", "game_id", "market", "selection", "sportsbook_id", "observed_at"),
+        Index(
+            "ix_odds_quote_key",
+            "provider",
+            "game_id",
+            "sportsbook_id",
+            "market",
+            "selection",
+            "line",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -189,9 +203,30 @@ class OddsSnapshot(Base):
     provider: Mapped[str] = mapped_column(String(50))
     source_timestamp: Mapped[datetime | None]
     observed_at: Mapped[datetime]
-    """When this app ingested the price (the ingestion_timestamp)."""
+    """When this app first saw this state (the ingestion_timestamp)."""
     ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("ingestion_runs.id"))
     data_version: Mapped[int] = mapped_column(Integer, default=1)
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False)
+    """The quote left the board; price fields repeat its last price."""
+
+
+class BookObservation(Base):
+    """A book's quotes for a game were present in a poll. Append-only. The latest
+    observation at or before T is when that book's state was last confirmed."""
+
+    __tablename__ = "book_observations"
+    __table_args__ = (
+        Index("ix_book_observations_game", "game_id", "sportsbook_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    sportsbook_id: Mapped[int] = mapped_column(ForeignKey("sportsbooks.id"))
+    provider: Mapped[str] = mapped_column(String(50))
+    observed_at: Mapped[datetime]
+    ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("ingestion_runs.id"))
+    quotes: Mapped[int] = mapped_column(Integer)
+    """How many quotes the book showed for the game in this poll."""
 
 
 class TeamGameStat(Base):
