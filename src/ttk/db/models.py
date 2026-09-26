@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    MetaData,
     String,
     Text,
     UniqueConstraint,
@@ -48,7 +49,18 @@ class UTCDateTime(TypeDecorator[datetime]):
         return None if value is None else value.replace(tzinfo=UTC)
 
 
+# Named constraints so migrations can drop/alter them (SQLite batch mode needs names).
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_N_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(DeclarativeBase):
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
     type_annotation_map = {datetime: UTCDateTime()}
 
 
@@ -56,25 +68,37 @@ class Base(DeclarativeBase):
 
 
 class Team(Base):
+    """One real team. espn_id is the canonical identity; a team without one was
+    seen only by a non-ESPN provider and could not be matched (see ttk.teams)."""
+
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("sport", "name"),)
+    __table_args__ = (
+        UniqueConstraint("sport", "name"),
+        UniqueConstraint("sport", "espn_id", name="uq_teams_sport_espn_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sport: Mapped[str] = mapped_column(String(10))
     name: Mapped[str] = mapped_column(String(100))
     abbreviation: Mapped[str | None] = mapped_column(String(10))
+    espn_id: Mapped[str | None] = mapped_column(String(20))
 
 
 class TeamAlias(Base):
     """How each provider names a team. Resolves provider names to one Team."""
 
     __tablename__ = "team_aliases"
-    __table_args__ = (UniqueConstraint("provider", "sport", "alias"),)
+    __table_args__ = (
+        # A name may belong to several teams; resolution treats that as ambiguous.
+        UniqueConstraint("provider", "sport", "alias", "team_id"),
+        Index("ix_team_aliases_normalized", "sport", "normalized"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     provider: Mapped[str] = mapped_column(String(50))
     sport: Mapped[str] = mapped_column(String(10))
     alias: Mapped[str] = mapped_column(String(100))
+    normalized: Mapped[str] = mapped_column(String(100))
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
 
 
@@ -116,6 +140,9 @@ class GameSourceId(Base):
     provider: Mapped[str] = mapped_column(String(50))
     source_identifier: Mapped[str] = mapped_column(String(100))
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    swapped: Mapped[bool] = mapped_column(Boolean, default=False)
+    """The provider lists home/away the other way round (e.g. a neutral-site game).
+    Its HOME/AWAY selections are flipped on ingestion."""
 
 
 # ----------------------------------------------------------------------- ingestion
@@ -133,6 +160,9 @@ class IngestionRun(Base):
     status: Mapped[str] = mapped_column(String(20), default="RUNNING")
     records_written: Mapped[int] = mapped_column(Integer, default=0)
     skipped: Mapped[dict[str, int] | None] = mapped_column(JSON)
+    """Payload items dropped during normalization, by reason."""
+    stats: Mapped[dict[str, int] | None] = mapped_column(JSON)
+    """Identity resolution outcomes (linked_by_espn_event_id, unmatched_team, ...)."""
     error: Mapped[str | None] = mapped_column(Text)
 
 

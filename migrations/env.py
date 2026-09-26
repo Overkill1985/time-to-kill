@@ -34,11 +34,23 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     engine = make_engine(_url())
     with engine.connect() as connection:
+        sqlite = connection.dialect.name == "sqlite"
+        if sqlite:
+            # Batch mode rebuilds tables (copy, drop, rename); enforced foreign keys
+            # would block dropping a referenced table. Must be set outside a transaction.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()  # end SQLAlchemy's autobegun transaction before Alembic's
         context.configure(
             connection=connection, target_metadata=target_metadata, render_as_batch=True
         )
         with context.begin_transaction():
             context.run_migrations()
+        if sqlite:
+            violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+            if violations:
+                raise RuntimeError(f"Migration left foreign key violations: {violations}")
 
 
 if context.is_offline_mode():

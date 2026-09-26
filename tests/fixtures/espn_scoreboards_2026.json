@@ -1,0 +1,435 @@
+{
+ "nfl_final": [
+  {
+   "id": "401872933",
+   "date": "2026-09-20T17:00Z",
+   "name": "Carolina Panthers at Atlanta Falcons",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401872933",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "3",
+       "team": {
+        "id": "1",
+        "displayName": "Atlanta Falcons",
+        "abbreviation": "ATL",
+        "location": "Atlanta",
+        "name": "Falcons"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "34",
+       "team": {
+        "id": "29",
+        "displayName": "Carolina Panthers",
+        "abbreviation": "CAR",
+        "location": "Carolina",
+        "name": "Panthers"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401872937",
+   "date": "2026-09-20T17:00Z",
+   "name": "Minnesota Vikings at Chicago Bears",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401872937",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "3",
+       "team": {
+        "id": "3",
+        "displayName": "Chicago Bears",
+        "abbreviation": "CHI",
+        "location": "Chicago",
+        "name": "Bears"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "9",
+       "team": {
+        "id": "16",
+        "displayName": "Minnesota Vikings",
+        "abbreviation": "MIN",
+        "location": "Minnesota",
+        "name": "Vikings"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "nfl_scheduled": [
+  {
+   "id": "401872953",
+   "date": "2026-09-27T17:00Z",
+   "name": "Los Angeles Chargers at Buffalo Bills",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401872953",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "2",
+        "displayName": "Buffalo Bills",
+        "abbreviation": "BUF",
+        "location": "Buffalo",
+        "name": "Bills"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "24",
+        "displayName": "Los Angeles Chargers",
+        "abbreviation": "LAC",
+        "location": "Los Angeles",
+        "name": "Chargers"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401872949",
+   "date": "2026-09-27T17:00Z",
+   "name": "Carolina Panthers at Cleveland Browns",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401872949",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "5",
+        "displayName": "Cleveland Browns",
+        "abbreviation": "CLE",
+        "location": "Cleveland",
+        "name": "Browns"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "29",
+        "displayName": "Carolina Panthers",
+        "abbreviation": "CAR",
+        "location": "Carolina",
+        "name": "Panthers"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "cfb_live_and_scheduled": [
+  {
+   "id": "401856704",
+   "date": "2026-09-26T16:00Z",
+   "name": "Texas Longhorns at Tennessee Volunteers",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401856704",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_IN_PROGRESS",
+       "state": "in",
+       "completed": false
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "10",
+       "team": {
+        "id": "2633",
+        "displayName": "Tennessee Volunteers",
+        "abbreviation": "TENN",
+        "location": "Tennessee",
+        "name": "Volunteers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "13",
+       "team": {
+        "id": "251",
+        "displayName": "Texas Longhorns",
+        "abbreviation": "TEX",
+        "location": "Texas",
+        "name": "Longhorns"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401858237",
+   "date": "2026-09-26T19:00Z",
+   "name": "Central Arkansas Bears at Florida State Seminoles",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401858237",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "52",
+        "displayName": "Florida State Seminoles",
+        "abbreviation": "FSU",
+        "location": "Florida State",
+        "name": "Seminoles"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "2110",
+        "displayName": "Central Arkansas Bears",
+        "abbreviation": "CARK",
+        "location": "Central Arkansas",
+        "name": "Bears"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "ncaab_neutral_final": [
+  {
+   "id": "401851762",
+   "date": "2026-03-11T01:07Z",
+   "name": "Santa Clara Broncos at Gonzaga Bulldogs",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401851762",
+     "neutralSite": true,
+     "status": {
+      "type": {
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "79",
+       "team": {
+        "id": "2250",
+        "displayName": "Gonzaga Bulldogs",
+        "abbreviation": "GONZ",
+        "location": "Gonzaga",
+        "name": "Bulldogs"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "68",
+       "team": {
+        "id": "2541",
+        "displayName": "Santa Clara Broncos",
+        "abbreviation": "SCU",
+        "location": "Santa Clara",
+        "name": "Broncos"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401851202",
+   "date": "2026-03-10T22:00Z",
+   "name": "UMass Lowell River Hawks at UMBC Retrievers",
+   "season": {
+    "year": 2026,
+    "type": 2,
+    "slug": "regular-season"
+   },
+   "competitions": [
+    {
+     "id": "401851202",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "91",
+       "team": {
+        "id": "2378",
+        "displayName": "UMBC Retrievers",
+        "abbreviation": "UMBC",
+        "location": "UMBC",
+        "name": "Retrievers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "69",
+       "team": {
+        "id": "2349",
+        "displayName": "UMass Lowell River Hawks",
+        "abbreviation": "UML",
+        "location": "UMass Lowell",
+        "name": "River Hawks"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "nba_final": [
+  {
+   "id": "401866757",
+   "date": "2026-04-15T23:30Z",
+   "name": "Orlando Magic at Philadelphia 76ers",
+   "season": {
+    "year": 2026,
+    "type": 5,
+    "slug": "play-in-season"
+   },
+   "competitions": [
+    {
+     "id": "401866757",
+     "neutralSite": false,
+     "status": {
+      "type": {
+       "name": "STATUS_FINAL",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "109",
+       "team": {
+        "id": "20",
+        "displayName": "Philadelphia 76ers",
+        "abbreviation": "PHI",
+        "location": "Philadelphia",
+        "name": "76ers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "97",
+       "team": {
+        "id": "19",
+        "displayName": "Orlando Magic",
+        "abbreviation": "ORL",
+        "location": "Orlando",
+        "name": "Magic"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

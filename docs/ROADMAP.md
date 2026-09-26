@@ -5,7 +5,7 @@ Status as of 2026-09-26.
 | Phase | Scope | Status |
 |---|---|---|
 | 1. Assessment | Tooling inventory, repo analysis, docs | **Done** |
-| 2. Foundation | Schema + migrations, provider interfaces, odds ingestion, API shell | **Mostly done.** Remaining: schedule/results provider (ESPN), a frontend shell, and a first live run of The Odds API adapter (needs a key) |
+| 2. Foundation | Schema + migrations, provider interfaces, odds ingestion, schedule/results, API shell | **Mostly done.** The ESPN schedule/results provider and cross-provider game linking are built and verified live. Remaining: a frontend shell, scheduled ingestion, and a first live run of The Odds API adapter (needs a key) |
 | 3. Betting math | Odds conversions, no-vig, edge, EV, fair odds, Kelly, parlays, settlement, CLV, consensus, qualification | **Done** |
 | 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | Next |
 | 5. Monte Carlo | Reusable score simulation (seeded, reproducible), line sensitivity, maximum acceptable line | |
@@ -22,9 +22,13 @@ Status as of 2026-09-26.
    - Set `TTK_ODDS_API_KEY`.
    - Run `ttk ingest-odds --sport NFL`.
    - Verify the stored snapshots against the book.
-2. **Schedule and results provider:**
-   - ESPN scoreboard for all four sports, feeding `games.status` and scores.
-   - Match provider games to ESPN events.
+2. ~~Schedule and results provider~~ **Done 2026-09-26:**
+   - ESPN covers all four sports.
+   - Cross-provider linking is resolved by ESPN id, never guessed.
+   - Follow-ups:
+     - an NCAAB live run once the season starts (Nov);
+     - an NBA live run once the season starts (Oct);
+     - an unmatched-team review view.
 3. **Scheduled ingestion:** a simple loop or OS task that respects API credits.
 4. **NFL history:**
    - Import nflverse schedules, results and closing lines for 2018 onward. Closing lines are for evaluation only, never features.

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from ttk.api.app import create_app
 from ttk.config import Settings
 from ttk.domain import Market, Selection, Sport
-from ttk.providers.base import NormalizedGame, NormalizedOddsQuote, OddsFetch
+from ttk.providers.base import NormalizedGame, NormalizedOddsQuote, OddsFetch, TeamRef
 from ttk.services.odds_ingest import run_odds_ingestion
 
 
@@ -28,7 +28,13 @@ def client(database_url: str) -> TestClient:
 
 def seed(session_factory: sessionmaker[Session], kickoff: datetime) -> None:
     game = NormalizedGame(
-        "fake", "g1", Sport.NFL, "Baltimore Ravens", "Cleveland Browns", kickoff, None
+        "fake",
+        "g1",
+        Sport.NFL,
+        TeamRef("Baltimore Ravens"),
+        TeamRef("Cleveland Browns"),
+        kickoff,
+        None,
     )
     quotes = [
         NormalizedOddsQuote("fake", "g1", "a", "Book A", m, sel, line, price, None)

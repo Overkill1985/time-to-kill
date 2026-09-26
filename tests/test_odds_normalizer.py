@@ -16,7 +16,9 @@ def test_real_propline_payload() -> None:
 
     assert len(fetch.games) == 1
     game = fetch.games[0]
-    assert (game.away_team, game.home_team) == ("Cincinnati Bengals", "Pittsburgh Steelers")
+    assert (game.away.name, game.home.name) == ("Cincinnati Bengals", "Pittsburgh Steelers")
+    # PropLine carries ESPN team ids; they are kept for cross-provider linking.
+    assert (game.away.espn_id, game.home.espn_id) == ("4", "23")
     assert game.commence_time == datetime(2026, 9, 27, 17, 0, tzinfo=UTC)
 
     main = [q for q in fetch.quotes if q.line in (3.5, -3.5)]
@@ -103,3 +105,15 @@ def test_outrights_skipped() -> None:
         [{**_event([]), "is_outright": True}], provider="test", sport=Sport.NFL
     )
     assert fetch.games == [] and fetch.skipped == {"outright_event": 1}
+
+
+def test_null_collections_are_empty() -> None:
+    # PropLine's event list sends "bookmakers": null for events without odds.
+    event = {**_event([]), "bookmakers": None}
+    fetch = normalize_events([event], provider="test", sport=Sport.CFB)
+    assert len(fetch.games) == 1 and fetch.quotes == []
+    book = {"key": "dk", "title": "DK", "markets": None}
+    market_null = {"key": "dk", "title": "DK", "markets": [_market("h2h", None)]}  # type: ignore[arg-type]
+    assert (
+        normalize_events([_event([book, market_null])], provider="t", sport=Sport.CFB).quotes == []
+    )

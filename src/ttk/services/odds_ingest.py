@@ -2,69 +2,20 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ttk import betting_math as bm
-from ttk.db.models import (
-    Game,
-    GameSourceId,
-    IngestionRun,
-    OddsSnapshot,
-    Sportsbook,
-    Team,
-    TeamAlias,
-    utcnow,
-)
-from ttk.domain import Sport
-from ttk.providers.base import NormalizedGame, OddsFetch, OddsProvider, ProviderError
+from ttk.db.models import IngestionRun, OddsSnapshot, Sportsbook, utcnow
+from ttk.domain import Selection, Sport
+from ttk.providers.base import OddsFetch, OddsProvider
+from ttk.services.identity import resolve_game
+from ttk.services.runs import RunResult, audited_run
 
-
-def resolve_team(session: Session, *, provider: str, sport: Sport, name: str) -> Team:
-    alias = session.scalar(
-        select(TeamAlias).where(
-            TeamAlias.provider == provider, TeamAlias.sport == sport, TeamAlias.alias == name
-        )
-    )
-    if alias is not None:
-        return session.get_one(Team, alias.team_id)
-    team = session.scalar(select(Team).where(Team.sport == sport, Team.name == name))
-    if team is None:
-        team = Team(sport=sport, name=name)
-        session.add(team)
-        session.flush()
-    session.add(TeamAlias(provider=provider, sport=sport, alias=name, team_id=team.id))
-    return team
-
-
-def resolve_game(session: Session, g: NormalizedGame) -> Game:
-    link = session.scalar(
-        select(GameSourceId).where(
-            GameSourceId.provider == g.provider,
-            GameSourceId.source_identifier == g.source_identifier,
-        )
-    )
-    if link is not None:
-        game = session.get_one(Game, link.game_id)
-        if game.commence_time != g.commence_time:
-            game.commence_time = g.commence_time  # schedule changes are reference data
-        return game
-    home = resolve_team(session, provider=g.provider, sport=g.sport, name=g.home_team)
-    away = resolve_team(session, provider=g.provider, sport=g.sport, name=g.away_team)
-    game = Game(
-        sport=g.sport,
-        home_team_id=home.id,
-        away_team_id=away.id,
-        commence_time=g.commence_time,
-    )
-    session.add(game)
-    session.flush()
-    session.add(
-        GameSourceId(provider=g.provider, source_identifier=g.source_identifier, game_id=game.id)
-    )
-    return game
+_FLIP = {Selection.HOME: Selection.AWAY, Selection.AWAY: Selection.HOME}
 
 
 def _sportsbook(session: Session, cache: dict[str, Sportsbook], key: str, name: str) -> Sportsbook:
@@ -79,22 +30,30 @@ def _sportsbook(session: Session, cache: dict[str, Sportsbook], key: str, name: 
 
 
 def store_odds(
-    session: Session, fetch: OddsFetch, *, run: IngestionRun, observed_at: datetime
+    session: Session,
+    fetch: OddsFetch,
+    *,
+    run: IngestionRun,
+    observed_at: datetime,
+    stats: Counter[str],
 ) -> int:
-    games = {g.source_identifier: resolve_game(session, g) for g in fetch.games}
+    games = {g.source_identifier: resolve_game(session, g, stats) for g in fetch.games}
     books: dict[str, Sportsbook] = {}
     written = 0
     for q in fetch.quotes:
-        game = games.get(q.game_source_identifier)
-        if game is None:
+        resolved = games.get(q.game_source_identifier)
+        if resolved is None:
             continue
+        # A spread line is from the selection's own perspective, so flipping the
+        # side (provider's HOME is our AWAY) leaves the line unchanged.
+        selection = _FLIP.get(q.selection, q.selection) if resolved.swapped else q.selection
         decimal_odds = bm.american_to_decimal(q.american_odds)
         session.add(
             OddsSnapshot(
-                game_id=game.id,
+                game_id=resolved.game.id,
                 sportsbook_id=_sportsbook(session, books, q.sportsbook_key, q.sportsbook_name).id,
                 market=q.market,
-                selection=q.selection,
+                selection=selection,
                 line=q.line,
                 american_odds=q.american_odds,
                 decimal_odds=decimal_odds,
@@ -113,21 +72,11 @@ def run_odds_ingestion(
     session_factory: sessionmaker[Session], provider: OddsProvider, sport: Sport
 ) -> IngestionRun:
     """Fetch and store one sport's odds. A provider failure is recorded, not raised."""
-    with session_factory() as session:
-        run = IngestionRun(provider=provider.name, kind="odds", sport=sport)
-        session.add(run)
-        session.commit()
 
-        try:
-            fetch = provider.fetch_odds(sport)
-            run.records_written = store_odds(session, fetch, run=run, observed_at=utcnow())
-            run.skipped = fetch.skipped
-            run.status = "SUCCESS"
-        except ProviderError as exc:
-            session.rollback()
-            run.status = "FAILED"
-            run.error = str(exc)
-        run.finished_at = utcnow()
-        session.add(run)
-        session.commit()
-        return run
+    def work(session: Session, run: IngestionRun) -> RunResult:
+        fetch = provider.fetch_odds(sport)
+        stats: Counter[str] = Counter()
+        written = store_odds(session, fetch, run=run, observed_at=utcnow(), stats=stats)
+        return RunResult(written, fetch.skipped, stats)
+
+    return audited_run(session_factory, provider=provider.name, kind="odds", sport=sport, work=work)

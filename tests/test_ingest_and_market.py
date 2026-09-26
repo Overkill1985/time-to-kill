@@ -14,13 +14,14 @@ from ttk.providers.base import (
     NormalizedOddsQuote,
     OddsFetch,
     ProviderError,
+    TeamRef,
 )
 from ttk.services.market import main_lines, side_markets
 from ttk.services.odds_ingest import run_odds_ingestion
 
 KICKOFF = datetime(2026, 9, 27, 17, 0, tzinfo=UTC)
 GAME = NormalizedGame(
-    "fake", "g1", Sport.NFL, "Baltimore Ravens", "Cleveland Browns", KICKOFF, None
+    "fake", "g1", Sport.NFL, TeamRef("Baltimore Ravens"), TeamRef("Cleveland Browns"), KICKOFF, None
 )
 
 

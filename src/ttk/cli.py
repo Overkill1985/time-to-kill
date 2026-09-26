@@ -1,9 +1,11 @@
-"""Command line: ``ttk migrate``, ``ttk ingest-odds --sport NFL``, ``ttk serve``."""
+"""Command line: ``ttk migrate``, ``ttk ingest-schedule --sport NFL``,
+``ttk ingest-odds --sport NFL``, ``ttk serve``."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from ttk.config import get_settings
@@ -28,6 +30,16 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("migrate", help="Apply database migrations")
     ingest = sub.add_parser("ingest-odds", help="Fetch and store odds snapshots")
     ingest.add_argument("--sport", type=Sport, choices=list(Sport), required=True)
+    schedule = sub.add_parser(
+        "ingest-schedule", help="Fetch games, status and scores from ESPN (no API key)"
+    )
+    schedule.add_argument("--sport", type=Sport, choices=list(Sport), required=True)
+    schedule.add_argument(
+        "--from", dest="start", type=date.fromisoformat, help="YYYY-MM-DD (default: 2 days ago)"
+    )
+    schedule.add_argument(
+        "--to", dest="end", type=date.fromisoformat, help="YYYY-MM-DD (default: 7 days ahead)"
+    )
     serve = sub.add_parser("serve", help="Run the API on loopback")
     serve.add_argument("--port", type=int, default=8800)
     args = parser.parse_args(argv)
@@ -52,6 +64,23 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{run.status}: {run.records_written} snapshots, skipped={run.skipped}, "
             f"credits remaining={provider.requests_remaining}"
+            + (f", error={run.error}" if run.error else "")
+        )
+        return 0 if run.status == "SUCCESS" else 1
+
+    if args.command == "ingest-schedule":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.espn import EspnScheduleProvider
+        from ttk.services.schedule_ingest import run_schedule_ingestion
+
+        today = date.today()
+        start = args.start or today - timedelta(days=2)
+        end = args.end or today + timedelta(days=7)
+        factory = make_session_factory(make_engine(settings.database_url))
+        run = run_schedule_ingestion(factory, EspnScheduleProvider(), args.sport, start, end)
+        print(
+            f"{run.status}: {run.records_written} games {start}..{end}, "
+            f"skipped={run.skipped}, stats={run.stats}"
             + (f", error={run.error}" if run.error else "")
         )
         return 0 if run.status == "SUCCESS" else 1

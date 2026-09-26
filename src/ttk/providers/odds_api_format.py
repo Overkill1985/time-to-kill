@@ -10,6 +10,8 @@ PropLine adds optional fields that this normalizer honors when present:
 - ``outcomes[].payout_multiplier``: DFS pick'em boosts; only 1.0 / null are real prices.
 - ``markets[].period``: non-null for quarter/half markets, which are out of scope.
 - Several lines per market key (alternates share the ``spreads`` key).
+- ``espn_event_id`` and ``home_team_id``/``away_team_id`` like ``espn.ncaaf:2309``:
+  ESPN ids used to link games and teams to the ESPN schedule without name matching.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from datetime import datetime
 from typing import Any
 
 from ttk.domain import Market, Selection, Sport
-from ttk.providers.base import NormalizedGame, NormalizedOddsQuote, OddsFetch
+from ttk.providers.base import NormalizedGame, NormalizedOddsQuote, OddsFetch, TeamRef
 
 MARKET_KEYS = {"h2h": Market.MONEYLINE, "spreads": Market.SPREAD, "totals": Market.TOTAL}
 
@@ -32,6 +34,13 @@ def parse_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _espn_team_id(value: object) -> str | None:
+    """PropLine's 'espn.ncaaf:2309' -> '2309'. Anything else -> None."""
+    if isinstance(value, str) and value.startswith("espn.") and ":" in value:
+        return value.rsplit(":", 1)[1] or None
+    return None
 
 
 def _selection(outcome_name: str, market: Market, event: Mapping[str, Any]) -> Selection | None:
@@ -66,22 +75,24 @@ def normalize_events(
         if commence is None:
             skipped["missing_commence_time"] += 1
             continue
+        espn_event = event.get("espn_event_id")
         games.append(
             NormalizedGame(
                 provider=provider,
                 source_identifier=event_id,
                 sport=sport,
-                home_team=event["home_team"],
-                away_team=event["away_team"],
+                home=TeamRef(event["home_team"], _espn_team_id(event.get("home_team_id"))),
+                away=TeamRef(event["away_team"], _espn_team_id(event.get("away_team_id"))),
                 commence_time=commence,
                 source_timestamp=parse_timestamp(event.get("last_update")),
+                espn_event_id=str(espn_event) if espn_event else None,
             )
         )
-        for book in event.get("bookmakers", []):
+        for book in event.get("bookmakers") or []:
             if book["key"] in excluded_books:
                 skipped["excluded_book"] += 1
                 continue
-            for mkt in book.get("markets", []):
+            for mkt in book.get("markets") or []:
                 market = MARKET_KEYS.get(mkt["key"])
                 if market is None:
                     skipped[f"unsupported_market:{mkt['key']}"] += 1
@@ -98,7 +109,7 @@ def normalize_events(
                     skipped["team_total_not_supported"] += 1
                     continue
                 ts = parse_timestamp(mkt.get("last_update") or book.get("last_update"))
-                for outcome in mkt.get("outcomes", []):
+                for outcome in mkt.get("outcomes") or []:
                     multiplier = outcome.get("payout_multiplier")
                     if multiplier is not None and multiplier != 1.0:
                         skipped["boosted_or_discounted_price"] += 1

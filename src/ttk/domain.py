@@ -12,6 +12,16 @@ class Sport(StrEnum):
     NCAAB = "NCAAB"
 
 
+class GameStatus(StrEnum):
+    SCHEDULED = "SCHEDULED"
+    IN_PROGRESS = "IN_PROGRESS"
+    FINAL = "FINAL"
+    POSTPONED = "POSTPONED"
+    SUSPENDED = "SUSPENDED"
+    CANCELED = "CANCELED"
+    UNKNOWN = "UNKNOWN"
+
+
 class Market(StrEnum):
     MONEYLINE = "MONEYLINE"
     SPREAD = "SPREAD"
