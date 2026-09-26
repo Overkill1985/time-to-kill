@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -21,6 +21,7 @@ from ttk.config import Settings, get_settings
 from ttk.db.models import Bet, Game, IngestionRun, Parlay, Sportsbook, Team, utcnow
 from ttk.db.session import make_engine, make_session_factory
 from ttk.domain import BetResult, Market, Selection, Sport
+from ttk.models.simulation import PRESETS
 from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
 from ttk.services.daily_card import build_card, card_window
 from ttk.services.line_history import PricePoint, line_history
@@ -35,6 +36,7 @@ from ttk.services.parlay_lab import (
     save_parlay,
     settle_parlays,
 )
+from ttk.services.simulation_service import SimulationError, run_simulation
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -256,6 +258,14 @@ def _parlay_out(session: Session, parlay: Parlay) -> dict[str, object]:
             for leg in legs
         ],
     }
+
+
+class SimulationIn(BaseModel):
+    game_id: int
+    preset: Literal["quick", "detailed", "research"] | None = "quick"
+    iterations: int | None = Field(default=None, ge=1_000, le=200_000)
+    """Overrides the preset."""
+    seed: int | None = None
 
 
 class EvaluateIn(BaseModel):
@@ -560,6 +570,26 @@ def _register_routes(app: FastAPI) -> None:
     def list_parlays(session: SessionDep) -> list[dict[str, object]]:
         rows = session.scalars(select(Parlay).order_by(Parlay.placed_at.desc(), Parlay.id.desc()))
         return [_parlay_out(session, p) for p in rows]
+
+    @app.post("/api/simulations/run")
+    def simulations_run(
+        body: SimulationIn, session: SessionDep, request: Request
+    ) -> dict[str, object]:
+        """Monte Carlo for one game. Read-only: nothing is stored."""
+        settings: Settings = request.app.state.settings
+        iterations = body.iterations or PRESETS[body.preset or "quick"]
+        try:
+            summary = run_simulation(
+                session,
+                body.game_id,
+                _cached_predictor(request.app, session),
+                iterations=iterations,
+                seed=body.seed,
+                bettable_books=settings.bettable_book_keys(),
+            )
+        except SimulationError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return asdict(summary)
 
     @app.post("/api/math/evaluate")
     def evaluate(body: EvaluateIn) -> EvaluateOut:

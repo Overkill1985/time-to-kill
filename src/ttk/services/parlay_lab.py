@@ -10,10 +10,13 @@ probability -> fair odds -> EV -> strongest/weakest/costliest legs.
 - Leg probability: a validated model where one exists (NFL spreads), otherwise
   the market's own no-vig probability, labeled "market" - so a market-only
   parlay shows the compounded book margin as negative EV, never an edge.
-- Joint probability is the product of leg probabilities: an INDEPENDENCE
-  ASSUMPTION. Legs from the same game are correlated; with no same-game
-  simulation yet, they are flagged (correlation risk) instead of modeled, and
-  a book's same-game-parlay price will differ from the product of legs.
+- Joint probability is the product of leg probabilities across games. Legs from
+  the same NFL game are joined by Monte Carlo: the simulation's lift,
+  P(all legs) / product of P(each leg) in the same simulated games, multiplies
+  the product of the displayed leg probabilities, so each leg keeps its own
+  probability and only the dependence is simulated. Same-game groups that
+  cannot be simulated (other sports for now) stay an independence assumption,
+  flagged. A book's same-game-parlay price will differ from the product of legs.
 - Pushes: joint probability uses each leg's P(win) = p x (1 - P(push)); the
   upside of a push (the parlay shrinks rather than loses) is ignored, so EV is
   slightly understated when push chances are material.
@@ -33,6 +36,8 @@ from sqlalchemy.orm import Session
 from ttk import betting_math as bm
 from ttk.db.models import Bet, Game, Parlay, Sportsbook, Team, utcnow
 from ttk.domain import BetResult, CorrelationRisk, GameStatus, Market, Selection, Sport
+from ttk.models.simulation import PRESETS, GameSimulation
+from ttk.models.simulation import Leg as SimLeg
 from ttk.services.bets import VALID_SIDES, grade
 from ttk.services.line_history import (
     OPPOSITE,
@@ -40,6 +45,7 @@ from ttk.services.line_history import (
     consensus_at_line,
     opposite_line,
 )
+from ttk.services.market import main_lines, side_markets
 from ttk.services.nfl_spread_predictor import SpreadView
 from ttk.services.odds_state import book_timelines
 
@@ -59,6 +65,23 @@ class SpreadModel(Protocol):
     def spread(
         self, game_id: int, home_line: float, market_home_cover: float
     ) -> SpreadView | None: ...
+
+
+class GameSimulator(Protocol):
+    def simulate(
+        self,
+        game_id: int,
+        total_line: float,
+        *,
+        iterations: int = ...,
+        seed: int | None = ...,
+        anchor: tuple[float, float] | None = ...,
+    ) -> GameSimulation | None: ...
+
+
+SIMULATION_ITERATIONS = PRESETS["quick"]
+DEFAULT_TOTAL_LINE = 44.0
+"""Only used to simulate margin-only groups (spreads/moneylines) with no total market."""
 
 
 @dataclass(frozen=True)
@@ -108,6 +131,16 @@ class Correlation:
 
 
 @dataclass(frozen=True)
+class SimulatedGroup:
+    game_id: int
+    legs: tuple[int, ...]
+    iterations: int
+    lift: float
+    """P(all legs) / product of P(each leg) in the simulation (1.0 = independent)."""
+    total_line: float
+
+
+@dataclass(frozen=True)
 class LegImpact:
     index: int
     ev_without: float | None
@@ -127,6 +160,7 @@ class ParlayAnalysis:
     ev_per_unit: float
     correlation_risk: CorrelationRisk
     correlations: list[Correlation]
+    simulated: list[SimulatedGroup] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     impacts: list[LegImpact] = field(default_factory=list)
     strongest_leg: int | None = None
@@ -180,10 +214,36 @@ def _correlate(a: LegAnalysis, b: LegAnalysis) -> Correlation | None:
     return Correlation(pair, CorrelationRisk.UNKNOWN, "same game; relationship not modeled")
 
 
-def _joint(legs: Sequence[LegAnalysis]) -> float:
-    return bm.independent_parlay_probability(
-        [leg.probability * (1 - leg.push_probability) for leg in legs]
-    )
+def _win(leg: LegAnalysis) -> float:
+    return leg.probability * (1 - leg.push_probability)
+
+
+def _sim_leg(leg: LegAnalysis) -> SimLeg:
+    return SimLeg(str(leg.market), str(leg.selection), leg.line)
+
+
+def _joint(
+    legs: Sequence[LegAnalysis], sims: dict[int, tuple[GameSimulation, float]] | None = None
+) -> float:
+    """Product across games; a simulated same-game group gets its simulation lift."""
+    by_game: dict[int, list[LegAnalysis]] = {}
+    for leg in legs:
+        by_game.setdefault(leg.game_id, []).append(leg)
+    result = 1.0
+    for game_id, group in by_game.items():
+        base = bm.independent_parlay_probability([_win(leg) for leg in group])
+        if len(group) >= 2 and sims and game_id in sims:
+            base = min(base * _lift(sims[game_id][0], group), min(_win(leg) for leg in group))
+        result *= base
+    return result
+
+
+def _lift(sim: GameSimulation, group: Sequence[LegAnalysis]) -> float:
+    legs = [_sim_leg(leg) for leg in group]
+    each = 1.0
+    for leg in legs:
+        each *= sim.side(leg).win.value
+    return sim.joint(legs).value / each if each > 0 else 1.0
 
 
 def evaluate_parlay(
@@ -325,10 +385,54 @@ def evaluate_parlay(
                 leg_risk[idx] = c.risk
     legs = [replace(la, correlation_risk=leg_risk[la.index]) for la in legs]
     overall = max(leg_risk.values(), key=lambda r: _RISK_ORDER[r])
-    if correlations:
+
+    # Same-game NFL groups: simulate the dependence.
+    sims: dict[int, tuple[GameSimulation, float]] = {}
+    simulate = getattr(predictor, "simulate", None)
+    groups: dict[int, list[LegAnalysis]] = {}
+    for la in legs:
+        groups.setdefault(la.game_id, []).append(la)
+    same_game = {gid: g for gid, g in groups.items() if len(g) >= 2}
+    for gid, group in same_game.items():
+        if simulate is None or group[0].sport is not Sport.NFL:
+            continue
+        mains = {(m.market, m.selection): m for m in main_lines(side_markets(session, gid))}
+        main_total = mains.get((Market.TOTAL, Selection.OVER))
+        main_spread = mains.get((Market.SPREAD, Selection.HOME))
+        total_line = next((x.line for x in group if x.market is Market.TOTAL and x.line), None)
+        if total_line is None:
+            total_line = main_total.line if main_total and main_total.line else DEFAULT_TOTAL_LINE
+        # Center the margin on the validated anchored model at the main spread.
+        anchor = (
+            (main_spread.line, main_spread.consensus.consensus_no_vig_probability)
+            if main_spread and main_spread.line is not None
+            else None
+        )
+        sim = simulate(gid, total_line, iterations=SIMULATION_ITERATIONS, seed=gid, anchor=anchor)
+        if sim is not None:
+            sims[gid] = (sim, total_line)
+    simulated = [
+        SimulatedGroup(
+            gid,
+            tuple(x.index for x in same_game[gid]),
+            sim.iterations,
+            _lift(sim, same_game[gid]),
+            total_line,
+        )
+        for gid, (sim, total_line) in sims.items()
+    ]
+    for sg in simulated:
         warnings.append(
-            "Legs share a game: the joint probability assumes independence and is likely "
-            "wrong, and the book's same-game parlay price will differ from the product of legs."
+            f"Legs {', '.join(str(i + 1) for i in sg.legs)} share a game: their joint "
+            f"probability comes from {sg.iterations:,} simulations "
+            f"(x{sg.lift:.2f} vs independent). The book's same-game parlay price will "
+            "differ from the product of legs."
+        )
+    if any(gid not in sims for gid in same_game):
+        warnings.append(
+            "Legs share a game that could not be simulated: their joint probability assumes "
+            "independence and is likely wrong, and the book's same-game parlay price will "
+            "differ from the product of legs."
         )
     if any(leg.probability_source != "model" for leg in legs):
         warnings.append(
@@ -337,7 +441,7 @@ def evaluate_parlay(
         )
 
     decimal_odds = bm.parlay_decimal_odds([leg.decimal_odds for leg in legs])
-    joint = _joint(legs)
+    joint = _joint(legs, sims)
     market_ps = [leg.market_probability for leg in legs]
     analysis = ParlayAnalysis(
         sportsbook=book.key,
@@ -355,6 +459,7 @@ def evaluate_parlay(
         ev_per_unit=joint * decimal_odds - 1,
         correlation_risk=overall,
         correlations=correlations,
+        simulated=simulated,
         warnings=warnings,
     )
     analysis.strongest_leg = max(legs, key=lambda leg: leg.probability).index
@@ -370,7 +475,7 @@ def evaluate_parlay(
     for analyzed in legs:
         rest = [other for other in legs if other.index != analyzed.index]
         ev_without = (
-            _joint(rest) * bm.parlay_decimal_odds([o.decimal_odds for o in rest]) - 1
+            _joint(rest, sims) * bm.parlay_decimal_odds([o.decimal_odds for o in rest]) - 1
             if len(rest) >= 2
             else None
         )

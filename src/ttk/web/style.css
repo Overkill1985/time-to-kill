@@ -164,3 +164,9 @@ table#bets-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .cards { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+.sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.sens { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.sens th, .sens td { padding: .3rem .5rem; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; }
+.sens th:first-child, .sens td:first-child { text-align: left; }
+.sens tr.main td { color: var(--accent); font-weight: 700; }

@@ -29,6 +29,7 @@ ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per seaso
 ttk card [--date YYYY-MM-DD] [--why]  # the daily card; saves prediction snapshots
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
+ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game
 ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
 ```
 

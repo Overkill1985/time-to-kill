@@ -29,8 +29,10 @@ src/ttk/
     anchored.py        Market-anchored cover model (market no-vig + rating disagreement)
     nfl_features.py    Walk-forward EPA team strength and QB-change features
     metrics.py         Brier, log loss, calibration tables (always with n)
+    simulation.py      Monte Carlo: key-number margin x market total, rank copula, seeded
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
+    nfl_simulation.py  Copula pairs (train) and joint validation vs independence
   db/
     models.py          ORM schema (changed only via migrations)
     session.py         Engine/session setup (SQLite pragmas)
@@ -48,7 +50,8 @@ src/ttk/
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card: evaluate, qualify, explain, snapshot predictions
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
-    parlay_lab.py      Parlays: price at one book, correlation, joint prob, EV, save, settle
+    parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game NFL), EV, save, settle
+    simulation_service.py  One-game simulation summary: distributions, sensitivity, max acceptable line
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
@@ -90,7 +93,7 @@ game -> data quality -> current odds (snapshots) -> market consensus (no-vig)
      -> model probability -> edge / EV -> uncertainty -> qualification
 ```
 
-Built so far: every step except Monte Carlo, for NFL spreads.
+Built so far: every step, for NFL spreads, including Monte Carlo.
 - Odds change log, market consensus, EPA/QB features, the market-anchored model, data quality and uncertainty, qualification, and the daily card.
 - Other sports and markets are listed on the card as unmodeled.
 
@@ -114,6 +117,7 @@ Built so far: every step except Monte Carlo, for NFL spreads.
 | POST | `/api/parlays/evaluate` | Analyze a slip. Read-only (it's a POST only because it takes a body) |
 | POST | `/api/parlays` | Record a placed parlay, with its legs' beliefs as of bet time |
 | GET | `/api/parlays` | Recorded parlays with their legs |
+| POST | `/api/simulations/run` | Monte Carlo for one NFL game (read-only; preset or iterations, and a seed) |
 
 `POST /api/bets/settle` settles both single bets and parlays.
 
@@ -127,6 +131,7 @@ Open `ttk serve`, then http://127.0.0.1:8800. It has three tabs:
   - A leg picker (date, sport, game, then that book's lines).
   - Live analysis: odds, joint probability, fair odds, EV, correlation, and the strongest, weakest and costliest legs.
   - Suggested removals are buttons you choose to click; the lab never changes the slip itself. The slip is saved in your browser.
+- **Simulator:** pick an NFL game, a preset and an optional seed. It shows score, margin and total distributions, spread and total sensitivity with the market line highlighted, the maximum acceptable lines, and the same-game joint table. *Simulate* on a card entry opens it.
 - **Bet Tracker:** record a bet, list pending and settled bets (and parlays), settle finished games, and void a bet.
 - **Performance:** summary tiles, filterable by sport and market.
 

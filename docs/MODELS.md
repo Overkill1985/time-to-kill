@@ -99,6 +99,23 @@ Margin error, RMSE in points, on validation games with a reported line:
 - **Using every book, 13 sides came out LEAN.** Most of the EV came from exchange and prediction-market prices (novig, Polymarket, Kalshi at +106 to +115 on spreads). Restricted to DraftKings, FanDuel, BetMGM and Fanatics: 5 LEANs, top EV +5.3%.
 - **The remaining "edges" come from the model.** The anchored model's market coefficient is about −0.1, so it largely ignores small price skews. It shows ~51% where the no-vig market is ~48%. Validation found no edge (z −0.2), so these LEANs are informational only.
 
+### Monte Carlo engine (2026-09-26)
+
+- **Code:** `src/ttk/models/simulation.py` (the engine), `src/ttk/research/nfl_simulation.py` (fitting and validation), `src/ttk/services/simulation_service.py`.
+- **Command:** `ttk simulate --game-id N [--preset quick|detailed|research] [--seed S]`; also `POST /api/simulations/run` and the UI's Simulator tab.
+- **Presets:** 10,000, 50,000 or 100,000 runs. A seed makes a run exactly reproducible (tested).
+- **How a game is simulated:**
+  - **Margin:** drawn from the key-number margin distribution. With a spread market, it's centered where the validated market-anchored model's cover probability holds at the main line, so the simulation adds shape, key numbers and joint structure, but no unvalidated opinion. For Ravens −3.5, the simulation gives 51.6% against the card's 51.3%.
+  - **Total:** the market's main total plus historical residuals (actual total minus the reported line, 2002–2017), centered on their median. A market total is a 50/50 point, so the simulated over at the line is 49.7–49.9%. Uncentered, training-era totals ran +0.8 over.
+  - **Linking margin and total:** each run takes one historical game's pair: where the favorite's margin landed in its predicted distribution (by rank, jittered so it's exactly uniform), plus its total residual.
+  - **Why the rank jitter:** a test showed that reusing the raw historical values baked that one sample's noise into every simulation, about ±0.4 points on key numbers. Scores are whole numbers, non-negative, and consistent with the margin.
+- **Validation, 2018–2021 (n=1,053):** does modeled dependence beat independence for "home covers × over"?
+  - Categorical log loss: simulation 1.4051, independence 1.4044; difference +0.0006 (SE 0.0009, z +0.75).
+  - **No improvement.** Side and total in one game are nearly independent: the favorite/over association in training is +0.054.
+  - Both overestimate "covers and over" (0.26, against 0.24 observed), because those seasons' totals went under more often (47.7% over).
+- **Verdict: adopted as the joint-probability and distribution engine.** Its value is where legs share the margin: a moneyline and a spread on the same team are nested, and multiplying them as if independent is badly wrong. It also gives line sensitivity, key-number push rates and the maximum acceptable line. It is not a source of spread-versus-total edge.
+- **In the Parlay Lab:** a same-game NFL group gets the simulation's lift, P(all legs) ÷ the product of each leg's probability in the same simulated games. The lift multiplies the displayed leg probabilities, and the result is capped at the weakest leg's probability.
+
 ### What could actually beat the market (next)
 
 Elo only knows past scores, and the market already knows those. An edge needs information that is timely or better processed:

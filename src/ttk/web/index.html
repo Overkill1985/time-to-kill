@@ -12,6 +12,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="today" aria-selected="true">Today</button>
       <button role="tab" data-tab="parlay" aria-selected="false">Parlay Lab <span id="slip-count" class="count"></span></button>
+      <button role="tab" data-tab="sim" aria-selected="false">Simulator</button>
       <button role="tab" data-tab="bets" aria-selected="false">Bet Tracker</button>
       <button role="tab" data-tab="performance" aria-selected="false">Performance</button>
     </nav>
@@ -84,6 +85,28 @@
           </form>
         </div>
       </div>
+    </section>
+
+    <!-- SIMULATOR -->
+    <section id="tab-sim" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <label>Date <input type="date" id="sim-date"></label>
+        <label>Game <select id="sim-game"></select></label>
+        <label>Runs
+          <select id="sim-preset">
+            <option value="quick">Quick (10,000)</option>
+            <option value="detailed">Detailed (50,000)</option>
+            <option value="research">Research (100,000)</option>
+          </select>
+        </label>
+        <label>Seed <input type="number" id="sim-seed" placeholder="random" style="width:7rem"></label>
+        <button id="sim-run">Simulate</button>
+        <span id="sim-status" class="muted" aria-live="polite"></span>
+      </div>
+      <p class="muted">NFL only for now. The margin is centered where the validated market-anchored
+        model's cover probability holds at the main spread; the total is centered on the market total.
+        More runs shrink sampling error only - the model's own error does not shrink.</p>
+      <div id="sim-result"></div>
     </section>
 
     <!-- BET TRACKER -->
@@ -186,6 +209,7 @@
       <div class="entry-actions">
         <button class="track secondary">Track</button>
         <button class="add-leg secondary">Add to parlay</button>
+        <button class="simulate secondary">Simulate</button>
       </div>
     </article>
   </template>

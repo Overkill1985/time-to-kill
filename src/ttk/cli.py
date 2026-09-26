@@ -463,6 +463,60 @@ def _bets(args: argparse.Namespace, settings: Settings) -> int:
         return 0
 
 
+def _simulate(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.models.simulation import PRESETS
+    from ttk.services.nfl_spread_predictor import NflSpreadPredictor
+    from ttk.services.simulation_service import SimulationError, run_simulation
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        try:
+            s = run_simulation(
+                session,
+                args.game_id,
+                NflSpreadPredictor.build(session),
+                iterations=PRESETS[args.preset],
+                seed=args.seed,
+                bettable_books=settings.bettable_book_keys(),
+            )
+        except SimulationError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+    print(
+        f"{s.matchup}: {s.iterations:,} simulations, seed {s.seed}, total centered on "
+        f"{s.total_line:g} ({s.total_line_source})"
+    )
+    print(
+        f"  mean score {s.home_score_mean:.1f}-{s.away_score_mean:.1f} (home-away)  "
+        f"home win {s.home_win.value:.1%} +- {s.home_win.standard_error:.1%}  "
+        f"tie {s.tie.value:.1%}"
+    )
+    print("  margin " + "  ".join(f"{k} {v:+g}" for k, v in s.margin_quantiles.items()))
+    print("  total  " + "  ".join(f"{k} {v:g}" for k, v in s.total_quantiles.items()))
+    print("  home spread sensitivity (line: cover / push):")
+    print(
+        "    " + "  ".join(f"{r.line:+g}: {r.win:.1%}/{r.push:.1%}" for r in s.spread_sensitivity)
+    )
+    print("  over sensitivity:")
+    print("    " + "  ".join(f"{r.line:g}: {r.win:.1%}/{r.push:.1%}" for r in s.total_sensitivity))
+    for side in s.spread_sides + s.total_sides:
+        if side.american_odds is None:
+            continue
+        worst = (
+            "none in range"
+            if side.max_acceptable_line is None
+            else f"{side.max_acceptable_line:+g}"
+        )
+        print(
+            f"  {side.selection:<5} main {side.line:+g} at {bm.format_american(side.american_odds)}"
+            f" ({side.sportsbook}): maximum acceptable line {worst}"
+        )
+    for name, p in s.joint.items():
+        print(f"  P({name.replace('_', ' ')}) = {p.value:.1%}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ttk")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -550,6 +604,10 @@ def main(argv: list[str] | None = None) -> int:
     summary.add_argument(
         "--market", type=Market, choices=[Market.MONEYLINE, Market.SPREAD, Market.TOTAL]
     )
+    simulate = sub.add_parser("simulate", help="Monte Carlo one game (NFL)")
+    simulate.add_argument("--game-id", type=int, required=True)
+    simulate.add_argument("--preset", choices=["quick", "detailed", "research"], default="quick")
+    simulate.add_argument("--seed", type=int, help="Fix for a reproducible run")
     serve = sub.add_parser("serve", help="Run the API on loopback")
     serve.add_argument("--port", type=int, default=8800)
     args = parser.parse_args(argv)
@@ -638,6 +696,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "bets":
         return _bets(args, settings)
+
+    if args.command == "simulate":
+        return _simulate(args, settings)
 
     if args.command == "serve":
         import uvicorn

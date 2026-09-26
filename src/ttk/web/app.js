@@ -60,6 +60,7 @@ function showTab(name) {
   if (name === "bets") { loadBets(); loadParlays(); }
   if (name === "performance") loadPerformance();
   if (name === "parlay") { renderSlip(); loadPickGames(); }
+  if (name === "sim") loadSimGames();
 }
 
 for (const button of document.querySelectorAll(".tabs button")) {
@@ -121,6 +122,9 @@ function renderEntry(entry) {
   }
 
   $(".track", node).addEventListener("click", () => prefillBet(entry));
+  const simulate = $(".simulate", node);
+  simulate.hidden = entry.sport !== "NFL";
+  simulate.addEventListener("click", () => openSimulation(entry.game_id, entry.commence_time));
   $(".add-leg", node).addEventListener("click", () => {
     // A new slip takes the entry's best book; later legs are priced at the slip's book.
     if (!slip.legs.length) setSlipBook(entry.sportsbook);
@@ -565,6 +569,102 @@ async function loadParlays() {
   )));
   if (!parlays.length) body.append(el("tr", {}, el("td", { colspan: "10", class: "muted", text: "No parlays yet." })));
 }
+
+// ------------------------------------------------------------------ simulator
+
+let simSeq = 0;
+async function loadSimGames(selectId = null) {
+  const seq = ++simSeq;
+  const params = new URLSearchParams({ date: $("#sim-date").value || todayEastern(), sport: "NFL" });
+  const games = await api(`/api/games?${params}`);
+  if (seq !== simSeq) return;
+  $("#sim-game").replaceChildren(
+    ...games.map((g) => el("option", { value: g.id, text: `${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })),
+  );
+  if (!games.length) $("#sim-game").append(el("option", { value: "", text: "No upcoming NFL games" }));
+  if (selectId != null) $("#sim-game").value = String(selectId);
+}
+
+async function openSimulation(gameId, commenceIso) {
+  $("#sim-date").value = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
+    .format(new Date(new Date(commenceIso).getTime() - 6 * 3600 * 1000));
+  showTab("sim");
+  await loadSimGames(gameId);
+  runSimulation();
+}
+
+function sensitivityTable(title, rows, mainLine, fmtLine) {
+  return el("div", { class: "panel" },
+    el("h2", { text: title }),
+    el("table", { class: "sens" },
+      el("tr", {}, ...["Line", "Win", "Push", "Win (no push)"].map((h) => el("th", { text: h }))),
+      ...rows.map((r) => el("tr", { class: r.line === mainLine ? "main" : "" },
+        el("td", { text: fmtLine(r.line) + (r.line === mainLine ? "  (market)" : "") }),
+        el("td", { text: pct(r.win) }),
+        el("td", { text: pct(r.push) }),
+        el("td", { text: pct(r.win_excluding_push) }))),
+    ));
+}
+
+async function runSimulation() {
+  const gameId = Number($("#sim-game").value);
+  const status = $("#sim-status");
+  const out = $("#sim-result");
+  if (!gameId) { status.textContent = "Choose a game."; return; }
+  const button = $("#sim-run");
+  button.disabled = true;
+  status.textContent = "Simulating…";
+  try {
+    const body = { game_id: gameId, preset: $("#sim-preset").value,
+                   seed: $("#sim-seed").value === "" ? null : Number($("#sim-seed").value) };
+    const s = await api("/api/simulations/run", { method: "POST", body: JSON.stringify(body) });
+    status.textContent = `${s.iterations.toLocaleString()} simulations${s.seed == null ? "" : `, seed ${s.seed}`}`;
+    const spreadMain = s.spread_sides[0].line;
+    const [away, home] = s.matchup.split(" @ ");
+    const q = (o) => `p5 ${o.p5} · p25 ${o.p25} · median ${o.p50} · p75 ${o.p75} · p95 ${o.p95}`;
+    const sides = [...s.spread_sides, ...s.total_sides].filter((x) => x.american_odds != null);
+    out.replaceChildren(
+      el("div", { class: "tiles" },
+        tile("Mean score", `${home.split(" ").pop()} ${s.home_score_mean.toFixed(1)} - ${s.away_score_mean.toFixed(1)} ${away.split(" ").pop()}`, s.matchup),
+        tile("Home win", pct(s.home_win.value), `± ${pct(s.home_win.standard_error, 2)} sampling · tie ${pct(s.tie.value)}`),
+        tile("Total centered on", String(s.total_line), s.total_line_source),
+      ),
+      el("div", { class: "panel" },
+        el("h2", { text: "Distributions (home margin, total points)" }),
+        el("p", { text: `Margin: ${q(s.margin_quantiles)}` }),
+        el("p", { text: `Total: ${q(s.total_quantiles)}` })),
+      el("div", { class: "sim-grid" },
+        sensitivityTable(`${home} spread`, s.spread_sensitivity, spreadMain, lineText),
+        sensitivityTable("Over", s.total_sensitivity, s.total_line, (x) => String(x)),
+        el("div", { class: "panel" },
+          el("h2", { text: "Maximum acceptable line" }),
+          el("p", { class: "muted", text: "The worst line still +EV at today's best bettable price (price held fixed across lines)." }),
+          el("ul", {}, ...sides.map((x) => {
+            const who = x.selection === "HOME" ? home : x.selection === "AWAY" ? away : x.selection.charAt(0) + x.selection.slice(1).toLowerCase();
+            const line = x.selection === "OVER" || x.selection === "UNDER" ? String(x.line) : lineText(x.line);
+            const worst = x.max_acceptable_line == null ? "no +EV line in range"
+              : x.selection === "OVER" ? `${x.max_acceptable_line} or lower`
+              : x.selection === "UNDER" ? `${x.max_acceptable_line} or higher`
+              : `${lineText(x.max_acceptable_line)} or better`;
+            return el("li", { text: `${who} ${line} at ${american(x.american_odds)} (${x.sportsbook}): ${worst}` });
+          }))),
+        el("div", { class: "panel" },
+          el("h2", { text: "Same-game joint (main lines)" }),
+          el("ul", {}, ...Object.entries(s.joint).map(([k, p]) =>
+            el("li", { text: `${k.replaceAll("_", " ")}: ${pct(p.value)}` })))),
+      ),
+    );
+  } catch (error) {
+    status.textContent = `Could not simulate: ${error.message}`;
+    out.replaceChildren();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("#sim-date").value = todayEastern();
+$("#sim-date").addEventListener("change", () => loadSimGames());
+$("#sim-run").addEventListener("click", runSimulation);
 
 // ------------------------------------------------------------------ start
 
