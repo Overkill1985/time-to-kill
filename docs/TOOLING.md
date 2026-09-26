@@ -19,9 +19,11 @@ provider adapters in `src/ttk/providers/`.
 | `Claude_Browser` / `claude-in-chrome` | Anthropic | Browser automation | Read provider docs, check the running app | - | - | Available | WebFetch |
 | `scheduled-tasks` | Anthropic | Scheduled local runs | Possible future: scheduled `ttk ingest-odds` | - | - | Available | OS scheduler |
 
-**No GitHub MCP is installed and the `gh` CLI is not installed.** Source control
-uses local `git` over SSH (`git@github.com:Overkill1985/time-to-kill.git`).
-Pull requests need `gh` or the GitHub web UI.
+**No GitHub MCP is installed.** Source control uses local `git` over SSH
+(`git@github.com:Overkill1985/time-to-kill.git`) and the GitHub CLI.
+- The CLI is `gh` 2.101.0, installed 2026-09-26 via winget at `C:\Program Files\GitHub CLI\gh.exe`.
+- It's logged in as Overkill1985 with the `repo`, `read:org` and `gist` scopes, using SSH for git operations.
+- Use it for PRs, CI run status (`gh run list`) and issues.
 
 ## Skills
 
@@ -42,7 +44,7 @@ Not relevant: `betting-app` (pari-mutuel wallets - a different product),
 
 | Capability | Preferred | Fallback |
 |---|---|---|
-| Repository | local git (no GitHub MCP available) | GitHub web UI |
+| Repository | local git + `gh` CLI (no GitHub MCP available) | GitHub web UI |
 | Odds research / fixtures | PropLine MCP | The Odds API via `ttk ingest-odds` |
 | Odds at runtime | `TheOddsApiProvider` (needs `TTK_ODDS_API_KEY`) | PropLine REST adapter (not built; needs a PropLine key) |
 | Schedules / scores research | sports-hub MCP, sport data skills | ESPN site API |
