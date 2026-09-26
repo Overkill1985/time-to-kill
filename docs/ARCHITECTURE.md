@@ -20,11 +20,13 @@ src/ttk/
     odds_api_format.py Normalizer for Odds-API-shaped payloads (The Odds API, PropLine)
     the_odds_api.py    Odds HTTP adapter
     espn.py            Schedule/results adapter (the schedule authority)
-    nflverse.py        NFL history 1999+: results + reported lines (evaluation only)
+    nflverse.py        NFL history 1999+: results, reported lines, starting QBs
+    nflverse_pbp.py    Play-by-play -> per-game team and QB EPA aggregates (streamed)
   models/              Pure model code, no I/O
     elo.py             Sport-agnostic Elo run in time order (walk-forward by construction)
     margin.py          Normal + key-number margin models -> cover/push probabilities
     anchored.py        Market-anchored cover model (market no-vig + rating disagreement)
+    nfl_features.py    Walk-forward EPA team strength and QB-change features
     metrics.py         Brier, log loss, calibration tables (always with n)
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
@@ -35,11 +37,12 @@ src/ttk/
     identity.py        Resolve provider teams/games to canonical rows (ESPN ids); never guesses
     runs.py            Audited ingestion runs (success or recorded failure)
     schedule_ingest.py ESPN -> games, status, scores (idempotent upsert)
-    history_import.py  nflverse -> games + reported_lines (idempotent)
+    history_import.py  nflverse -> games + reported_lines + game_starters (idempotent)
+    pbp_import.py      nflverse play-by-play -> team_game_stats, qb_game_stats (per season)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes (loopback-only via TrustedHostMiddleware)
-  cli.py               ttk migrate | ingest-schedule | ingest-odds | import-nfl-history
+  cli.py               ttk migrate | ingest-schedule | ingest-odds | import-nfl-history | import-nfl-pbp
                            | backtest-nfl-elo | serve
 migrations/            Alembic. 0001 creates the schema + append-only triggers. 0002 adds ESPN team identity and swapped game links.
                        On SQLite, migrations turn off foreign-key enforcement while batch mode rebuilds tables, then run the foreign-key integrity check.

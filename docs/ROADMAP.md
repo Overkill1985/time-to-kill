@@ -7,7 +7,7 @@ Status as of 2026-09-26.
 | 1. Assessment | Tooling inventory, repo analysis, docs | **Done** |
 | 2. Foundation | Schema + migrations, provider interfaces, odds ingestion, schedule/results, API shell | **Mostly done.** The ESPN schedule/results provider and cross-provider game linking are built and verified live. Remaining: a frontend shell, scheduled ingestion, and a first live run of The Odds API adapter (needs a key) |
 | 3. Betting math | Odds conversions, no-vig, edge, EV, fair odds, Kelly, parlays, settlement, CLV, consensus, qualification | **Done** |
-| 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), and a market-anchored model (no significant edge). All stay DEVELOPMENT and the test seasons are still sealed (docs/MODELS.md). Next: new information sources |
+| 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), a market-anchored model (no significant edge), and EPA and QB-change features from play-by-play (adopted; they close a third of Elo's margin-error gap to the market, but no edge against it). All stay DEVELOPMENT and the test seasons are still sealed (docs/MODELS.md). Next: timestamped odds history |
 | 5. Monte Carlo | Reusable score simulation (seeded, reproducible), line sensitivity, maximum acceptable line | |
 | 6. Daily card | Qualified opportunities, filters, Why-Not view, data-quality scoring | |
 | 7. Parlay Lab | Cross-sport slips, joint probability, correlation warnings, same-game simulation | |
@@ -38,8 +38,8 @@ Status as of 2026-09-26.
    - Season-by-season home field was not adopted.
    - The market-anchored model shows no edge (z −0.2).
 7. **New information for the market-anchored model**, each judged by its paired z against the market on validation:
-   - quarterback status;
-   - EPA from nflverse play-by-play;
+   - ~~quarterback status~~ and ~~EPA from play-by-play~~ **done 2026-09-26:** signal confirmed, no edge against the (probably closing) reported lines;
+   - **timestamped odds history (highest priority):** opening, intraday and closing prices, so models can be tested against early lines and measured by closing-line value;
    - injuries at bet time;
    - rest, travel and weather;
    - timestamped odds, so bets can be scored by closing-line value.

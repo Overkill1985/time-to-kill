@@ -7,16 +7,44 @@ from collections import Counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ttk.db.models import IngestionRun, ReportedLine
+from ttk.db.models import GameStarter, IngestionRun, ReportedLine
 from ttk.domain import Sport
-from ttk.providers.nflverse import HistoricalGame, NflverseProvider
+from ttk.providers.nflverse import HistoricalGame, NflverseProvider, Starter
 from ttk.services.identity import resolve_game
 from ttk.services.runs import RunResult, audited_run
+
+
+def _store_starter(
+    session: Session, game_id: int, team_id: int, starter: Starter | None, provider: str
+) -> None:
+    if starter is None:
+        return
+    row = session.scalar(
+        select(GameStarter).where(
+            GameStarter.game_id == game_id,
+            GameStarter.team_id == team_id,
+            GameStarter.position == "QB",
+            GameStarter.provider == provider,
+        )
+    )
+    if row is None:
+        row = GameStarter(game_id=game_id, team_id=team_id, position="QB", provider=provider)
+        session.add(row)
+    row.player_id, row.player_name = starter.player_id, starter.player_name
 
 
 def store_history(session: Session, games: list[HistoricalGame], stats: Counter[str]) -> int:
     for item in games:
         resolved = resolve_game(session, item.game, stats)
+        game = resolved.game
+        # Starters are keyed by team, so a swapped link just maps sides to teams.
+        provider_home, provider_away = (
+            (game.away_team_id, game.home_team_id)
+            if resolved.swapped
+            else (game.home_team_id, game.away_team_id)
+        )
+        _store_starter(session, game.id, provider_home, item.home_qb, item.game.provider)
+        _store_starter(session, game.id, provider_away, item.away_qb, item.game.provider)
         if item.lines is None:
             continue
         line = session.scalar(

@@ -10,7 +10,8 @@ immutable snapshots.
 | PropLine | Same markets across 27 books incl. Pinnacle; history, closing lines, movement | PropLine API key (REST) | - | Per PropLine terms | The Odds API | Same | Normalizer verified on a real payload captured via MCP (`tests/fixtures/`). **REST adapter not built** - its endpoint must be confirmed from PropLine docs first |
 | ESPN site API | **Schedule authority**: games, status, final scores, neutral site, season, ESPN team ids (NFL/NBA/CFB/NCAAB) | None (undocumented public API) | On demand: `ttk ingest-schedule --sport X` (default: 2 days back to 7 ahead) | Unofficial; may change without notice | NCAA API, sports-hub | Scores within an hour of final | **Built and run live** (NFL 16 games, CFB 236 games). Injuries not yet |
 | nflverse `nfldata/games.csv` | NFL games 1999–present: results, neutral site, week, ESPN event ids, **reported** spread/total/moneyline | None | On demand: `ttk import-nfl-history` (idempotent, ~20 s) | See the upstream repo | ESPN for schedule | Updated through the season | **Built and imported**: 7,548 games, 7,340 line rows (5,359 with moneylines, from 2006) |
-| nflverse play-by-play | EPA, snaps, injuries | None (GitHub release CSVs) | Daily | See the upstream repo | - | Previous week complete by Tuesday | Planned (Phase 4 features) |
+| nflverse play-by-play (`nflverse-data` release `pbp`) | Per-game team offense (EPA, success, dropbacks, rushes) and QB dropback EPA, aggregated from ~48k plays per season | None | On demand: `ttk import-nfl-pbp --from-season Y --to-season Y` (~15 MB download per season; raw plays are discarded) | See the upstream repo | - | Previous week complete by Tuesday | **Built** (1999–2026 imported) |
+| nflverse games: starting QBs | `home_qb_id` / `away_qb_id` for every played game, and for upcoming games once listed | None | With `ttk import-nfl-history` | See the upstream repo | - | Known at kickoff | **Built** |
 | Open-Meteo | Weather for outdoor football | None | 4 h | Free non-commercial | - | Forecast <= 16 days out | Planned (NFL/CFB features) |
 
 ESPN behaviors verified 2026-09-26 (`src/ttk/providers/espn.py`):
@@ -40,6 +41,12 @@ nflverse games, verified 2026-09-26 (`src/ttk/providers/nflverse.py`):
 - **The lines' timing (opening versus closing) and their source are not documented upstream.** They're stored in `reported_lines`. They benchmark models after the fact. A model may use one as an input only when the simulated bet is placed at that same line (the market-anchored model); see MODEL-GOVERNANCE.md. They're never an input for a bet placed at an earlier price, and never used as a closing line for closing-line value.
 - Team codes map to ESPN franchise ids, verified against ESPN's own event records: OAK and LV → 13, STL and LA → 14, SD and LAC → 24, WAS → 28.
 - Games link to ESPN rows by ESPN event id. ESPN outranks nflverse, so nflverse never overwrites a kickoff time or score that ESPN supplied.
+
+nflverse play-by-play, verified 2026-09-26 on 1999 and 2025 (`src/ttk/providers/nflverse_pbp.py`):
+
+- `game_id` matches `games.csv`, and player ids are NFL GSIS ids that match `games.csv` starting QBs.
+- **Offensive plays:** pass or run plays with an EPA value, excluding two-point attempts. Penalty-only plays (`no_play`) are excluded.
+- **Dropbacks:** `qb_dropback = 1`. The quarterback is the `id` column, which is also set on scrambles, where `passer_player_id` is empty.
 
 Normalization rules (`src/ttk/providers/odds_api_format.py`):
 

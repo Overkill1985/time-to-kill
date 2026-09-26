@@ -22,11 +22,12 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, ReportedLine
+from ttk.db.models import Game, GameStarter, QbGameStat, ReportedLine, TeamGameStat
 from ttk.domain import GameStatus, Sport
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame, EloParams, EloPrediction, run_elo
@@ -36,8 +37,16 @@ from ttk.models.margin import (
     MarginModel,
     fit_key_number_weights,
     fit_margin_model,
+    key_number_weights_for_means,
 )
 from ttk.models.metrics import CalibrationBin, Score, calibration_table, score
+from ttk.models.nfl_features import (
+    FeatureParams,
+    GameFeatures,
+    QbGame,
+    TeamGameEpa,
+    compute_features,
+)
 
 
 @dataclass(frozen=True)
@@ -88,6 +97,36 @@ def load_nfl_games(session: Session) -> tuple[list[EloGame], dict[int, ReportedL
         for line in session.scalars(select(ReportedLine).where(ReportedLine.provider == "nflverse"))
     }
     return games, lines
+
+
+@dataclass(frozen=True)
+class FeatureInputs:
+    """Play-by-play aggregates and starters. Empty until `ttk import-nfl-pbp` runs."""
+
+    team_stats: list[TeamGameEpa]
+    qb_stats: list[QbGame]
+    starters: dict[tuple[int, int], str]
+
+    @property
+    def available(self) -> bool:
+        return bool(self.team_stats)
+
+
+def load_feature_inputs(session: Session) -> FeatureInputs:
+    return FeatureInputs(
+        team_stats=[
+            TeamGameEpa(s.game_id, s.team_id, s.plays, s.epa_total, s.dropbacks)
+            for s in session.scalars(select(TeamGameStat))
+        ],
+        qb_stats=[
+            QbGame(q.game_id, q.team_id, q.player_id, q.dropbacks, q.qb_epa_total)
+            for q in session.scalars(select(QbGameStat))
+        ],
+        starters={
+            (s.game_id, s.team_id): s.player_id
+            for s in session.scalars(select(GameStarter).where(GameStarter.position == "QB"))
+        },
+    )
 
 
 def _in(season: int, window: tuple[int, int]) -> bool:
@@ -235,6 +274,9 @@ class SplitReport:
     spread_market: Score
     push_rate_actual: float
     spread_candidates: list[CandidateResult]
+    margin_rmse: dict[str, float] = field(default_factory=dict)
+    """Root-mean-square error of each model's expected margin on every played game."""
+    margin_n: int = 0
     calibration: list[CalibrationBin] = field(default_factory=list)
 
 
@@ -332,11 +374,94 @@ def _evaluate_candidate(name: str, rows: Sequence[PricedSpread], cover: CoverFn)
     )
 
 
+FEATURE_NAMES = ("elo_diff", "epa_net_diff_pts", "qb_change_diff_pts")
+FEATURE_GRID = tuple(
+    FeatureParams(team_half_life_games=h, season_carryover=c, qb_prior_dropbacks=q)
+    for h in (4.0, 8.0, 16.0)
+    for c in (0.3, 0.6)
+    for q in (100.0, 300.0)
+)
+
+
+def _feature_row(p: EloPrediction, f: GameFeatures) -> list[float]:
+    return [p.elo_diff, f.epa_net_diff_pts, f.qb_change_diff_pts]
+
+
+def _design(train_preds: Sequence[EloPrediction], feats: dict[int, GameFeatures]) -> np.ndarray:
+    rows = np.asarray([_feature_row(p, feats[p.game_id]) for p in train_preds], dtype=float)
+    return np.column_stack([np.ones(len(train_preds)), rows])
+
+
+@dataclass(frozen=True)
+class FeatureMarginModel:
+    """margin = intercept + coefs . [elo_diff, epa_net_diff_pts, qb_change_diff_pts],
+    with key-number-weighted residuals. All fitted on TRAIN."""
+
+    params: FeatureParams
+    intercept: float
+    coefs: dict[str, float]
+    key: KeyNumberMarginModel
+    """Carries sigma and key-number weights; means come from expected_margin."""
+    train_rmse: float
+
+    def expected_margin(self, p: EloPrediction, f: GameFeatures) -> float:
+        row = _feature_row(p, f)
+        return self.intercept + sum(
+            self.coefs[n] * x for n, x in zip(FEATURE_NAMES, row, strict=True)
+        )
+
+
+def fit_feature_margin(
+    predictions: Sequence[EloPrediction],
+    games: dict[int, EloGame],
+    inputs: FeatureInputs,
+    train: tuple[int, int],
+) -> tuple[FeatureMarginModel, dict[int, GameFeatures]]:
+    """Choose feature settings by TRAIN margin RMSE (same model size for every
+    setting), then fit the regression and key-number weights on TRAIN."""
+    train_preds = [p for p in predictions if _in(p.season, train) and games[p.game_id].played]
+    margins = np.asarray([_margin(games[p.game_id]) for p in train_preds], dtype=float)
+    best: tuple[float, FeatureParams, dict[int, GameFeatures], np.ndarray] | None = None
+    for params in FEATURE_GRID:
+        feats = compute_features(
+            list(games.values()), inputs.team_stats, inputs.qb_stats, inputs.starters, params
+        )
+        x = _design(train_preds, feats)
+        beta = np.linalg.lstsq(x, margins, rcond=None)[0]
+        rmse = float(np.sqrt(np.mean((margins - x @ beta) ** 2)))
+        if best is None or rmse < best[0]:
+            best = (rmse, params, feats, beta)
+    assert best is not None
+    rmse, params, feats, beta = best
+    x = _design(train_preds, feats)
+    means = x @ beta
+    sigma = float(np.std(margins - means, ddof=x.shape[1]))
+    weights = key_number_weights_for_means(
+        [float(m) for m in means], sigma, [int(m) for m in margins]
+    )
+    model = FeatureMarginModel(
+        params=params,
+        intercept=float(beta[0]),
+        coefs={n: float(b) for n, b in zip(FEATURE_NAMES, beta[1:], strict=True)},
+        key=KeyNumberMarginModel(MarginModel(0.0, 0.0, sigma), weights),
+        train_rmse=rmse,
+    )
+    return model, feats
+
+
 @dataclass(frozen=True)
 class FittedModels:
     normal: MarginModel
     key_number: KeyNumberMarginModel
     anchored: MarketAnchoredModel
+    features: FeatureMarginModel | None = None
+    anchored_features: MarketAnchoredModel | None = None
+    game_features: dict[int, GameFeatures] = field(default_factory=dict)
+
+    def feature_margin(self, p: EloPrediction) -> float | None:
+        if self.features is None or p.game_id not in self.game_features:
+            return None
+        return self.features.expected_margin(p, self.game_features[p.game_id])
 
     def candidates(self) -> list[tuple[str, CoverFn]]:
         def margin_fn(model: MarginDistribution) -> CoverFn:
@@ -353,11 +478,33 @@ class FittedModels:
                 None,
             )
 
-        return [
+        candidates: list[tuple[str, CoverFn]] = [
             ("elo_normal", margin_fn(self.normal)),
             ("elo_key_numbers", margin_fn(self.key_number)),
             ("market_anchored", anchored_fn),
         ]
+        features, anchored_features = self.features, self.anchored_features
+        if features is not None and anchored_features is not None:
+
+            def features_fn(r: PricedSpread) -> tuple[float, float | None]:
+                mu = self.feature_margin(r.prediction)
+                assert mu is not None
+                probs = features.key.spread_at_mean(r.home_line, mu)
+                return probs.home_cover_excluding_push, probs.push
+
+            def anchored_features_fn(r: PricedSpread) -> tuple[float, float | None]:
+                mu = self.feature_margin(r.prediction)
+                assert mu is not None
+                p_home = anchored_features.home_cover_probability(
+                    r.market_home_cover, mu + r.home_line
+                )
+                return p_home, None
+
+            candidates += [
+                ("features_key_numbers", features_fn),
+                ("market_anchored_features", anchored_features_fn),
+            ]
+        return candidates
 
 
 def evaluate(
@@ -385,6 +532,17 @@ def evaluate(
 
     rows = priced_spreads(predictions, games, lines, window)
     decided = [r for r in rows if r.cover_margin != 0]
+    errors: dict[str, list[float]] = {"elo": []}
+    if models.features is not None:
+        errors["features"] = []
+    for p in predictions:
+        g = games[p.game_id]
+        if not (_in(p.season, window) and g.played):
+            continue
+        errors["elo"].append(models.normal.expected_margin(p.elo_diff) - _margin(g))
+        feature_mu = models.feature_margin(p)
+        if feature_mu is not None:
+            errors["features"].append(feature_mu - _margin(g))
     return SplitReport(
         seasons=window,
         moneyline_elo=score(ml_p, ml_y),
@@ -397,6 +555,10 @@ def evaluate(
         push_rate_actual=(len(rows) - len(decided)) / len(rows) if rows else 0.0,
         spread_candidates=[_evaluate_candidate(name, rows, fn) for name, fn in models.candidates()],
         calibration=calibration_table(ml_p, ml_y),
+        margin_rmse={
+            name: float(np.sqrt(np.mean(np.square(e)))) for name, e in errors.items() if e
+        },
+        margin_n=len(errors["elo"]),
     )
 
 
@@ -411,7 +573,11 @@ class BacktestReport:
     def to_dict(self) -> dict[str, object]:
         data = asdict(self)
         data["tuned"].pop("home_field_by_season", None)
-        data["models"]["key_number"].pop("_cache", None)
+        models = data["models"]
+        models["key_number"].pop("_cache", None)
+        models.pop("game_features", None)
+        if models.get("features"):
+            models["features"]["key"].pop("_cache", None)
         return data
 
 
@@ -420,6 +586,7 @@ def fit_models(
     games: dict[int, EloGame],
     lines: dict[int, ReportedLine],
     train: tuple[int, int],
+    inputs: FeatureInputs | None = None,
 ) -> FittedModels:
     """Margin models and the market-anchored regression, fitted on TRAIN only."""
     pairs = [
@@ -436,7 +603,19 @@ def fit_models(
         [key_number.expected_margin(r.prediction.elo_diff) + r.home_line for r in decided],
         [int(r.cover_margin > 0) for r in decided],
     )
-    return FittedModels(normal, key_number, anchored)
+    if inputs is None or not inputs.available:
+        return FittedModels(normal, key_number, anchored)
+    features, game_features = fit_feature_margin(predictions, games, inputs, train)
+    anchored_features = fit_market_anchored(
+        [r.market_home_cover for r in decided],
+        [
+            features.expected_margin(r.prediction, game_features[r.prediction.game_id])
+            + r.home_line
+            for r in decided
+        ],
+        [int(r.cover_margin > 0) for r in decided],
+    )
+    return FittedModels(normal, key_number, anchored, features, anchored_features, game_features)
 
 
 def backtest(
@@ -446,6 +625,7 @@ def backtest(
     splits: Splits = DEFAULT_SPLITS,
     params: EloParams | None = None,
     include_test: bool = False,
+    inputs: FeatureInputs | None = None,
 ) -> BacktestReport:
     by_id = {g.game_id: g for g in games}
     if params is None:
@@ -454,7 +634,7 @@ def backtest(
         loss = _win_log_loss(run_elo(games, params), by_id, splits.train)
         tuned = TunedElo(params, "constant", None, loss)
     predictions = tuned.run(games)
-    models = fit_models(predictions, by_id, lines, splits.train)
+    models = fit_models(predictions, by_id, lines, splits.train, inputs)
 
     train_decided = [
         _margin(by_id[p.game_id])

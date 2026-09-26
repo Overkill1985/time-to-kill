@@ -3,7 +3,7 @@
 Every result lists sample sizes. "Market" means the no-vig probability from nflverse's
 *reported* lines. Their timing isn't documented upstream; see DATA-SOURCES.md.
 
-**Status: every NFL spread model is DEVELOPMENT.** None has a demonstrated edge over the
+**Status: every NFL spread model is DEVELOPMENT, including the EPA and QB models.** None has a demonstrated edge over the
 market. The 2022–2025 test seasons are **sealed and have not been scored**. No model is
 registered yet.
 
@@ -61,6 +61,38 @@ Spread bets at the reported prices, taking the side with the larger model edge:
 - **Elo-only spread models:** significantly worse than the market (z ≈ +3). They must never produce QUALIFIED bets.
 - **Market-anchored:** indistinguishable from the market. The +2.9% ROI is within noise. It's the right *shape* for future models: start from the market and let new information move it. But Elo carries no spread information the market doesn't already have.
 
+### EPA and quarterback features (2026-09-26)
+
+- **Data:** nflverse play-by-play for 1999–2026, aggregated to 15,000 team-games plus per-game quarterback dropback EPA. Starting QBs come from `games.csv`; they're known at kickoff (see MODEL-GOVERNANCE.md).
+- **Code:** `src/ttk/models/nfl_features.py`. Features are computed in game order, so each game's features come only from earlier games, the same as Elo. Tests prove a game's features can't see its own stats.
+- **Features (home minus away, in points):**
+  - `epa_net_diff_pts`: offense EPA/play minus defense EPA/play allowed, weighted toward recent games, × 62 plays.
+  - `qb_change_diff_pts`: today's starter's shrunken EPA per dropback, minus the team's recent QB level, × 36 dropbacks.
+- **Settings tuned on the training seasons:** team half-life 16 games, season carryover 0.6, QB prior 300 dropbacks, chosen from a 12-setting grid by training margin error.
+- **Margin regression (training seasons):** margin = 0.89 + 0.0336·elo_diff + 0.230·epa_net_diff_pts + **1.005·qb_change_diff_pts**, σ 13.57.
+  - The QB term moves the margin almost exactly point for point, which is what a well-scaled feature should do.
+  - EPA takes over part of Elo's weight (Elo's coefficient drops from 0.046 to 0.034).
+
+Validation, 2018–2021:
+
+| Model | Cover log loss | vs market (SE) | z |
+|---|---|---|---|
+| Market (no-vig) | **0.6925** | – | – |
+| `features_key_numbers` | 0.7117 | +0.0192 (0.0056) | +3.5, significantly worse |
+| `market_anchored_features` | 0.6929 | +0.0004 (0.0013) | +0.3, no difference |
+
+Margin error, RMSE in points, on validation games with a reported line:
+
+| | All games (n=1,088) | Games with a QB-change swing of 3+ points (n=114) |
+|---|---|---|
+| Market line | **13.09** | **12.06** |
+| EPA + QB features | 13.37 | 12.45 |
+| Elo | 13.53 | 12.99 |
+
+**Verdict:** adopt the features as the best non-market predictor, but they're still DEVELOPMENT.
+- They close about a third of the gap between Elo's margin error and the market's, and the most where they should: games with a quarterback change.
+- The market prices quarterback changes too, and better. Betting the feature model's disagreements loses (−6.5% at a 2% minimum edge). Anchored to the market, it's back to break-even (+0.7%, n=382, within noise).
+
 ### What could actually beat the market (next)
 
 Elo only knows past scores, and the market already knows those. An edge needs information that is timely or better processed:
@@ -71,3 +103,5 @@ Elo only knows past scores, and the market already knows those. An edge needs in
 - **timestamped** odds, so a model can be tested against an earlier line and measured by closing-line value.
 
 These plug into the market-anchored model as extra disagreement terms. Each is judged by the paired z against the market on validation. Only a model that clearly beats the market there gets promoted to PAPER, and only then are the test seasons scored, once.
+
+**The benchmark is probably the hardest one available.** nflverse's reported lines are most likely closing lines, and closing lines already contain nearly all public information. Even a sound model will look no better than the close. The practical edge in betting usually comes from betting *before* the market has moved: early-week lines, beaten by a model that sees what the close will see. Testing that needs **timestamped odds history**: opening and intraday prices, plus the close for measuring closing-line value. That's the most valuable next data source. PropLine exposes odds history and closing lines; The Odds API's historical odds are a paid tier.

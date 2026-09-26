@@ -89,10 +89,15 @@ class KeyNumberMarginModel:
         return self.base.expected_margin(rating_diff)
 
     def pmf(self, rating_diff: float) -> dict[int, float]:
-        cached = self._cache.get(rating_diff)
+        return self.pmf_at_mean(self.base.expected_margin(rating_diff))
+
+    def pmf_at_mean(self, mu: float) -> dict[int, float]:
+        """Distribution around any expected margin (e.g. from a feature model),
+        with this model's sigma and key-number weights."""
+        cached = self._cache.get(mu)
         if cached is not None:
             return cached
-        mu, sigma = self.base.expected_margin(rating_diff), self.base.sigma
+        sigma = self.base.sigma
         raw = {
             k: (_phi((k + 0.5 - mu) / sigma) - _phi((k - 0.5 - mu) / sigma))
             * self.weights.get(abs(k), 1.0)
@@ -101,11 +106,14 @@ class KeyNumberMarginModel:
         total = sum(raw.values())
         pmf = {k: p / total for k, p in raw.items()}
         if len(self._cache) < 50_000:
-            self._cache[rating_diff] = pmf
+            self._cache[mu] = pmf
         return pmf
 
     def spread(self, home_line: float, rating_diff: float) -> SpreadProbabilities:
         return _spread_from_pmf(self.pmf(rating_diff), home_line)
+
+    def spread_at_mean(self, home_line: float, mu: float) -> SpreadProbabilities:
+        return _spread_from_pmf(self.pmf_at_mean(mu), home_line)
 
 
 def fit_key_number_weights(
@@ -116,23 +124,41 @@ def fit_key_number_weights(
     max_abs_margin: int = 40,
     prior_games: float = 20.0,
 ) -> KeyNumberMarginModel:
+    """Key-number weights for a rating-difference margin model (see
+    ``key_number_weights_for_means``)."""
+    weights = key_number_weights_for_means(
+        [base.expected_margin(d) for d in rating_diffs],
+        base.sigma,
+        margins,
+        max_abs_margin=max_abs_margin,
+        prior_games=prior_games,
+    )
+    return KeyNumberMarginModel(base, weights)
+
+
+def key_number_weights_for_means(
+    means: Sequence[float],
+    sigma: float,
+    margins: Sequence[int],
+    *,
+    max_abs_margin: int = 40,
+    prior_games: float = 20.0,
+) -> dict[int, float]:
     """weight(|m|) = (observed + prior) / (expected + prior), where expected is the
-    base model's probability mass at +-m summed over the training games. The prior
+    normal model's probability mass at +-m summed over the training games. The prior
     shrinks thinly observed margins toward 1 (no adjustment)."""
     expected = dict.fromkeys(range(max_abs_margin + 1), 0.0)
     observed = dict.fromkeys(range(max_abs_margin + 1), 0.0)
-    for diff, margin in zip(rating_diffs, margins, strict=True):
-        mu = base.expected_margin(diff)
+    for mu, margin in zip(means, margins, strict=True):
         for a in range(max_abs_margin + 1):
             for k in {a, -a}:
-                expected[a] += _phi((k + 0.5 - mu) / base.sigma) - _phi((k - 0.5 - mu) / base.sigma)
+                expected[a] += _phi((k + 0.5 - mu) / sigma) - _phi((k - 0.5 - mu) / sigma)
         if abs(margin) <= max_abs_margin:
             observed[abs(margin)] += 1
-    weights = {
+    return {
         a: (observed[a] + prior_games) / (expected[a] + prior_games)
         for a in range(max_abs_margin + 1)
     }
-    return KeyNumberMarginModel(base, weights)
 
 
 def fit_margin_model(rating_diffs: Sequence[float], margins: Sequence[float]) -> MarginModel:

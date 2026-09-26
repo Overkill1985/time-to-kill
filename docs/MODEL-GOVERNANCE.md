@@ -56,6 +56,7 @@ composite "confidence" score is ever presented as a probability.
 - **Market inputs:** a model may take a market price as an input only if the simulated bet is placed at that same price or a later one. Using a later line (such as the close) to decide a bet at an earlier price is leakage.
   - nflverse's reported lines have undocumented timing. So a market-anchored backtest bets at exactly the reported line it used as input.
   - They are never treated as closing lines for closing-line value.
+- **Starters (known at kickoff):** QB features use the quarterback who actually started. This is known once inactives are announced, about 90 minutes before kickoff. A model using it is valid only for bets placed after starters are known, and the bet tracker must record the bet time to hold it to that.
 - **Significance:** every model comparison against the market reports the paired per-game log-loss difference, with its standard error. A difference within about 2 standard errors is not an edge.
 
 ## Validation protocol

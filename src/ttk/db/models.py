@@ -194,6 +194,63 @@ class OddsSnapshot(Base):
     data_version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class TeamGameStat(Base):
+    """One team's offensive play-by-play aggregates for one game (its defense is the
+    opponent's row). Offensive plays = pass or run plays with an EPA value,
+    excluding two-point attempts. Re-imports replace rows (upstream revises EPA)."""
+
+    __tablename__ = "team_game_stats"
+    __table_args__ = (UniqueConstraint("game_id", "team_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    provider: Mapped[str] = mapped_column(String(50))
+    plays: Mapped[int] = mapped_column(Integer)
+    epa_total: Mapped[float] = mapped_column(Float)
+    successes: Mapped[int] = mapped_column(Integer)
+    dropbacks: Mapped[int] = mapped_column(Integer)
+    dropback_epa_total: Mapped[float] = mapped_column(Float)
+    rushes: Mapped[int] = mapped_column(Integer)
+    rush_epa_total: Mapped[float] = mapped_column(Float)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class QbGameStat(Base):
+    """A quarterback's dropback EPA in one game (passes, sacks, scrambles)."""
+
+    __tablename__ = "qb_game_stats"
+    __table_args__ = (UniqueConstraint("game_id", "player_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    player_id: Mapped[str] = mapped_column(String(20))
+    """nflverse / NFL GSIS id, e.g. 00-0035228."""
+    player_name: Mapped[str | None] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(50))
+    dropbacks: Mapped[int] = mapped_column(Integer)
+    qb_epa_total: Mapped[float] = mapped_column(Float)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class GameStarter(Base):
+    """Who started (or is listed to start) at a position. Known at kickoff; a model
+    using it assumes the bet is placed once starters are known."""
+
+    __tablename__ = "game_starters"
+    __table_args__ = (UniqueConstraint("game_id", "team_id", "position", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    position: Mapped[str] = mapped_column(String(5))
+    player_id: Mapped[str] = mapped_column(String(20))
+    player_name: Mapped[str | None] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(50))
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class ReportedLine(Base):
     """A historical line as reported by a data provider (e.g. nflverse), with no
     documented timestamp. Benchmark data. A model may take it as an input only when

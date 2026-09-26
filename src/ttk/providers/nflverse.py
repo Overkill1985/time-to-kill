@@ -93,9 +93,19 @@ class ReportedLines:
 
 
 @dataclass(frozen=True)
+class Starter:
+    player_id: str
+    player_name: str | None
+
+
+@dataclass(frozen=True)
 class HistoricalGame:
     game: NormalizedGame
     lines: ReportedLines | None
+    home_qb: Starter | None = None
+    away_qb: Starter | None = None
+    """Starting quarterbacks (nflverse lists them for played games and for upcoming
+    games once known). Known at kickoff - see docs/MODEL-GOVERNANCE.md."""
 
 
 def _num(value: str | None) -> float | None:
@@ -150,7 +160,18 @@ def parse_row(row: Mapping[str, str]) -> HistoricalGame:
         season_type=SEASON_TYPES.get(row.get("game_type", "")),
         week=_int(row.get("week")),
     )
-    return HistoricalGame(game, lines if has_lines else None)
+    return HistoricalGame(
+        game,
+        lines if has_lines else None,
+        home_qb=_starter(row.get("home_qb_id"), row.get("home_qb_name")),
+        away_qb=_starter(row.get("away_qb_id"), row.get("away_qb_name")),
+    )
+
+
+def _starter(player_id: str | None, name: str | None) -> Starter | None:
+    if not player_id or player_id == "NA":
+        return None
+    return Starter(player_id, name or None)
 
 
 def parse_games(

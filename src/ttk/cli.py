@@ -49,6 +49,8 @@ def _print_split(name: str, r: SplitReport) -> None:
         if c.push_rate_predicted is not None
     )
     print(f"  Pushes     actual {r.push_rate_actual:.2%}; predicted: {pushes}")
+    rmse = ", ".join(f"{name} {value:.2f}" for name, value in r.margin_rmse.items())
+    print(f"  Margin RMSE (points, n={r.margin_n}): {rmse}")
     print("  ATS at reported prices, betting the side with the larger model edge:")
     for c in r.spread_candidates:
         print(f"    {c.name}")
@@ -67,15 +69,23 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
 
     from ttk.db.models import ModelVersion
     from ttk.db.session import make_engine, make_session_factory
-    from ttk.research.nfl_elo import DEFAULT_SPLITS, backtest, load_nfl_games
+    from ttk.research.nfl_elo import (
+        DEFAULT_SPLITS,
+        backtest,
+        load_feature_inputs,
+        load_nfl_games,
+    )
 
     factory = make_session_factory(make_engine(database_url))
     with factory() as session:
         games, lines = load_nfl_games(session)
+        inputs = load_feature_inputs(session)
     if not games:
         print("No NFL games in the database; run `ttk import-nfl-history` first.", file=sys.stderr)
         return 2
-    report = backtest(games, lines, include_test=args.final_test)
+    if not inputs.available:
+        print("No play-by-play aggregates; run `ttk import-nfl-pbp` for EPA/QB models.")
+    report = backtest(games, lines, include_test=args.final_test, inputs=inputs)
     t, p = report.tuned, report.tuned.params
     hfa = (
         f"home_field={p.home_field}"
@@ -100,6 +110,16 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
         f"Market-anchored (TRAIN, n={a.n_train}): logit p = {a.intercept:+.3f} "
         f"+ {a.market_coef:.3f} x logit(market) + {a.disagreement_coef:+.4f} x disagreement_pts"
     )
+    f = report.models.features
+    if f is not None:
+        fp = f.params
+        print(
+            f"Feature model (TRAIN): margin = {f.intercept:.2f} "
+            + " ".join(f"{c:+.4f} x {n}" for n, c in f.coefs.items())
+            + f", sigma {f.key.base.sigma:.2f} (team half-life {fp.team_half_life_games:g} games, "
+            f"season carryover {fp.season_carryover:g}, "
+            f"QB prior {fp.qb_prior_dropbacks:g} dropbacks)"
+        )
     _print_split("TRAIN", report.train)
     _print_split("VALIDATE", report.validate)
     if report.test is not None:
@@ -118,6 +138,8 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
             "elo_normal": "elo + normal margin",
             "elo_key_numbers": "elo + key-number margin",
             "market_anchored": "logistic(market no-vig, elo disagreement)",
+            "features_key_numbers": "linear margin(elo, epa, qb change) + key numbers",
+            "market_anchored_features": "logistic(market no-vig, feature-model disagreement)",
         }
         with factory() as session:
             for c in report.validate.spread_candidates:
@@ -138,7 +160,16 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
                         market="SPREAD",
                         algorithm=algorithms[c.name],
                         features=["elo_diff", "home_field", "neutral_site"]
-                        + (["market_no_vig_same_snapshot"] if c.name == "market_anchored" else []),
+                        + (
+                            ["epa_net_diff_pts", "qb_change_diff_pts"]
+                            if "features" in c.name
+                            else []
+                        )
+                        + (
+                            ["market_no_vig_same_snapshot"]
+                            if c.name.startswith("market_anchored")
+                            else []
+                        ),
                         training_window=f"{s.train[0]}-{s.train[1]}",
                         validation_window=f"{s.validate[0]}-{s.validate[1]}",
                         calibration_method="fitted on TRAIN",
@@ -173,7 +204,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     history.add_argument("--from-season", type=int, default=1999)
     history.add_argument("--to-season", type=int)
-    backtest = sub.add_parser("backtest-nfl-elo", help="Tune and backtest the NFL Elo baseline")
+    pbp = sub.add_parser(
+        "import-nfl-pbp",
+        help="Import nflverse play-by-play EPA aggregates (~15 MB download per season)",
+    )
+    pbp.add_argument("--from-season", type=int, default=1999)
+    pbp.add_argument("--to-season", type=int, default=date.today().year)
+    backtest = sub.add_parser("backtest-nfl-elo", help="Tune and backtest the NFL spread models")
     backtest.add_argument(
         "--final-test",
         action="store_true",
@@ -242,6 +279,25 @@ def main(argv: list[str] | None = None) -> int:
             + (f", error={run.error}" if run.error else "")
         )
         return 0 if run.status == "SUCCESS" else 1
+
+    if args.command == "import-nfl-pbp":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.nflverse_pbp import NflversePbpProvider
+        from ttk.services.pbp_import import run_pbp_import
+
+        factory = make_session_factory(make_engine(settings.database_url))
+        failed = 0
+        for run in run_pbp_import(
+            factory, NflversePbpProvider(), range(args.from_season, args.to_season + 1)
+        ):
+            season = (run.stats or {}).get("season", "?")
+            print(
+                f"{season}: {run.status} {run.records_written} team-games, "
+                f"skipped={run.skipped}, stats={run.stats}"
+                + (f", error={run.error}" if run.error else "")
+            )
+            failed += run.status != "SUCCESS"
+        return 1 if failed else 0
 
     if args.command == "backtest-nfl-elo":
         return _backtest_nfl_elo(args, settings.database_url)
