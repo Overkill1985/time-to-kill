@@ -40,7 +40,7 @@ A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon
 - **Settings:** no time limit; restarts after a crash (every 5 minutes); runs on battery; never starts a second copy.
 - **Each pass:**
   1. Refreshes the ESPN schedules (free), at most every 6 hours.
-  2. Polls PropLine only for sports with games in the next 7 days.
+  2. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
 
 Manage it from PowerShell:
 

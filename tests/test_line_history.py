@@ -291,3 +291,29 @@ def test_recent_idle_schedule_stops_bootstrap_polling(
     with session_factory() as s:
         poll_now, why = sports_to_poll(s, [Sport.NCAAB], datetime.now(UTC))
     assert poll_now == [] and "no games" in why[Sport.NCAAB]
+
+
+def test_nba_window_is_wider_than_nfl(session_factory: sessionmaker[Session]) -> None:
+    far = KICK + timedelta(days=60)
+    for sport, sid in ((Sport.NFL, "nfl-far"), (Sport.NBA, "nba-far")):
+        game = replace(GAME, sport=sport, source_identifier=sid, commence_time=far)
+        with session_factory() as s:
+            run = IngestionRun(provider="fake", kind="odds", sport=sport)
+            s.add(run)
+            s.flush()
+            store_odds(s, OddsFetch([game], [], {}), run=run, observed_at=KICK, stats=Counter())
+            s.commit()
+    with session_factory() as s:
+        poll_now, why = sports_to_poll(s, [Sport.NFL, Sport.NBA], KICK)
+    assert poll_now == [Sport.NBA]  # NBA books post lines ~90 days out; NFL ~1 week
+    assert "7 days" in why[Sport.NFL]
+
+
+def test_empty_short_schedule_does_not_idle_a_wide_window_sport(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # ESPN's 8-day schedule shows no NBA games, but NBA odds are polled 90 days out.
+    refresh_schedules(session_factory, OneGameSchedule([]), [Sport.NBA])
+    with session_factory() as s:
+        poll_now, _ = sports_to_poll(s, [Sport.NBA], datetime.now(UTC))
+    assert poll_now == [Sport.NBA]  # bootstraps rather than going quiet

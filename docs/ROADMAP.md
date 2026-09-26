@@ -42,7 +42,7 @@ Status as of 2026-09-26.
    - **timestamped odds history (highest priority):** opening, intraday and closing prices, so models can be tested against early lines and measured by closing-line value.
      - **Built 2026-09-26:** the PropLine adapter, `ttk collect-odds`, line history and CLV.
      - **Done 2026-09-26:** the PropLine key is configured and verified live, change-only storage is built, and the DraftKings/exchange name bug is fixed.
-     - **Running since 2026-09-26 16:14:** the Windows scheduled task "Time-to-Kill odds collector" (see README). NFL and CFB are polled every 15 minutes; NBA and NCAAB start once they have games within 7 days.
+     - **Running since 2026-09-26 16:14:** the Windows scheduled task "Time-to-Kill odds collector" (see README). NFL, CFB and NBA (openers up to 90 days out) are polled every 15 minutes. NCAAB starts once it has games within 7 days.
      - After that, each week of collection adds opening-to-closing data. One NFL season is roughly 270 games;
    - injuries at bet time;
    - rest, travel and weather;

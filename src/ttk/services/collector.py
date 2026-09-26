@@ -28,7 +28,18 @@ from ttk.services.odds_ingest import run_odds_ingestion
 from ttk.services.schedule_ingest import run_schedule_ingestion
 
 LOOKAHEAD = timedelta(days=7)
+"""Schedule refresh window, and the default odds window."""
 SCHEDULE_REFRESH = timedelta(hours=6)
+
+# How far ahead to poll odds, per sport. Wider where books post lines early, so
+# openers are captured. Verified 2026-09-26: PropLine listed NBA regular-season
+# games from Oct 20 to Dec 25 (up to ~90 days out, 9-16 books each), but NFL and
+# CFB only about a week ahead.
+ODDS_LOOKAHEAD: dict[Sport, timedelta] = {Sport.NBA: timedelta(days=90)}
+
+
+def odds_lookahead(sport: Sport) -> timedelta:
+    return ODDS_LOOKAHEAD.get(sport, LOOKAHEAD)
 
 
 def _last_schedule_run(session: Session, sport: Sport) -> datetime | None:
@@ -73,11 +84,15 @@ def refresh_schedules(
 
 
 def sports_to_poll(
-    session: Session, sports: Sequence[Sport], now: datetime, lookahead: timedelta = LOOKAHEAD
+    session: Session,
+    sports: Sequence[Sport],
+    now: datetime,
+    lookahead: dict[Sport, timedelta] | None = None,
 ) -> tuple[list[Sport], dict[Sport, str]]:
     """Sports worth a request now, and why the others were skipped."""
     poll, skipped = [], {}
     for sport in sports:
+        window = (lookahead or {}).get(sport, odds_lookahead(sport))
         known = session.scalar(select(func.count()).select_from(Game).where(Game.sport == sport))
         upcoming = session.scalar(
             select(func.count())
@@ -85,17 +100,22 @@ def sports_to_poll(
             .where(
                 Game.sport == sport,
                 Game.commence_time > now - timedelta(hours=4),  # include games in progress
-                Game.commence_time <= now + lookahead,
+                Game.commence_time <= now + window,
             )
         )
         # With no games on file, poll to bootstrap - unless a recent schedule
         # refresh already says the sport has nothing coming up (off-season).
+        # The schedule only covers LOOKAHEAD, so it can't vouch for a wider window.
         recent_schedule = _last_schedule_run(session, sport)
-        schedule_says_idle = recent_schedule is not None and now - recent_schedule < lookahead
+        schedule_says_idle = (
+            recent_schedule is not None
+            and now - recent_schedule < 2 * SCHEDULE_REFRESH
+            and window <= LOOKAHEAD
+        )
         if upcoming or (not known and not schedule_says_idle):
             poll.append(sport)
         else:
-            skipped[sport] = f"no games in the next {lookahead.days} days"
+            skipped[sport] = f"no games in the next {window.days} days"
     return poll, skipped
 
 

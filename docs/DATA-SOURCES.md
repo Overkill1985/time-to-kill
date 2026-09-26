@@ -22,6 +22,10 @@ Timestamped odds history (verified 2026-09-26):
 - **So Time-to-Kill builds its own history.** `ttk collect-odds --loop-minutes 15` polls sports that have games in the next 7 days. Every price is stored as an immutable snapshot, and `services/line_history.py` derives the opening, previous, current and closing prices, plus CLV.
 - **Schedule first:** each pass refreshes ESPN schedules before polling odds, at most every 6 hours. Odds then attach to ESPN's teams and games, and curated aliases apply.
   - When odds arrived first on 2026-09-26, 8 college football games involving 7 teams ended up unlinked. Their odds rows are append-only, so they stay unlinked. The fix prevents it happening again: schedule first, and curated aliases now also adopt earlier unmatched teams.
+- **How far ahead to poll** (`ODDS_LOOKAHEAD` in `services/collector.py`):
+  - **NBA: 90 days.** On 2026-09-26 PropLine listed 41 NBA regular-season games from October 20 to December 25, with 9–16 books each.
+  - **NFL and CFB: 7 days**, because PropLine only lists them about a week ahead.
+  - An empty 8-day ESPN schedule doesn't stop polling a sport with a wider window.
 - **Quota:** one request per sport per poll. Four sports every 15 minutes is 384 requests a day, within PropLine's free 1,000. The collector stops when fewer than 20 requests remain.
 - **Storage is change-only** (see ARCHITECTURE.md). A book that no longer lists a game has all its quotes for that game withdrawn. A book that pulled its line before kickoff has no closing price.
 - **Live check, 2026-09-26:** PropLine's NFL feed has about 36,000 quotes per poll across 34 games and about 25 books, roughly 35 alternate spread lines per book per game.
