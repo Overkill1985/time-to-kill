@@ -28,6 +28,14 @@ Classification:
 4. **LEAN** otherwise. The model favors the bet but a criterion fails. For example, it's a PAPER model, the probability is under 56%, the edge is under 2 points, or the data is POOR.
 
 Every result carries the full check list (actual vs required), which is the Why-Not output.
+
+**Pushes:** the model probability is P(win | no push), which is on the same footing as a no-vig market price. The probability and edge thresholds compare those two. EV uses win = p × (1 − P(push)), and a push returns the stake.
+
+**Daily card:**
+- It uses exactly the validated artifact, fitted on the training seasons. Nothing is refitted on the validation or test seasons, so the test seasons stay sealed.
+- Ratings and features run through the latest completed game.
+- The first saved `ttk card` run registers the model as DEVELOPMENT, so the card can never show QUALIFIED until someone promotes the model in the registry.
+- Best price and EV use only `TTK_BETTABLE_BOOKS`. The market probability always uses every book.
 Probability, edge and uncertainty are always reported separately. No
 composite "confidence" score is ever presented as a probability.
 

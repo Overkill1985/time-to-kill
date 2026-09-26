@@ -26,10 +26,13 @@ ttk collect-odds --loop-minutes 15  # keep polling sports with games this week (
 ttk serve                        # http://127.0.0.1:8800/docs
 ttk import-nfl-history           # nflverse games 1999+, results, reported lines (~20 s)
 ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per season)
+ttk card [--date YYYY-MM-DD] [--why]  # the daily card; saves prediction snapshots
 ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).
+
+Set `TTK_BETTABLE_BOOKS` in `.env` (for example `draftkings,fanduel,betmgm`) so the card's best price and EV use only books you can actually bet at. Otherwise they include exchanges and prediction markets, whose quoted prices can exclude fees and may not be fillable.
 
 ### Background odds collection (Windows)
 

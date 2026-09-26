@@ -105,7 +105,10 @@ def test_thresholds_are_configurable() -> None:
     assert qualify(BASE, strict, now=NOW).classification is BetClassification.LEAN
 
 
-def test_push_probability_feeds_ev() -> None:
-    # Same win prob with a push chance: less loss probability, higher EV.
+def test_push_probability_scales_ev() -> None:
+    # model_probability is P(win | no push); a push chance returns the stake, so EV
+    # shrinks by (1 - push) and edge (vs the no-vig market) is unchanged.
+    plain = qualify(BASE, RULES, now=NOW)
     with_push = qualify(replace(BASE, push_probability=0.05), RULES, now=NOW)
-    assert with_push.ev_per_unit > qualify(BASE, RULES, now=NOW).ev_per_unit
+    assert with_push.ev_per_unit == pytest.approx(plain.ev_per_unit * 0.95)
+    assert with_push.edge == plain.edge

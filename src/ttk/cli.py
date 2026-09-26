@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
 from ttk.domain import Sport
 from ttk.models.metrics import Score
@@ -272,6 +273,81 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             log_file.close()
 
 
+def _card(args: argparse.Namespace, settings: Settings) -> int:
+    from zoneinfo import ZoneInfo
+
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.daily_card import build_card
+    from ttk.services.nfl_spread_predictor import NflSpreadPredictor
+
+    eastern = ZoneInfo("America/New_York")
+    day = args.date or datetime.now(eastern).date()
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        predictor = NflSpreadPredictor.build(session)
+        card = build_card(
+            session,
+            day,
+            settings.qualification_rules(),
+            predictor=predictor,
+            persist=not args.no_persist,
+            bettable_books=settings.bettable_book_keys(),
+        )
+
+    print(f"TIME-TO-KILL  {day:%A %B %d, %Y}".upper())
+    print()
+    modeled = sum(s.modeled for s in card.by_sport.values())
+    with_market = sum(s.with_market for s in card.by_sport.values())
+    print(f"{with_market} games with a live market, {modeled} modeled")
+    print(card.headline)
+    if card.bettable_books is None:
+        print(
+            "Best price and EV use EVERY book, including exchanges and prediction markets "
+            "(set TTK_BETTABLE_BOOKS)."
+        )
+    else:
+        print("Best price and EV use: " + ", ".join(sorted(card.bettable_books)))
+    for sport, s in sorted(card.by_sport.items()):
+        print(
+            f"  {sport:<6} games {s.games:>3}  with market {s.with_market:>3}  "
+            f"modeled {s.modeled:>3}  qualified {s.qualified:>2}  lean {s.lean:>2}"
+        )
+    if predictor is None:
+        print("\nNo NFL model inputs: run import-nfl-history and import-nfl-pbp.")
+    for e in card.entries:
+        kickoff = e.commence_time.astimezone(eastern)
+        movement = (
+            f"{e.line_opening:+g} -> {e.line_current:+g}"
+            if e.line_opening is not None and e.line_current is not None
+            else "n/a"
+        )
+        print(f"\n[{e.classification}] {e.bet}   {e.matchup}, {kickoff:%a %I:%M %p} ET")
+        print(
+            f"  best {bm.format_american(e.american_odds)} at {e.sportsbook}   "
+            f"fair {bm.format_american(e.fair_american_odds)}   line movement {movement}"
+        )
+        print(
+            f"  model {e.model_probability:.1%}  market {e.market_probability:.1%}  "
+            f"edge {e.edge * 100:+.1f} pts  EV {e.ev_percent:+.1f}%  "
+            f"push {e.push_probability:.1%}"
+        )
+        print(
+            f"  uncertainty {e.uncertainty}  data {e.data_quality}  "
+            f"odds {e.odds_age_minutes:.0f} min old  model {e.model_version}"
+        )
+        if args.why:
+            for c in e.checks:
+                mark = "PASS" if c.passed else "FAIL"
+                print(f"    {mark:<4} {c.name:<22} {c.actual:<16} required {c.required}")
+        elif e.notes:
+            print("  why: " + "; ".join(e.notes))
+    for side in card.unbettable:
+        print(f"\n[NO BETTABLE PRICE] {side}")
+    for u in card.unmodeled:
+        print(f"\n[UNMODELED] {u.sport} {u.matchup}: {u.reason}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ttk")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -324,6 +400,12 @@ def main(argv: list[str] | None = None) -> int:
         "--register", action="store_true", help="Record the result in the model registry"
     )
     backtest.add_argument("--report", type=Path, help="Write the full report as JSON here")
+    card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
+    card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
+    card.add_argument(
+        "--why", action="store_true", help="Show every qualification check for each bet"
+    )
+    card.add_argument("--no-persist", action="store_true", help="Do not write prediction snapshots")
     serve = sub.add_parser("serve", help="Run the API on loopback")
     serve.add_argument("--port", type=int, default=8800)
     args = parser.parse_args(argv)
@@ -406,6 +488,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "backtest-nfl-elo":
         return _backtest_nfl_elo(args, settings.database_url)
+
+    if args.command == "card":
+        return _card(args, settings)
 
     if args.command == "serve":
         import uvicorn

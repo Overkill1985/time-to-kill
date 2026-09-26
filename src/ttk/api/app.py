@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timedelta
-from typing import Annotated
+from dataclasses import asdict
+from datetime import date, datetime, timedelta
+from typing import Annotated, cast
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -15,8 +17,10 @@ from ttk.config import Settings, get_settings
 from ttk.db.models import Game, IngestionRun, Team, utcnow
 from ttk.db.session import make_engine, make_session_factory
 from ttk.domain import Market, Selection, Sport
+from ttk.services.daily_card import build_card
 from ttk.services.line_history import PricePoint, line_history
 from ttk.services.market import SideMarket, main_lines, side_markets
+from ttk.services.nfl_spread_predictor import NflSpreadPredictor
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -27,6 +31,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = make_session_factory(make_engine(settings.database_url))
     _register_routes(app)
     return app
+
+
+PREDICTOR_TTL = timedelta(minutes=30)
+EASTERN = ZoneInfo("America/New_York")
+
+
+def _cached_predictor(app: FastAPI, session: Session) -> NflSpreadPredictor | None:
+    """Fitting takes ~10 s, so the fitted predictor is reused for PREDICTOR_TTL."""
+    cached = getattr(app.state, "predictor", None)
+    if cached is not None and utcnow() - cached[0] < PREDICTOR_TTL:
+        return cast("NflSpreadPredictor | None", cached[1])
+    predictor = NflSpreadPredictor.build(session)
+    app.state.predictor = (utcnow(), predictor)
+    return predictor
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -218,6 +236,34 @@ def _register_routes(app: FastAPI) -> None:
             )
             for h in histories
         ]
+
+    @app.get("/api/card")
+    def daily_card(
+        session: SessionDep,
+        request: Request,
+        day: Annotated[date | None, Query(alias="date")] = None,
+    ) -> dict[str, object]:
+        """The daily card. Read-only: predictions are only persisted by `ttk card`."""
+        settings: Settings = request.app.state.settings
+        card = build_card(
+            session,
+            day or datetime.now(EASTERN).date(),
+            settings.qualification_rules(),
+            predictor=_cached_predictor(request.app, session),
+            persist=False,
+            bettable_books=settings.bettable_book_keys(),
+        )
+        session.rollback()  # nothing from a GET is kept (e.g. a first registry row)
+        return {
+            "date": card.day,
+            "generated_at": card.generated_at,
+            "headline": card.headline,
+            "bettable_books": sorted(card.bettable_books) if card.bettable_books else None,
+            "by_sport": {s: asdict(v) for s, v in card.by_sport.items()},
+            "entries": [asdict(e) for e in card.entries],
+            "unmodeled": [asdict(u) for u in card.unmodeled],
+            "unbettable": card.unbettable,
+        }
 
     @app.post("/api/math/evaluate")
     def evaluate(body: EvaluateIn) -> EvaluateOut:

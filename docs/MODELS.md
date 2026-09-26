@@ -93,6 +93,12 @@ Margin error, RMSE in points, on validation games with a reported line:
 - They close about a third of the gap between Elo's margin error and the market's, and the most where they should: games with a quarterback change.
 - The market prices quarterback changes too, and better. Betting the feature model's disagreements loses (−6.5% at a 2% minimum edge). Anchored to the market, it's back to break-even (+0.7%, n=382, within noise).
 
+### First live card (Sunday 2026-09-27, generated Saturday evening)
+
+- **The slate:** 14 NFL games, all modeled; **NO QUALIFIED BETS**, as intended, because the model is DEVELOPMENT.
+- **Using every book, 13 sides came out LEAN.** Most of the EV came from exchange and prediction-market prices (novig, Polymarket, Kalshi at +106 to +115 on spreads). Restricted to DraftKings, FanDuel, BetMGM and Fanatics: 5 LEANs, top EV +5.3%.
+- **The remaining "edges" come from the model.** The anchored model's market coefficient is about −0.1, so it largely ignores small price skews. It shows ~51% where the no-vig market is ~48%. Validation found no edge (z −0.2), so these LEANs are informational only.
+
 ### What could actually beat the market (next)
 
 Elo only knows past scores, and the market already knows those. An edge needs information that is timely or better processed:

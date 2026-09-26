@@ -43,6 +43,8 @@ class QualificationRules:
 @dataclass(frozen=True)
 class Opportunity:
     model_probability: float
+    """P(win | the bet does not push) - the same footing as a no-vig market price,
+    which is what probability and edge thresholds compare."""
     no_vig_probability: float
     decimal_odds: float
     odds_timestamp: datetime
@@ -51,6 +53,7 @@ class Opportunity:
     model_status: ModelStatus
     model_health: ModelHealth = ModelHealth.HEALTHY
     push_probability: float = 0.0
+    """P(push). EV uses win = model_probability x (1 - push)."""
 
 
 @dataclass(frozen=True)
@@ -82,7 +85,9 @@ def _pts(p: float) -> str:
 def qualify(opp: Opportunity, rules: QualificationRules, *, now: datetime) -> QualificationResult:
     edge = bm.edge(opp.model_probability, opp.no_vig_probability)
     ev = bm.expected_value(
-        opp.model_probability, opp.decimal_odds, push_probability=opp.push_probability
+        opp.model_probability * (1.0 - opp.push_probability),
+        opp.decimal_odds,
+        push_probability=opp.push_probability,
     ).per_unit
     odds_age = now - opp.odds_timestamp
 

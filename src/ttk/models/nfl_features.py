@@ -72,6 +72,9 @@ class GameFeatures:
     home_team_games: int
     away_team_games: int
     """Games of EPA history each side had; 0 means the feature is only the prior."""
+    home_qb_history: float = 0.0
+    away_qb_history: float = 0.0
+    """Decayed dropbacks behind each starter's rating; 0 means prior only (or unknown)."""
 
 
 def _decay(half_life: float) -> float:
@@ -151,18 +154,19 @@ def compute_features(
         prior = params.team_prior_plays
         return t.offense.mean(prior) - t.defense.mean(prior)
 
-    def qb_change(t: _Team, starter: str | None) -> tuple[float, float | None]:
+    def qb_change(t: _Team, starter: str | None) -> tuple[float, float | None, float]:
         if starter is None:
-            return 0.0, None
+            return 0.0, None, 0.0
         rating = qb_rating(starter)
         recent = team_recent_qb(t)
-        return (0.0 if recent is None else rating - recent), rating
+        history = qbs[starter].epa.weight if starter in qbs else 0.0
+        return (0.0 if recent is None else rating - recent), rating, history
 
     out: dict[int, GameFeatures] = {}
     for g in sorted(games, key=lambda g: (g.commence_time, g.game_id)):
         home, away = team(g.home_id, g.season), team(g.away_id, g.season)
-        home_change, home_rating = qb_change(home, starters.get((g.game_id, g.home_id)))
-        away_change, away_rating = qb_change(away, starters.get((g.game_id, g.away_id)))
+        home_change, home_rating, home_hist = qb_change(home, starters.get((g.game_id, g.home_id)))
+        away_change, away_rating, away_hist = qb_change(away, starters.get((g.game_id, g.away_id)))
         out[g.game_id] = GameFeatures(
             game_id=g.game_id,
             epa_net_diff_pts=(strength(home) - strength(away)) * PLAYS_PER_GAME,
@@ -171,6 +175,8 @@ def compute_features(
             away_qb_rating=away_rating,
             home_team_games=home.games,
             away_team_games=away.games,
+            home_qb_history=home_hist,
+            away_qb_history=away_hist,
         )
 
         # Update state with this game's own stats (after its features were taken).

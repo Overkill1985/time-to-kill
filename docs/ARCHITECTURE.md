@@ -44,9 +44,12 @@ src/ttk/
     odds_state.py      Replays the odds change log: state at any time, last seen
     collector.py       Polling passes: sports with upcoming games, quota-aware
     line_history.py    Opening/previous/current/closing per book; CLV at the bet's own line
+    data_quality.py    Rule-based data quality and uncertainty, each with reasons
+    nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
+    daily_card.py      The daily card: evaluate, qualify, explain, snapshot predictions
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes (loopback-only via TrustedHostMiddleware)
-  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp
+  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card
                            | backtest-nfl-elo | serve
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
@@ -84,8 +87,9 @@ game -> data quality -> current odds (snapshots) -> market consensus (no-vig)
      -> model probability -> edge / EV -> uncertainty -> qualification
 ```
 
-Built so far: odds snapshots, market consensus, edge/EV and qualification.
-Not built yet: features, models, calibration, simulation, data-quality scoring.
+Built so far: every step except Monte Carlo, for NFL spreads.
+- Odds change log, market consensus, EPA/QB features, the market-anchored model, data quality and uncertainty, qualification, and the daily card.
+- Other sports and markets are listed on the card as unmodeled.
 
 ## API (current)
 
@@ -95,6 +99,7 @@ Not built yet: features, models, calibration, simulation, data-quality scoring.
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
 | GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |
+| GET | `/api/card?date=YYYY-MM-DD` | The daily card. Read-only: it never saves predictions (`ttk card` does) |
 | POST | `/api/math/evaluate` | EV, edge, fair odds and Kelly for a probability and price |
 
 ## Relationship to nfl-parlay-advisor

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/time_to_kill.db"
     odds_api_key: SecretStr | None = None
     propline_api_key: SecretStr | None = None
+    bettable_books: str | None = None
+    """Comma-separated book keys you can actually bet at (e.g. "draftkings,fanduel").
+    Best price and EV use only these; the market consensus still uses every book.
+    Unset = every book, including exchanges and prediction markets."""
     # No auth: the API must only answer on loopback (also blocks DNS rebinding).
     allowed_hosts: list[str] = ["127.0.0.1", "localhost", "[::1]"]
 
@@ -24,6 +28,11 @@ class Settings(BaseSettings):
     min_edge: float = 0.02
     min_ev: float = 0.0
     min_data_quality: DataQuality = DataQuality.ACCEPTABLE
+
+    def bettable_book_keys(self) -> frozenset[str] | None:
+        if not self.bettable_books:
+            return None
+        return frozenset(k.strip().lower() for k in self.bettable_books.split(",") if k.strip())
 
     def odds_provider_name(self, requested: str | None = None) -> str | None:
         """The provider to use: the requested one, else PropLine, else The Odds API,

@@ -9,7 +9,7 @@ Status as of 2026-09-26.
 | 3. Betting math | Odds conversions, no-vig, edge, EV, fair odds, Kelly, parlays, settlement, CLV, consensus, qualification | **Done** |
 | 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), a market-anchored model (no significant edge), and EPA and QB-change features from play-by-play (adopted; they close a third of Elo's margin-error gap to the market, but no edge against it). All stay DEVELOPMENT and the test seasons are still sealed (docs/MODELS.md). Next: timestamped odds history |
 | 5. Monte Carlo | Reusable score simulation (seeded, reproducible), line sensitivity, maximum acceptable line | |
-| 6. Daily card | Qualified opportunities, filters, Why-Not view, data-quality scoring | |
+| 6. Daily card | Qualified opportunities, filters, Why-Not view, data-quality scoring | **Started.** `ttk card` and `/api/card` cover NFL spreads, with qualification, Why-Not, data quality, uncertainty, bettable books, line movement and prediction snapshots. Still to do: a UI, filters, and moneyline/total markets once models exist |
 | 7. Parlay Lab | Cross-sport slips, joint probability, correlation warnings, same-game simulation | |
 | 8. Bet tracker / bankroll | Bets, settlement, ROI, CLV from closing snapshots, drawdown, bankroll limits | |
 | 9. Multi-sport | NFL, then NBA, CFB, NCAAB models in the governance order | |
