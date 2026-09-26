@@ -159,24 +159,35 @@ def line_history(
     return sorted(out, key=lambda h: h.sportsbook)
 
 
-def closing_consensus_at_line(
-    session: Session, game_id: int, market: Market, selection: Selection, line: float | None
+def consensus_at_line(
+    session: Session,
+    game_id: int,
+    market: Market,
+    selection: Selection,
+    line: float | None,
+    at: datetime,
 ) -> MarketConsensus | None:
-    """Consensus of books quoting exactly ``line`` in their final pre-kickoff state.
-    A book that had moved off the number by then is not counted, whatever it
-    showed earlier."""
-    game = session.get_one(Game, game_id)
+    """Consensus of books quoting exactly ``line`` in their state as of ``at``
+    (only books seen at or before ``at``). A book that had moved off the number
+    by then is not counted, whatever it showed earlier."""
     books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
     quotes = []
     for book_id, timeline in book_timelines(session, game_id, market).items():
-        close_seen = timeline.last_seen(game.commence_time)
-        if close_seen is None:
+        if timeline.last_seen(at) is None:
             continue
-        state = timeline.state_at(game.commence_time)  # includes pre-kickoff withdrawals
+        state = timeline.state_at(at)  # includes withdrawals up to ``at``
         for side, other in _entries(state, market, selection):
             if side.line == line and other is not None:
                 quotes.append(TwoSidedQuote(books[book_id], side.decimal_odds, other.decimal_odds))
     return market_consensus(quotes) if quotes else None
+
+
+def closing_consensus_at_line(
+    session: Session, game_id: int, market: Market, selection: Selection, line: float | None
+) -> MarketConsensus | None:
+    """Consensus at ``line`` in books' final pre-kickoff state."""
+    game = session.get_one(Game, game_id)
+    return consensus_at_line(session, game_id, market, selection, line, game.commence_time)
 
 
 @dataclass(frozen=True)

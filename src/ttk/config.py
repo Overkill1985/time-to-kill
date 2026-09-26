@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/time_to_kill.db"
     odds_api_key: SecretStr | None = None
     propline_api_key: SecretStr | None = None
+    unit_size: float = 1.0
+    """Currency per unit for performance reports (1.0 = units are currency)."""
     bettable_books: str | None = None
     """Comma-separated book keys you can actually bet at (e.g. "draftkings,fanduel").
     Best price and EV use only these; the market consensus still uses every book.

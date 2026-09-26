@@ -281,3 +281,23 @@ def test_curated_alias_adopts_team_created_before_espn(
     assert count(session_factory, Game) == 1  # so the two providers' games link too
     with session_factory() as s:
         assert {t.espn_id for t in s.scalars(select(Team))} == {"2026", "2005"}
+
+
+def test_espn_renames_team_first_seen_elsewhere(session_factory: sessionmaker[Session]) -> None:
+    run_odds_ingestion(session_factory, Odds(books_game("Boise St.", "Air Force")), Sport.CFB)
+    ingest_schedule(session_factory, espn_game())
+    with session_factory() as s:
+        names = {t.espn_id: t.name for t in s.scalars(select(Team))}
+    assert names == {"68": "Boise State Broncos", "2005": "Air Force Falcons"}
+    # Already-linked games refresh names too (ESPN renamed the team).
+    renamed = TeamRef("Boise State", "68", ())
+    ingest_schedule(session_factory, espn_game(home=renamed))
+    with session_factory() as s:
+        assert s.scalar(select(Team.name).where(Team.espn_id == "68")) == "Boise State"
+    # The old provider name still resolves through its alias.
+    stats: Counter[str] = Counter()
+    with session_factory() as s:
+        team = resolve_team(
+            s, provider="books", sport=Sport.CFB, ref=TeamRef("Boise St."), stats=stats
+        )
+        assert team.espn_id == "68" and stats == Counter()

@@ -102,3 +102,29 @@ def test_rejects_foreign_host(database_url: str) -> None:
     app = create_app(Settings(database_url=database_url))
     evil = TestClient(app, base_url="http://attacker.example")
     assert evil.get("/api/health").status_code == 400
+
+
+def test_ui_is_served(client: TestClient) -> None:
+    page = client.get("/")
+    assert page.status_code == 200 and "Time-to-Kill" in page.text
+    assert client.get("/app.js").status_code == 200
+    assert client.get("/api/health").json()["status"] == "ok"  # API routes still win
+
+
+def test_cross_origin_writes_are_refused(client: TestClient) -> None:
+    body = {"model_probability": 0.5, "american_odds": -110}
+    evil = client.post("/api/math/evaluate", json=body, headers={"Origin": "https://evil.example"})
+    assert evil.status_code == 403
+    same = client.post("/api/math/evaluate", json=body, headers={"Origin": "http://localhost:8800"})
+    assert same.status_code == 200
+    no_origin = client.post("/api/math/evaluate", json=body)  # e.g. curl: allowed
+    assert no_origin.status_code == 200
+
+
+def test_writes_must_be_json(client: TestClient) -> None:
+    form = client.post(
+        "/api/math/evaluate",
+        content="model_probability=0.5",
+        headers={"Content-Type": "text/plain"},
+    )
+    assert form.status_code == 415

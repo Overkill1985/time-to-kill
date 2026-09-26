@@ -1,0 +1,144 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1f2630;
+  --border: #2d3643;
+  --text: #e6edf3;
+  --muted: #8b98a8;
+  --accent: #4aa3ff;
+  --qualified: #2fbf71;
+  --lean: #e3b341;
+  --pass: #8b98a8;
+  --nobet: #f0625d;
+  --win: #2fbf71;
+  --loss: #f0625d;
+  --model: #4aa3ff;
+  --market: #a371f7;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; }
+.muted { color: var(--muted); }
+h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+
+.topbar {
+  display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+  padding: .75rem 1.25rem; background: var(--panel); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 1;
+}
+.brand { font-weight: 800; letter-spacing: .12em; color: var(--accent); }
+.tabs { display: flex; gap: .25rem; }
+.tabs button {
+  background: none; border: 0; color: var(--muted); padding: .5rem .8rem; border-radius: 6px;
+  cursor: pointer; font: inherit;
+}
+.tabs button[aria-selected="true"] { color: var(--text); background: var(--panel-2); }
+.tabs button:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+main { max-width: 1200px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
+
+.toolbar { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin: .75rem 0; }
+label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.toolbar label { flex-direction: row; align-items: center; gap: .5rem; }
+input, select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: .45rem .55rem; font: inherit;
+}
+button {
+  background: var(--accent); color: #051423; border: 0; border-radius: 6px;
+  padding: .5rem .9rem; font: inherit; font-weight: 600; cursor: pointer;
+}
+button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+button:disabled { opacity: .5; cursor: progress; }
+
+.summary {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1rem 1.25rem; margin-bottom: 1rem;
+}
+.summary .headline { font-size: 1.35rem; font-weight: 800; letter-spacing: .04em; margin: .25rem 0; }
+.summary .headline.none { color: var(--muted); }
+.summary .headline.some { color: var(--qualified); }
+.summary table { border-collapse: collapse; margin-top: .5rem; }
+.summary td, .summary th { padding: .15rem .9rem .15rem 0; text-align: left; font-size: .9rem; }
+.warn { color: var(--lean); font-size: .85rem; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: .9rem; }
+.entry {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: .9rem 1rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.entry header { display: flex; align-items: center; gap: .6rem; }
+.entry h3 { margin: 0; font-size: 1.05rem; flex: 1; }
+.entry .odds { font-weight: 700; font-variant-numeric: tabular-nums; }
+.entry .matchup { margin: 0; font-size: .85rem; }
+.badge {
+  font-size: .7rem; font-weight: 800; letter-spacing: .06em; padding: .2rem .45rem;
+  border-radius: 4px; border: 1px solid currentColor; white-space: nowrap;
+}
+.badge.QUALIFIED, .badge.WIN { color: var(--qualified); }
+.badge.LEAN { color: var(--lean); }
+.badge.PASS, .badge.PUSH, .badge.VOID, .badge.PENDING { color: var(--pass); }
+.badge.NO_BET, .badge.LOSS { color: var(--nobet); }
+
+.probbar { display: grid; gap: 3px; }
+.bar { position: relative; height: 18px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.bar span {
+  position: absolute; inset: 0 auto 0 0; display: flex; align-items: center; padding-left: .4rem;
+  font-size: .72rem; font-weight: 700; color: #051423; white-space: nowrap;
+}
+.bar.model span { background: var(--model); }
+.bar.market span { background: var(--market); }
+.bar::after {  /* 50% guide */
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dashed var(--muted);
+}
+
+.stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem .75rem; margin: 0;
+  font-size: .82rem;
+}
+.stats div { display: flex; flex-direction: column; }
+.stats dt { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+.stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+.pos { color: var(--win); }
+.neg { color: var(--loss); }
+
+.why summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.why ul { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .82rem; }
+.why li.fail { color: var(--nobet); }
+.why li.ok { color: var(--muted); }
+.entry .track { align-self: flex-start; }
+
+.unmodeled { margin-top: 1.25rem; }
+.unmodeled li { color: var(--muted); font-size: .9rem; }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1rem 1.25rem; margin-bottom: 1rem;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .6rem .9rem; }
+.grid .wide { grid-column: 1 / -1; }
+.actions { display: flex; align-items: center; gap: .75rem; margin-top: .75rem; }
+.ok-msg { color: var(--qualified); }
+.err-msg { color: var(--nobet); }
+
+.table-wrap { overflow-x: auto; }
+table#bets-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+#bets-table th, #bets-table td { padding: .5rem .55rem; border-bottom: 1px solid var(--border); text-align: left; }
+#bets-table th { color: var(--muted); font-weight: 600; font-size: .75rem; text-transform: uppercase; }
+.num { text-align: right !important; font-variant-numeric: tabular-nums; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .75rem; }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: .85rem 1rem; }
+.tile .label { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+.tile .value { font-size: 1.4rem; font-weight: 700; margin-top: .2rem; font-variant-numeric: tabular-nums; }
+.tile .sub { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
+
+@media (max-width: 600px) {
+  main { padding: .75rem; }
+  .cards { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}

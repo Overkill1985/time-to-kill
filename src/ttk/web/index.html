@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Time-to-Kill</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">TIME-TO-KILL</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="today" aria-selected="true">Today</button>
+      <button role="tab" data-tab="bets" aria-selected="false">Bet Tracker</button>
+      <button role="tab" data-tab="performance" aria-selected="false">Performance</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- TODAY -->
+    <section id="tab-today" class="tab" role="tabpanel">
+      <div class="toolbar">
+        <label>Date <input type="date" id="card-date"></label>
+        <button id="card-refresh" class="secondary">Refresh</button>
+        <span id="card-status" class="muted" aria-live="polite"></span>
+      </div>
+      <div id="card-header" class="summary"></div>
+      <div id="card-entries" class="cards"></div>
+      <div id="card-unmodeled"></div>
+    </section>
+
+    <!-- BET TRACKER -->
+    <section id="tab-bets" class="tab" role="tabpanel" hidden>
+      <form id="bet-form" class="panel" autocomplete="off">
+        <h2>Record a bet</h2>
+        <p class="muted">Use <em>Track</em> on a card entry to prefill, or enter a game id from the card.</p>
+        <div class="grid">
+          <label>Game id <input name="game_id" type="number" required min="1"></label>
+          <label>Market
+            <select name="market">
+              <option>SPREAD</option><option>MONEYLINE</option><option>TOTAL</option>
+            </select>
+          </label>
+          <label>Side
+            <select name="selection">
+              <option>HOME</option><option>AWAY</option><option>OVER</option><option>UNDER</option>
+            </select>
+          </label>
+          <label>Line <input name="line" type="number" step="0.5"></label>
+          <label>Odds (American) <input name="american_odds" type="number" required></label>
+          <label>Book <select name="sportsbook" id="book-select" required></select></label>
+          <label>Stake <input name="stake" type="number" step="0.01" min="0.01" required></label>
+          <label>Placed at <input name="placed_at" type="datetime-local"></label>
+          <label class="wide">Notes <input name="notes" maxlength="2000"></label>
+        </div>
+        <div class="actions">
+          <button type="submit">Record bet</button>
+          <span id="bet-form-status" aria-live="polite"></span>
+        </div>
+      </form>
+
+      <div class="toolbar">
+        <label>Show
+          <select id="bet-filter">
+            <option value="">All</option><option value="pending">Pending</option>
+            <option value="settled">Settled</option>
+          </select>
+        </label>
+        <button id="bets-settle" class="secondary">Settle finished games</button>
+        <span id="bets-status" class="muted" aria-live="polite"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="bets-table">
+          <thead><tr>
+            <th>Placed</th><th>Bet</th><th>Book</th><th>Odds</th><th class="num">Stake</th>
+            <th>Model / Market</th><th class="num">EV</th><th>Result</th><th class="num">P/L</th>
+            <th class="num">CLV</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PERFORMANCE -->
+    <section id="tab-performance" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <label>Sport
+          <select id="perf-sport"><option value="">All</option><option>NFL</option>
+            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
+        </label>
+        <label>Market
+          <select id="perf-market"><option value="">All</option><option>SPREAD</option>
+            <option>MONEYLINE</option><option>TOTAL</option></select>
+        </label>
+      </div>
+      <div id="perf-tiles" class="tiles"></div>
+      <p class="muted">Closing-line value (CLV) is the long-run diagnostic: a positive average CLV over
+        a large sample is the best evidence of an edge. Every figure shows its sample size.</p>
+    </section>
+  </main>
+
+  <template id="entry-template">
+    <article class="entry">
+      <header>
+        <span class="badge"></span>
+        <h3 class="bet"></h3>
+        <span class="odds"></span>
+      </header>
+      <p class="matchup muted"></p>
+      <div class="probbar" role="img">
+        <div class="bar model"><span></span></div>
+        <div class="bar market"><span></span></div>
+      </div>
+      <dl class="stats"></dl>
+      <details class="why"><summary>Why</summary><ul></ul></details>
+      <button class="track secondary">Track</button>
+    </article>
+  </template>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

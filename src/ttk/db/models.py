@@ -399,7 +399,8 @@ class Parlay(Base):
 
 
 class Bet(Base):
-    """A real wager, or a leg of a parlay (parlay_id set)."""
+    """A real wager, or a leg of a parlay (parlay_id set). Model and market beliefs
+    are captured as of placed_at; settlement adds result, P/L and CLV."""
 
     __tablename__ = "bets"
 
@@ -426,5 +427,11 @@ class Bet(Base):
     closing_line: Mapped[float | None] = mapped_column(Float)
     closing_american_odds: Mapped[float | None] = mapped_column(Float)
     closing_no_vig_probability: Mapped[float | None] = mapped_column(Float)
+    """Consensus no-vig probability at the bet's own line at kickoff."""
     clv: Mapped[float | None] = mapped_column(Float)
+    """Price CLV: bet decimal x closing no-vig - 1 (None if no book closed at the line)."""
+    closing_points_gained: Mapped[float | None] = mapped_column(Float)
+    """Points gained versus the consensus closing main line (spreads, totals)."""
+    model_push_probability: Mapped[float | None] = mapped_column(Float)
+    settled_at: Mapped[datetime | None]
     notes: Mapped[str | None] = mapped_column(Text)

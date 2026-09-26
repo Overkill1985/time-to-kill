@@ -47,9 +47,11 @@ src/ttk/
     data_quality.py    Rule-based data quality and uncertainty, each with reasons
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card: evaluate, qualify, explain, snapshot predictions
+    bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     market.py          Current market per game: per-book latest, pairing, consensus, main line
-  api/app.py           FastAPI routes (loopback-only via TrustedHostMiddleware)
-  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card
+  api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
+  web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
+  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
                            | backtest-nfl-elo | serve
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
@@ -100,6 +102,28 @@ Built so far: every step except Monte Carlo, for NFL spreads.
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
 | GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |
 | GET | `/api/card?date=YYYY-MM-DD` | The daily card. Read-only: it never saves predictions (`ttk card` does) |
+| GET | `/api/sportsbooks` | Books in the data, flagged bettable or not |
+| GET | `/api/bets?status=pending\|settled` | Tracked bets |
+| POST | `/api/bets` | Record a bet (rejected at or after kickoff) |
+| PATCH | `/api/bets/{id}` | Notes, or void a pending bet |
+| POST | `/api/bets/settle` | Grade bets on finished games and record CLV |
+| GET | `/api/performance?sport=&market=` | Record, ROI, units, CLV, edge, EV and drawdown, each with its sample size |
+
+## UI
+
+Open `ttk serve`, then http://127.0.0.1:8800. It has three tabs:
+
+- **Today:** the card, with model and market bars, stats, and a Why list per bet. *Track* prefills a bet from any entry.
+- **Bet Tracker:** record a bet, list pending and settled bets, settle finished games, and void a bet.
+- **Performance:** summary tiles, filterable by sport and market.
+
+Plain HTML, CSS and ES modules, with no build step and no external requests. Every value is inserted with `textContent`, never raw HTML.
+
+## Security
+
+- **No authentication**, so the server binds to loopback only, and `TrustedHostMiddleware` rejects foreign `Host` headers (which also blocks DNS rebinding).
+- **Cross-site writes are refused.** POST, PATCH, PUT and DELETE requests are rejected if their `Origin` isn't this app, or if they aren't `application/json`. Another website open in the browser can't make this API record or void bets.
+- **Secrets stay out of the code:** they come from `.env` (gitignored) and are sent to providers in headers.
 | POST | `/api/math/evaluate` | EV, edge, fair odds and Kelly for a probability and price |
 
 ## Relationship to nfl-parlay-advisor

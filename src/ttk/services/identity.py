@@ -95,6 +95,17 @@ def _by_normalized_name(session: Session, sport: Sport, names: list[str]) -> Tea
     return _only_team(session, team_ids)
 
 
+def _use_espn_name(session: Session, sport: Sport, team: Team, ref: TeamRef) -> None:
+    """ESPN names teams for display: a team first seen via another provider
+    ("Penn St.") takes ESPN's name, unless another row already holds it. Old
+    names keep resolving through their aliases."""
+    if team.name == ref.name:
+        return
+    taken = session.scalar(select(Team.id).where(Team.sport == sport, Team.name == ref.name))
+    if taken is None:
+        team.name = ref.name
+
+
 def resolve_team(
     session: Session, *, provider: str, sport: Sport, ref: TeamRef, stats: Counter[str]
 ) -> Team:
@@ -118,6 +129,8 @@ def resolve_team(
                 team = candidate
             else:
                 team = _new_team(session, sport, ref.name, ref.espn_id)
+        if provider == SCHEDULE_AUTHORITY:
+            _use_espn_name(session, sport, team, ref)
     else:
         exact = set(
             session.scalars(
@@ -211,7 +224,15 @@ def _find_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> Reso
         )
     )
     if link is not None:
-        return ResolvedGame(session.get_one(Game, link.game_id), link.swapped)
+        game = session.get_one(Game, link.game_id)
+        if g.provider == SCHEDULE_AUTHORITY:
+            # Keep display names current even for games already linked.
+            home_ref, away_ref = (g.away, g.home) if link.swapped else (g.home, g.away)
+            for team_id, ref in ((game.home_team_id, home_ref), (game.away_team_id, away_ref)):
+                team = session.get_one(Team, team_id)
+                if ref.espn_id and team.espn_id == ref.espn_id:
+                    _use_espn_name(session, g.sport, team, ref)
+        return ResolvedGame(game, link.swapped)
 
     home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)
     away = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.away, stats=stats)

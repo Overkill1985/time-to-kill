@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
-from ttk.domain import Sport
+from ttk.domain import Market, Selection, Sport
 from ttk.models.metrics import Score
 from ttk.providers.base import OddsProvider
 from ttk.research.nfl_elo import SplitReport
@@ -213,6 +213,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
 
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn import EspnScheduleProvider
+    from ttk.services.bets import settle_bets
     from ttk.services.collector import collect_once, refresh_schedules
 
     log_file = None
@@ -249,6 +250,13 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
                     f"{run.sport} schedule: {run.status} {run.records_written} games, "
                     f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
                 )
+            with factory() as session:
+                for bet in settle_bets(session):
+                    emit(
+                        f"settled bet {bet.id}: {bet.result} {bet.description} "
+                        f"P/L {bet.profit_loss or 0:+.2f}"
+                    )
+                session.commit()
             result = collect_once(factory, provider, sports, remaining=remaining)
             remaining = result.remaining
             for run in result.runs:
@@ -348,6 +356,107 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _fmt_pct(value: float | None, n: int | None = None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value * 100:+.1f}%" + (f" (n={n})" if n is not None else "")
+
+
+def _bets(args: argparse.Namespace, settings: Settings) -> int:
+    from sqlalchemy import select
+
+    from ttk.db.models import Bet
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.domain import BetResult
+    from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        if args.bets_command == "add":
+            placed_at = args.placed_at
+            if placed_at is not None and placed_at.tzinfo is None:
+                print("--placed-at needs a UTC offset, e.g. -04:00", file=sys.stderr)
+                return 2
+            try:
+                bet = record_bet(
+                    session,
+                    NewBet(
+                        args.game_id,
+                        args.market,
+                        args.selection,
+                        args.line,
+                        args.odds,
+                        args.book,
+                        args.stake,
+                        placed_at,
+                        args.notes,
+                    ),
+                )
+            except BetError as exc:
+                print(f"Not recorded: {exc}", file=sys.stderr)
+                return 2
+            session.commit()
+            print(
+                f"Recorded bet {bet.id}: {bet.description} "
+                f"{bm.format_american(bet.american_odds)}, stake {bet.stake:g}"
+            )
+            print(
+                f"  model {_fmt_pct(bet.model_probability)}  market "
+                f"{_fmt_pct(bet.market_probability)}  edge {_fmt_pct(bet.edge)}  "
+                f"EV {_fmt_pct(bet.expected_value)}"
+            )
+            if bet.model_probability is None:
+                print("  (no model prediction at this line before the bet; run `ttk card`)")
+            return 0
+
+        if args.bets_command == "list":
+            stmt = select(Bet).where(Bet.parlay_id.is_(None)).order_by(Bet.placed_at)
+            if args.pending:
+                stmt = stmt.where(Bet.result == BetResult.PENDING)
+            for bet in session.scalars(stmt):
+                pl = "" if bet.profit_loss is None else f"  P/L {bet.profit_loss:+.2f}"
+                clv = "" if bet.clv is None else f"  CLV {bet.clv * 100:+.1f}%"
+                print(
+                    f"{bet.id:>4} {bet.placed_at:%Y-%m-%d %H:%M} {bet.result:<7} "
+                    f"{bet.description} {bm.format_american(bet.american_odds)} "
+                    f"stake {bet.stake:g}{pl}{clv}"
+                )
+            return 0
+
+        if args.bets_command == "settle":
+            settled = settle_bets(session)
+            session.commit()
+            for bet in settled:
+                print(
+                    f"{bet.id:>4} {bet.result:<5} {bet.description} "
+                    f"P/L {bet.profit_loss or 0:+.2f}  CLV {_fmt_pct(bet.clv)}"
+                )
+            print(f"{len(settled)} bets settled")
+            return 0
+
+        perf = performance(
+            session, sport=args.sport, market=args.market, unit_size=settings.unit_size
+        )
+        print(
+            f"Settled {perf.bets}: {perf.wins}-{perf.losses}-{perf.pushes} "
+            f"(voids {perf.voids}), pending {perf.pending} (stake {perf.pending_stake:g})"
+        )
+        print(
+            f"  staked {perf.staked:g}  profit {perf.profit:+.2f}  ROI {_fmt_pct(perf.roi)}  "
+            f"units {perf.units:+.2f} (unit {perf.unit_size:g})"
+        )
+        print(
+            f"  hit rate {'n/a' if perf.hit_rate is None else f'{perf.hit_rate:.1%}'}  "
+            f"max drawdown {perf.max_drawdown:.2f}"
+        )
+        print(
+            f"  avg edge {_fmt_pct(perf.avg_edge, perf.edge_n)}  "
+            f"avg EV {_fmt_pct(perf.avg_ev, perf.ev_n)}  "
+            f"avg CLV {_fmt_pct(perf.avg_clv, perf.clv_n)}"
+        )
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ttk")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -406,6 +515,35 @@ def main(argv: list[str] | None = None) -> int:
         "--why", action="store_true", help="Show every qualification check for each bet"
     )
     card.add_argument("--no-persist", action="store_true", help="Do not write prediction snapshots")
+    bets = sub.add_parser("bets", help="Bet tracker")
+    bets_sub = bets.add_subparsers(dest="bets_command", required=True)
+    add = bets_sub.add_parser("add", help="Record a bet you placed")
+    add.add_argument("--game-id", type=int, required=True, help="See `ttk card` or /api/games")
+    add.add_argument(
+        "--market",
+        type=Market,
+        choices=[Market.MONEYLINE, Market.SPREAD, Market.TOTAL],
+        required=True,
+    )
+    add.add_argument("--selection", type=Selection, choices=list(Selection), required=True)
+    add.add_argument("--line", type=float, help="Your line, e.g. -3.5 (spread) or 44.5 (total)")
+    add.add_argument("--odds", type=float, required=True, help="American odds, e.g. -110")
+    add.add_argument("--book", required=True, help="Sportsbook key, e.g. draftkings")
+    add.add_argument("--stake", type=float, required=True)
+    add.add_argument(
+        "--placed-at",
+        type=datetime.fromisoformat,
+        help="ISO time with offset, e.g. 2026-09-27T11:05-04:00 (default: now)",
+    )
+    add.add_argument("--notes")
+    bets_list = bets_sub.add_parser("list", help="List bets")
+    bets_list.add_argument("--pending", action="store_true")
+    bets_sub.add_parser("settle", help="Grade pending bets whose games are final")
+    summary = bets_sub.add_parser("summary", help="Performance summary")
+    summary.add_argument("--sport", type=Sport, choices=list(Sport))
+    summary.add_argument(
+        "--market", type=Market, choices=[Market.MONEYLINE, Market.SPREAD, Market.TOTAL]
+    )
     serve = sub.add_parser("serve", help="Run the API on loopback")
     serve.add_argument("--port", type=int, default=8800)
     args = parser.parse_args(argv)
@@ -491,6 +629,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "card":
         return _card(args, settings)
+
+    if args.command == "bets":
+        return _bets(args, settings)
 
     if args.command == "serve":
         import uvicorn
