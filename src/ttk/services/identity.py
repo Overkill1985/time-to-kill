@@ -105,8 +105,14 @@ def resolve_team(
         team = _team_by_espn_id(session, sport, ref.espn_id)
         if team is None:
             # An ESPN-identified team may exist unmatched (created from another
-            # provider's name before ESPN reported it): adopt it.
-            candidate = _by_normalized_name(session, sport, names)
+            # provider's name before ESPN reported it): adopt it, by normalized
+            # name or by a curated alias that points at this ESPN id.
+            curated_names = [
+                alias
+                for alias, espn_id in CURATED_ALIASES.get(sport, {}).items()
+                if espn_id == ref.espn_id
+            ]
+            candidate = _by_normalized_name(session, sport, names + curated_names)
             if candidate is not None and candidate.espn_id is None:
                 candidate.espn_id = ref.espn_id
                 team = candidate

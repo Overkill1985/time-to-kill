@@ -1,7 +1,9 @@
 """Odds collection passes: build our own timestamped line history, poll by poll.
 
-Each pass polls every requested sport that has a game in the look-ahead window
-(or has no schedule data yet, so a fresh database can bootstrap). Snapshots are
+Each pass first refreshes the schedule authority's games (``refresh_schedules``,
+at most every 6 hours; ESPN is free), then polls every requested sport with a
+game in the look-ahead window. A sport with no games on file is polled only if
+no recent schedule refresh has shown it idle. Snapshots are
 immutable, so repeated passes accumulate openers, line moves and - with a poll
 shortly before kickoff - closing lines.
 
@@ -21,10 +23,53 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ttk.db.models import Game, IngestionRun, utcnow
 from ttk.domain import Sport
-from ttk.providers.base import OddsProvider
+from ttk.providers.base import OddsProvider, ScheduleProvider
 from ttk.services.odds_ingest import run_odds_ingestion
+from ttk.services.schedule_ingest import run_schedule_ingestion
 
 LOOKAHEAD = timedelta(days=7)
+SCHEDULE_REFRESH = timedelta(hours=6)
+
+
+def _last_schedule_run(session: Session, sport: Sport) -> datetime | None:
+    return session.scalar(
+        select(func.max(IngestionRun.finished_at)).where(
+            IngestionRun.kind == "schedule",
+            IngestionRun.sport == sport,
+            IngestionRun.status == "SUCCESS",
+        )
+    )
+
+
+def refresh_schedules(
+    session_factory: sessionmaker[Session],
+    provider: ScheduleProvider,
+    sports: Sequence[Sport],
+    *,
+    now: datetime | None = None,
+    every: timedelta = SCHEDULE_REFRESH,
+    lookahead: timedelta = LOOKAHEAD,
+) -> list[IngestionRun]:
+    """Load the schedule authority's games before polling odds, so odds attach to
+    its teams and games (and curated aliases can apply). Refreshes a sport at
+    most every ``every``."""
+    now = now or utcnow()
+    runs = []
+    for sport in sports:
+        with session_factory() as session:
+            last = _last_schedule_run(session, sport)
+        if last is not None and now - last < every:
+            continue
+        runs.append(
+            run_schedule_ingestion(
+                session_factory,
+                provider,
+                sport,
+                (now - timedelta(days=1)).date(),
+                (now + lookahead).date(),
+            )
+        )
+    return runs
 
 
 def sports_to_poll(
@@ -43,7 +88,11 @@ def sports_to_poll(
                 Game.commence_time <= now + lookahead,
             )
         )
-        if not known or upcoming:
+        # With no games on file, poll to bootstrap - unless a recent schedule
+        # refresh already says the sport has nothing coming up (off-season).
+        recent_schedule = _last_schedule_run(session, sport)
+        schedule_says_idle = recent_schedule is not None and now - recent_schedule < lookahead
+        if upcoming or (not known and not schedule_says_idle):
             poll.append(sport)
         else:
             skipped[sport] = f"no games in the next {lookahead.days} days"

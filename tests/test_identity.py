@@ -268,3 +268,16 @@ def test_migration_0002_backfills_normalized(url_fixture: str, tmp_path: object)
         assert conn.execute(text("SELECT normalized FROM team_aliases")).scalar() == "boise state"
     command.downgrade(cfg, "0001")
     engine.dispose()
+
+
+def test_curated_alias_adopts_team_created_before_espn(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # Odds arrive first with a name only a curated alias can match ("Appalachian St.").
+    run_odds_ingestion(session_factory, Odds(books_game("Appalachian St.", "Air Force")), Sport.CFB)
+    app_state = TeamRef("App State Mountaineers", "2026", ("App State",))
+    ingest_schedule(session_factory, espn_game(home=app_state))
+    assert count(session_factory, Team) == 2  # adopted, not duplicated
+    assert count(session_factory, Game) == 1  # so the two providers' games link too
+    with session_factory() as s:
+        assert {t.espn_id for t in s.scalars(select(Team))} == {"2026", "2005"}

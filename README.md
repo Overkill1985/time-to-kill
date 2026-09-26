@@ -31,6 +31,29 @@ ttk backtest-nfl-elo             # tune on train, report validation; test stays 
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).
 
+### Background odds collection (Windows)
+
+A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon without a console window:
+
+- **Command:** `.venv\Scripts\pythonw.exe -m ttk.cli collect-odds --loop-minutes 15 --log data\logs\collector.log`
+- **Working directory:** this folder.
+- **Settings:** no time limit; restarts after a crash (every 5 minutes); runs on battery; never starts a second copy.
+- **Each pass:**
+  1. Refreshes the ESPN schedules (free), at most every 6 hours.
+  2. Polls PropLine only for sports with games in the next 7 days.
+
+Manage it from PowerShell:
+
+```powershell
+Get-Content data\logs\collector.log -Tail 20 -Wait                      # watch it
+Get-ScheduledTask -TaskName "Time-to-Kill odds collector"               # state
+Stop-ScheduledTask -TaskName "Time-to-Kill odds collector"              # stop
+Start-ScheduledTask -TaskName "Time-to-Kill odds collector"             # start / reload code
+Unregister-ScheduledTask -TaskName "Time-to-Kill odds collector"        # remove
+```
+
+After pulling new code, restart the task so it loads the update.
+
 Run `ingest-schedule` before `ingest-odds` so odds attach to ESPN's games. The
 reverse order also works: an ESPN game adopts odds already stored for it.
 

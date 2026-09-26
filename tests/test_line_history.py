@@ -1,5 +1,6 @@
 import json
 from collections import Counter
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -13,9 +14,15 @@ from ttk.api.app import create_app
 from ttk.config import Settings
 from ttk.db.models import Game, IngestionRun
 from ttk.domain import Market, Selection, Sport
-from ttk.providers.base import NormalizedGame, NormalizedOddsQuote, OddsFetch, TeamRef
+from ttk.providers.base import (
+    NormalizedGame,
+    NormalizedOddsQuote,
+    OddsFetch,
+    ScheduleFetch,
+    TeamRef,
+)
 from ttk.providers.propline import BASE_URL, PropLineProvider, RateLimited
-from ttk.services.collector import collect_once, sports_to_poll
+from ttk.services.collector import collect_once, refresh_schedules, sports_to_poll
 from ttk.services.line_history import closing_line_value, line_history
 from ttk.services.odds_ingest import store_odds
 
@@ -254,3 +261,33 @@ def test_book_that_pulled_its_line_before_kickoff_has_no_close(
     assert books["a"].closing.observed_at == KICK - timedelta(minutes=5)
     assert clv.books_at_close == 1
     assert clv.closing_no_vig_at_bet_line == pytest.approx(0.5)  # only book a's -110/-110
+
+
+class OneGameSchedule:
+    name = "espn"
+
+    def __init__(self, games: list[NormalizedGame]) -> None:
+        self.games = games
+        self.calls = 0
+
+    def fetch_games(self, sport: Sport, start: object, end: object) -> ScheduleFetch:
+        self.calls += 1
+        return ScheduleFetch(self.games, {})
+
+
+def test_refresh_schedules_respects_interval(session_factory: sessionmaker[Session]) -> None:
+    schedule = OneGameSchedule([replace(GAME, provider="espn", source_identifier="e1")])
+    now = KICK - timedelta(days=1)
+    assert len(refresh_schedules(session_factory, schedule, [Sport.NFL], now=now)) == 1
+    # Within 6 hours of the last successful refresh: skipped.
+    assert refresh_schedules(session_factory, schedule, [Sport.NFL], now=now) == []
+    assert schedule.calls == 1
+
+
+def test_recent_idle_schedule_stops_bootstrap_polling(
+    session_factory: sessionmaker[Session],
+) -> None:
+    refresh_schedules(session_factory, OneGameSchedule([]), [Sport.NCAAB])
+    with session_factory() as s:
+        poll_now, why = sports_to_poll(s, [Sport.NCAAB], datetime.now(UTC))
+    assert poll_now == [] and "no games" in why[Sport.NCAAB]

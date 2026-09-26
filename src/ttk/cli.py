@@ -208,39 +208,68 @@ def _remaining(provider: OddsProvider) -> object:
 
 def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     import time
+    import traceback
 
     from ttk.db.session import make_engine, make_session_factory
-    from ttk.providers.propline import RateLimited
-    from ttk.services.collector import collect_once
+    from ttk.providers.espn import EspnScheduleProvider
+    from ttk.services.collector import collect_once, refresh_schedules
+
+    log_file = None
+    if args.log is not None:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        log_file = args.log.open("a", encoding="utf-8")
+
+    def emit(message: str) -> None:
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
+        print(line)  # no-op under pythonw, where there is no console
+        if log_file is not None:
+            log_file.write(line + "\n")
+            log_file.flush()
 
     provider = _odds_provider(settings, args.provider)
     if provider is None:
+        emit("No odds provider key configured; stopping.")
         return 2
     sports = [Sport(s.strip().upper()) for s in args.sports.split(",") if s.strip()]
     factory = make_session_factory(make_engine(settings.database_url))
+    schedule_provider = EspnScheduleProvider()
     remaining: int | None = None
-    while True:
-        started = time.monotonic()
-        try:
+    emit(
+        f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
+        f"every {args.loop_minutes or 0:g} min"
+    )
+    try:
+        while True:
+            started = time.monotonic()
+            # Provider errors (including 429/503 rate limits) are recorded on the
+            # run as FAILED inside collect_once; that sport waits for the next pass.
+            for run in refresh_schedules(factory, schedule_provider, sports):
+                emit(
+                    f"{run.sport} schedule: {run.status} {run.records_written} games, "
+                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+                )
             result = collect_once(factory, provider, sports, remaining=remaining)
-        except RateLimited as exc:
-            wait = exc.retry_after or 60.0
-            print(f"Rate limited; waiting {wait:.0f} s", file=sys.stderr)
-            time.sleep(wait)
-            continue
-        remaining = result.remaining
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        for run in result.runs:
-            print(
-                f"{stamp} {run.sport}: {run.status} {run.records_written} snapshots"
-                + (f", error={run.error}" if run.error else "")
-            )
-        for sport, why in result.skipped.items():
-            print(f"{stamp} {sport}: skipped ({why})")
-        print(f"{stamp} quota remaining: {remaining}")
-        if args.loop_minutes is None:
-            return 0 if all(r.status == "SUCCESS" for r in result.runs) else 1
-        time.sleep(max(args.loop_minutes * 60 - (time.monotonic() - started), 0))
+            remaining = result.remaining
+            for run in result.runs:
+                emit(
+                    f"{run.sport}: {run.status} {run.records_written} changes, "
+                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+                )
+            for sport, why in result.skipped.items():
+                emit(f"{sport}: skipped ({why})")
+            emit(f"quota remaining: {remaining}")
+            if args.loop_minutes is None:
+                return 0 if all(r.status == "SUCCESS" for r in result.runs) else 1
+            time.sleep(max(args.loop_minutes * 60 - (time.monotonic() - started), 0))
+    except KeyboardInterrupt:
+        emit("collector stopped")
+        return 0
+    except Exception:
+        emit("collector crashed:\n" + traceback.format_exc())
+        raise
+    finally:
+        if log_file is not None:
+            log_file.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -263,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         help="Keep polling every N minutes until stopped (default: one pass)",
     )
+    collect.add_argument("--log", type=Path, help="Also append output to this file")
     schedule = sub.add_parser(
         "ingest-schedule", help="Fetch games, status and scores from ESPN (no API key)"
     )
