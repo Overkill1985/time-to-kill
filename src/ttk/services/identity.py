@@ -32,6 +32,10 @@ from ttk.providers.base import NormalizedGame, TeamRef
 from ttk.teams import CURATED_ALIASES, normalize_team_name
 
 SCHEDULE_AUTHORITY = "espn"
+# Providers allowed to write schedule/result fields, highest rank first. A provider
+# only writes if no higher-ranked authority is linked to the game: nflverse fills
+# NFL history that ESPN was never asked for, but never overrides ESPN.
+AUTHORITY_RANK = {"espn": 2, "nflverse": 1}
 MATCH_WINDOW = timedelta(hours=24)
 
 
@@ -159,11 +163,22 @@ def _link(session: Session, g: NormalizedGame, game: Game, swapped: bool) -> Res
     return ResolvedGame(game, swapped)
 
 
-def _apply_results(game: Game, g: NormalizedGame, swapped: bool) -> None:
-    """Only the schedule authority writes schedule and result fields."""
-    if g.provider != SCHEDULE_AUTHORITY:
+def _apply_results(session: Session, game: Game, g: NormalizedGame, swapped: bool) -> None:
+    """Only schedule authorities write schedule and result fields, and a lower-ranked
+    authority never overrides a higher-ranked one linked to the same game."""
+    rank = AUTHORITY_RANK.get(g.provider)
+    if rank is None:
+        return
+    linked = session.scalars(
+        select(GameSourceId.provider).where(GameSourceId.game_id == game.id)
+    ).all()
+    if any(AUTHORITY_RANK.get(p, 0) > rank for p in linked):
         return
     game.commence_time = g.commence_time
+    if g.season_type is not None:
+        game.season_type = g.season_type
+    if g.week is not None:
+        game.week = g.week
     if g.season is not None:
         game.season = g.season
     if g.neutral_site is not None:
@@ -177,7 +192,7 @@ def _apply_results(game: Game, g: NormalizedGame, swapped: bool) -> None:
 
 def resolve_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> ResolvedGame:
     resolved = _find_game(session, g, stats)
-    _apply_results(resolved.game, g, resolved.swapped)
+    _apply_results(session, resolved.game, g, resolved.swapped)
     session.flush()
     return resolved
 

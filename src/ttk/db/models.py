@@ -117,6 +117,8 @@ class Game(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     sport: Mapped[str] = mapped_column(String(10))
     season: Mapped[int | None] = mapped_column(Integer)
+    season_type: Mapped[str | None] = mapped_column(String(4))
+    week: Mapped[int | None] = mapped_column(Integer)
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
     commence_time: Mapped[datetime]
@@ -190,6 +192,31 @@ class OddsSnapshot(Base):
     """When this app ingested the price (the ingestion_timestamp)."""
     ingestion_run_id: Mapped[int] = mapped_column(ForeignKey("ingestion_runs.id"))
     data_version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class ReportedLine(Base):
+    """A historical line as reported by a data provider (e.g. nflverse), with no
+    documented timestamp. Benchmark data. A model may take it as an input only when
+    the simulated bet is placed at this same line; never for a bet at an earlier
+    price, never as a CLV closing line. One row per (game, provider); re-imports
+    replace it, since upstream revises history."""
+
+    __tablename__ = "reported_lines"
+    __table_args__ = (UniqueConstraint("game_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    provider: Mapped[str] = mapped_column(String(50))
+    home_spread: Mapped[float | None] = mapped_column(Float)
+    """Bookmaker-style home line: -3.5 = home favored by 3.5."""
+    home_spread_odds: Mapped[float | None] = mapped_column(Float)
+    away_spread_odds: Mapped[float | None] = mapped_column(Float)
+    total: Mapped[float | None] = mapped_column(Float)
+    over_odds: Mapped[float | None] = mapped_column(Float)
+    under_odds: Mapped[float | None] = mapped_column(Float)
+    home_moneyline: Mapped[float | None] = mapped_column(Float)
+    away_moneyline: Mapped[float | None] = mapped_column(Float)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class InjuryReport(Base):

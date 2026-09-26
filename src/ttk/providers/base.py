@@ -43,6 +43,9 @@ class NormalizedGame:
     away_score: int | None = None
     neutral_site: bool | None = None
     season: int | None = None
+    season_type: str | None = None
+    """PRE, REG or POST."""
+    week: int | None = None
 
 
 @dataclass(frozen=True)

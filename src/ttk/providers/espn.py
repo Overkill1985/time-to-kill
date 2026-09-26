@@ -42,6 +42,9 @@ LEAGUES: dict[Sport, tuple[str, tuple[str | None, ...]]] = {
     Sport.NCAAB: ("basketball/mens-college-basketball", ("50",)),
 }
 
+# ESPN season.type: 1 preseason, 2 regular, 3 postseason, 5 NBA play-in (postseason).
+_SEASON_TYPES = {1: "PRE", 2: "REG", 3: "POST", 5: "POST"}
+
 _STATUS_BY_NAME = {
     "STATUS_POSTPONED": GameStatus.POSTPONED,
     "STATUS_CANCELED": GameStatus.CANCELED,
@@ -61,6 +64,11 @@ def _status(status_type: Mapping[str, Any]) -> GameStatus:
         case "post" if status_type.get("completed"):
             return GameStatus.FINAL
     return GameStatus.UNKNOWN
+
+
+def _season_type(event: Mapping[str, Any]) -> str | None:
+    raw = (event.get("season") or {}).get("type")
+    return _SEASON_TYPES.get(raw) if isinstance(raw, int) else None
 
 
 def _team(competitor: Mapping[str, Any]) -> TeamRef:
@@ -109,6 +117,8 @@ def parse_event(event: Mapping[str, Any], sport: Sport) -> NormalizedGame | None
         away_score=_score(sides["away"]) if scored else None,
         neutral_site=bool(comp.get("neutralSite")),
         season=(event.get("season") or {}).get("year"),
+        season_type=_season_type(event),
+        week=(event.get("week") or {}).get("number"),
     )
 
 

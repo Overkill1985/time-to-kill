@@ -53,6 +53,10 @@ composite "confidence" score is ever presented as a probability.
   - later injury reports;
   - postgame stat revisions.
 - Backtests rebuild features from snapshots as they stood at T. They never use current tables.
+- **Market inputs:** a model may take a market price as an input only if the simulated bet is placed at that same price or a later one. Using a later line (such as the close) to decide a bet at an earlier price is leakage.
+  - nflverse's reported lines have undocumented timing. So a market-anchored backtest bets at exactly the reported line it used as input.
+  - They are never treated as closing lines for closing-line value.
+- **Significance:** every model comparison against the market reports the paired per-game log-loss difference, with its standard error. A difference within about 2 standard errors is not an edge.
 
 ## Validation protocol
 

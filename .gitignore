@@ -11,3 +11,4 @@ data/*.db
 data/*.db-*
 data/backups/
 *.log
+data/reports/
