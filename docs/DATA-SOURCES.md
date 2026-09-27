@@ -12,6 +12,7 @@ immutable snapshots.
 | nflverse `nfldata/games.csv` | NFL games 1999–present: results, neutral site, week, ESPN event ids, **reported** spread/total/moneyline | None | On demand: `ttk import-nfl-history` (idempotent, ~20 s) | See the upstream repo | ESPN for schedule | Updated through the season | **Built and imported**: 7,548 games, 7,340 line rows (5,359 with moneylines, from 2006) |
 | nflverse play-by-play (`nflverse-data` release `pbp`) | Per-game team offense (EPA, success, dropbacks, rushes) and QB dropback EPA, aggregated from ~48k plays per season | None | On demand: `ttk import-nfl-pbp --from-season Y --to-season Y` (~15 MB download per season; raw plays are discarded) | See the upstream repo | - | Previous week complete by Tuesday | **Built** (1999–2026 imported) |
 | nflverse games: starting QBs | `home_qb_id` / `away_qb_id` for every played game, and for upcoming games once listed | None | With `ttk import-nfl-history` | See the upstream repo | - | Known at kickoff | **Built** |
+| ESPN core API odds | Per-game lines from real sportsbooks (spread + prices, total + prices, moneylines); **opening and closing** from 2023-24 on, closing only before | None (undocumented public API) | On demand: `ttk import-espn-history --sport NBA --from-season Y --to-season Y` (resumable, paced) | Unofficial; one request per game (~1,300 per NBA season) | - | Historical only | **Built** (NBA 2017-18 onward) |
 | Open-Meteo | Weather for outdoor football | None | 4 h | Free non-commercial | - | Forecast <= 16 days out | Planned (NFL/CFB features) |
 
 Timestamped odds history (verified 2026-09-26):
@@ -56,6 +57,15 @@ Cross-provider identity (`src/ttk/services/identity.py`, `src/ttk/teams.py`):
   Anything else becomes an unmatched team, counted in `ingestion_runs.stats`. The resolver never guesses.
 - Measured on real data, 2026-09-26: 0 of 230 PropLine college football names matched ESPN exactly. After resolution, **231 of 231 college football and 15 of 15 NFL PropLine games linked** to their ESPN games, with no unmatched teams.
 - When a provider lists home and away the other way round, the link is marked `swapped` and that provider's HOME/AWAY selections are flipped. One real case, Prairie View A&M vs Grambling (neutral site), was detected correctly.
+
+ESPN core API odds, verified 2026-09-26 on NBA games 2017-18 through 2025-26 (`src/ttk/providers/espn_odds.py`):
+
+- `sports.core.api.espn.com/v2/sports/basketball/leagues/nba/events/{id}/competitions/{id}/odds` returns one item per provider. Every sampled game had at least one real sportsbook.
+- Books vary by era: 2017-18 has CG Technology, Caesars, Unibet, Westgate, Wynn and a consensus; a 2025 sample had ESPN BET only.
+- **Not every provider is a market.** Projection sites (accuscore, numberfire, teamrankings) and in-game "Live Odds" feeds are excluded.
+- From 2023-24, `homeTeamOdds.open` / `.close` carry the home team's line ("+5.5") and prices, so **openers are real book openers**, not our first poll. Before that only the item-level `spread` exists; it is the home line (it agreed with the moneyline favorite in 142 of 146 sampled games).
+- Stored in `reported_lines` as `espn:<book>` (close) and `espn-open:<book>` (open). Evaluation data only (MODEL-GOVERNANCE.md). Season years are ESPN's: the year a season ends (2025-26 = 2026).
+- Season windows (`services/espn_history_import.py`): Sep 25 to Jun 30, except the 2019-20 bubble (to Oct 15 2020) and 2020-21 (Dec 1 2020 to Jul 25 2021). Preseason games are imported but excluded from models.
 
 nflverse games, verified 2026-09-26 (`src/ttk/providers/nflverse.py`):
 

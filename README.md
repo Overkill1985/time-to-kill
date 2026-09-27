@@ -31,6 +31,8 @@ ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 1
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game
 ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
+ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
+ttk backtest-nba                 # NBA: Elo, rest, market-anchored, betting the opener
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).

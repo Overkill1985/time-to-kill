@@ -22,7 +22,7 @@ Status as of 2026-09-26.
 
 Same-game NFL joint probabilities now come from Monte Carlo. Still to do: other sports |
 | 8. Bet tracker / bankroll | Bets, settlement, ROI, CLV from closing snapshots, drawdown, bankroll limits | **Started.** Single bets are done: recording with model and market beliefs as of bet time, automatic settlement, CLV from the collector's closes, performance with sample sizes, CLI, API and UI. Still to do: parlays (Phase 7), bankroll limits and Kelly sizing |
-| 9. Multi-sport | NFL, then NBA, CFB, NCAAB models in the governance order | |
+| 9. Multi-sport | NFL, then NBA, CFB, NCAAB models in the governance order | **NBA started.** ESPN history 2017-18 to 2025-26 (per-book closes; the books' own openers from 2023-24); Elo, rest/back-to-back and market-anchored spread models; opener test. No edge against the close; all DEVELOPMENT, test seasons sealed (docs/MODELS.md). Next: injuries and lineups at the opener, then CFB |
 | 10. Performance Lab | Threshold lab (52-60%), calibration drift, CLV trends | |
 | 11. Advanced | Props, injury impact, alerts, movement analysis | |
 

@@ -184,9 +184,16 @@ def _win_log_loss(
     return score(probs, outcomes).log_loss
 
 
-def tune(games: Sequence[EloGame], splits: Splits) -> TunedElo:
+def tune(
+    games: Sequence[EloGame],
+    splits: Splits,
+    *,
+    home_field_grid: Sequence[float] = HOME_FIELD_GRID,
+    k_grid: Sequence[float] = K_GRID,
+) -> TunedElo:
     """Grid search minimizing TRAIN moneyline log loss over two home-field modes.
-    Never looks past TRAIN."""
+    Never looks past TRAIN. Grids are overridable per sport (NBA home court is
+    worth more Elo than the NFL grid covers)."""
     by_id = {g.game_id: g for g in games}
     prior_hfa = prior_home_field(games)
     best: TunedElo | None = None
@@ -196,8 +203,8 @@ def tune(games: Sequence[EloGame], splits: Splits) -> TunedElo:
         if best is None or candidate.train_log_loss < best.train_log_loss:
             best = candidate
 
-    for k, reg, mov in itertools.product(K_GRID, REGRESSION_GRID, MOV_GRID):
-        for hfa in HOME_FIELD_GRID:
+    for k, reg, mov in itertools.product(k_grid, REGRESSION_GRID, MOV_GRID):
+        for hfa in home_field_grid:
             params = EloParams(k=k, home_field=hfa, season_regression=reg, margin_of_victory=mov)
             loss = _win_log_loss(run_elo(games, params), by_id, splits.train)
             consider(TunedElo(params, "constant", None, loss))
@@ -281,7 +288,8 @@ class SplitReport:
 
 
 def _no_vig(a: float | None, b: float | None) -> float | None:
-    if a is None or b is None:
+    """No-vig probability of side a; None unless both are real American prices."""
+    if a is None or b is None or -100 < a < 100 or -100 < b < 100:
         return None
     return bm.no_vig_probabilities(
         [bm.american_to_decimal(a), bm.american_to_decimal(b)]
@@ -316,12 +324,10 @@ def priced_spreads(
         line = lines.get(g.game_id)
         if not (_in(p.season, window) and g.played and line is not None):
             continue
-        if line.home_spread is None or line.home_spread_odds is None:
-            continue
-        if line.away_spread_odds is None:
-            continue
         market = _no_vig(line.home_spread_odds, line.away_spread_odds)
-        assert market is not None
+        if line.home_spread is None or market is None:
+            continue  # no spread, or not real prices on both sides
+        assert line.home_spread_odds is not None and line.away_spread_odds is not None
         rows.append(
             PricedSpread(
                 g, p, line.home_spread, line.home_spread_odds, line.away_spread_odds, market
@@ -626,10 +632,12 @@ def backtest(
     params: EloParams | None = None,
     include_test: bool = False,
     inputs: FeatureInputs | None = None,
+    home_field_grid: Sequence[float] = HOME_FIELD_GRID,
+    k_grid: Sequence[float] = K_GRID,
 ) -> BacktestReport:
     by_id = {g.game_id: g for g in games}
     if params is None:
-        tuned = tune(games, splits)
+        tuned = tune(games, splits, home_field_grid=home_field_grid, k_grid=k_grid)
     else:
         loss = _win_log_loss(run_elo(games, params), by_id, splits.train)
         tuned = TunedElo(params, "constant", None, loss)

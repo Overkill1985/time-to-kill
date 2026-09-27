@@ -23,6 +23,7 @@ src/ttk/
     espn.py            Schedule/results adapter (the schedule authority)
     nflverse.py        NFL history 1999+: results, reported lines, starting QBs
     nflverse_pbp.py    Play-by-play -> per-game team and QB EPA aggregates (streamed)
+    espn_odds.py       ESPN core API historical lines per book (open/close); excludes non-markets
   models/              Pure model code, no I/O
     elo.py             Sport-agnostic Elo run in time order (walk-forward by construction)
     margin.py          Normal + key-number margin models -> cover/push probabilities
@@ -33,6 +34,7 @@ src/ttk/
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence
+    nba_model.py       NBA: Elo + rest/back-to-back margin model, market-anchored, opener test
   db/
     models.py          ORM schema (changed only via migrations)
     session.py         Engine/session setup (SQLite pragmas)
@@ -42,6 +44,7 @@ src/ttk/
     schedule_ingest.py ESPN -> games, status, scores (idempotent upsert)
     history_import.py  nflverse -> games + reported_lines + game_starters (idempotent)
     pbp_import.py      nflverse play-by-play -> team_game_stats, qb_game_stats (per season)
+    espn_history_import.py  ESPN season schedule + per-book open/close lines (resumable)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
     collector.py       Polling passes: sports with upcoming games, quota-aware
@@ -56,7 +59,7 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | backtest-nfl-elo | serve
+                           | import-espn-history | backtest-nfl-elo | backtest-nba | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.

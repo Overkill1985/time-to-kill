@@ -13,7 +13,7 @@ from ttk.config import Settings, get_settings
 from ttk.domain import Market, Selection, Sport
 from ttk.models.metrics import Score
 from ttk.providers.base import OddsProvider
-from ttk.research.nfl_elo import SplitReport
+from ttk.research.nfl_elo import BettingResult, SplitReport
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -62,6 +62,78 @@ def _print_split(name: str, r: SplitReport) -> None:
                 f"      edge >= {b.min_edge:.0%}: bets={b.bets:>5}  "
                 f"W-L-P={b.wins}-{b.losses}-{b.pushes}  units={b.units:+.1f}  ROI={roi}"
             )
+
+
+def _print_betting(rows: list[BettingResult]) -> None:
+    for b in rows:
+        roi = "   n/a" if b.roi is None else f"{b.roi:+.1%}"
+        print(f"      edge >= {b.min_edge:.0%}: bets={b.bets:>5}  units={b.units:+.1f}  ROI={roi}")
+
+
+def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.nba_model import NBA_SPLITS, load_nba, nba_backtest
+
+    factory = make_session_factory(make_engine(database_url))
+    with factory() as session:
+        data = load_nba(session)
+    if not data.closes:
+        print("No NBA lines; run `ttk import-espn-history --sport NBA` first.", file=sys.stderr)
+        return 2
+    report = nba_backtest(data, include_test=args.final_test)
+    t, p = report.base.tuned, report.base.tuned.params
+    print(
+        f"NBA games {len(data.games)}, with closing lines {len(data.closes)}, "
+        f"with openers {len(data.opens)}"
+    )
+    hfa = (
+        f"home_field={p.home_field}"
+        if t.home_field_mode == "constant"
+        else f"home_field={t.home_field_per_point} Elo per point of prior-3-season home margin"
+    )
+    print(
+        f"Tuned on TRAIN {NBA_SPLITS.train[0]}-{NBA_SPLITS.train[1]}: K={p.k} {hfa} "
+        f"regression={p.season_regression:.2f} mov={p.margin_of_victory} "
+        f"(train logloss {t.train_log_loss:.4f})"
+    )
+    if t.home_field_by_season:
+        print(
+            "  Home field by season (Elo): "
+            + ", ".join(f"{s}:{v:.0f}" for s, v in sorted(t.home_field_by_season.items()))
+        )
+    w = report.base.models.key_number.weights
+    print("Key-number weights (TRAIN): " + ", ".join(f"{k}:{w[k]:.2f}" for k in sorted(w)[:8]))
+    r = report.rest
+    print(
+        f"Rest model (TRAIN): margin = {r.intercept:.2f} "
+        + " ".join(f"{c:+.4f} x {n}" for n, c in r.coefs.items())
+    )
+    _print_split("TRAIN", report.base.train)
+    _print_split("VALIDATE", report.base.validate)
+    print("  Rest candidates on VALIDATE:")
+    for c in report.validate_rest:
+        v = c.vs_market
+        print(
+            f"    {c.name:<21} logloss {c.spread.log_loss:.4f}  vs market "
+            f"{v.mean_log_loss_diff:+.4f} (SE {v.standard_error:.4f}, z {v.z:+.1f})"
+        )
+        _print_betting(c.betting)
+    rmse = ", ".join(f"{k} {v:.2f}" for k, v in report.margin_rmse.items())
+    print(f"  Margin RMSE on VALIDATE: {rmse}")
+    print(f"\n== Betting the OPENER (VALIDATE, {report.opener_games} games with openers) ==")
+    for o in report.openers:
+        clv = "n/a" if o.avg_price_clv is None else f"{o.avg_price_clv:+.2%}"
+        pts = "n/a" if o.avg_points_gained is None else f"{o.avg_points_gained:+.2f}"
+        print(
+            f"  {o.name:<21} price CLV {clv} (n={o.price_clv_n}, close on the same number); "
+            f"points vs close {pts} (n={o.moved_n}, line moved)"
+        )
+        _print_betting(o.bets)
+    if report.base.test is not None:
+        _print_split("TEST (sealed until now)", report.base.test)
+    else:
+        print("\nTEST seasons are sealed. Score them once, with --final-test, after freezing.")
+    return 0
 
 
 def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
@@ -559,6 +631,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     pbp.add_argument("--from-season", type=int, default=1999)
     pbp.add_argument("--to-season", type=int, default=date.today().year)
+    espn_history = sub.add_parser(
+        "import-espn-history",
+        help="Import games, results and sportsbook lines (open/close) from ESPN, per season",
+    )
+    espn_history.add_argument("--sport", type=Sport, choices=list(Sport), required=True)
+    espn_history.add_argument(
+        "--from-season",
+        type=int,
+        required=True,
+        help="ESPN season year = the year a season ends (2025-26 = 2026)",
+    )
+    espn_history.add_argument("--to-season", type=int, required=True)
+    espn_history.add_argument(
+        "--delay", type=float, default=0.25, help="Seconds between requests (be polite to ESPN)"
+    )
     backtest = sub.add_parser("backtest-nfl-elo", help="Tune and backtest the NFL spread models")
     backtest.add_argument(
         "--final-test",
@@ -569,6 +656,12 @@ def main(argv: list[str] | None = None) -> int:
         "--register", action="store_true", help="Record the result in the model registry"
     )
     backtest.add_argument("--report", type=Path, help="Write the full report as JSON here")
+    nba_bt = sub.add_parser("backtest-nba", help="Tune and backtest the NBA spread models")
+    nba_bt.add_argument(
+        "--final-test",
+        action="store_true",
+        help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
+    )
     card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
     card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
     card.add_argument(
@@ -688,8 +781,33 @@ def main(argv: list[str] | None = None) -> int:
             failed += run.status != "SUCCESS"
         return 1 if failed else 0
 
+    if args.command == "import-espn-history":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.base import ProviderError
+        from ttk.services.espn_history_import import import_season
+
+        factory = make_session_factory(make_engine(settings.database_url))
+        for season in range(args.from_season, args.to_season + 1):
+            try:
+                schedule_run, odds_run = import_season(
+                    factory, args.sport, season, delay=args.delay
+                )
+            except ProviderError as exc:
+                print(f"{season}: schedule failed: {exc}", file=sys.stderr)
+                return 1
+            print(
+                f"{season}: {schedule_run.records_written} games; odds {odds_run.status} "
+                f"{odds_run.records_written} lines, stats={odds_run.stats}"
+                + (f", error={odds_run.error}" if odds_run.error else ""),
+                flush=True,
+            )
+        return 0
+
     if args.command == "backtest-nfl-elo":
         return _backtest_nfl_elo(args, settings.database_url)
+
+    if args.command == "backtest-nba":
+        return _backtest_nba(args, settings.database_url)
 
     if args.command == "card":
         return _card(args, settings)

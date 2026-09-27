@@ -16,6 +16,7 @@ Unofficial, unauthenticated public API. Behaviors verified 2026-09-26:
 
 from __future__ import annotations
 
+import time
 from collections import Counter
 from collections.abc import Mapping
 from datetime import date, timedelta
@@ -125,8 +126,10 @@ def parse_event(event: Mapping[str, Any], sport: Sport) -> NormalizedGame | None
 class EspnScheduleProvider:
     name = "espn"
 
-    def __init__(self, *, client: httpx.Client | None = None) -> None:
+    def __init__(self, *, client: httpx.Client | None = None, delay: float = 0.0) -> None:
         self._client = client or httpx.Client(base_url=BASE_URL, timeout=30.0)
+        self._delay = delay
+        """Seconds to wait after each request (pacing for bulk history imports)."""
 
     def _scoreboard(self, path: str, day: date, group: str | None) -> list[dict[str, Any]]:
         params = {"dates": day.strftime("%Y%m%d"), "limit": str(PAGE_LIMIT)}
@@ -139,6 +142,8 @@ class EspnScheduleProvider:
         if response.status_code != 200:
             raise ProviderError(f"espn: HTTP {response.status_code} for {path} {day}")
         events: list[dict[str, Any]] = response.json().get("events", [])
+        if self._delay:
+            time.sleep(self._delay)
         return events
 
     def fetch_games(self, sport: Sport, start: date, end: date) -> ScheduleFetch:
