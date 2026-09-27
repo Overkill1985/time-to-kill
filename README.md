@@ -34,6 +34,8 @@ ttk backtest-nfl-elo             # tune on train, report validation; test stays 
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
 ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
+ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
+ttk backtest-cfb                 # college football: Elo, rest, market-anchored, opener
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).

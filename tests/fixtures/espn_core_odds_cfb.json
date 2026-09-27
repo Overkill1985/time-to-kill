@@ -1,0 +1,158 @@
+{
+ "malformed_close_espn_bet_2022": {
+  "provider": {
+   "id": "58",
+   "name": "ESPN BET"
+  },
+  "details": "VAN -9.5",
+  "spread": 9.5,
+  "overUnder": 54.5,
+  "overOdds": -115.0,
+  "underOdds": -110.0,
+  "homeTeamOdds": {
+   "favorite": false,
+   "underdog": true,
+   "moneyLine": 270,
+   "spreadOdds": -110.0,
+   "close": {
+    "pointSpread": {
+     "alternateDisplayValue": "-110",
+     "american": "-110"
+    },
+    "spread": {
+     "value": 1.91,
+     "displayValue": "10/11",
+     "alternateDisplayValue": "-110",
+     "decimal": 1.91,
+     "fraction": "10/11",
+     "american": "-110"
+    },
+    "moneyLine": {
+     "value": 3.7,
+     "displayValue": "27/10",
+     "alternateDisplayValue": "+270",
+     "decimal": 3.7,
+     "fraction": "27/10",
+     "american": "+270"
+    }
+   },
+   "current": {
+    "pointSpread": {
+     "alternateDisplayValue": "+9.5",
+     "american": "+9.5"
+    },
+    "spread": {
+     "value": 1.91,
+     "displayValue": "10/11",
+     "alternateDisplayValue": "-110",
+     "decimal": 1.91,
+     "fraction": "10/11",
+     "american": "-110"
+    },
+    "moneyLine": {
+     "value": 3.7,
+     "displayValue": "27/10",
+     "alternateDisplayValue": "+270",
+     "decimal": 3.7,
+     "fraction": "27/10",
+     "american": "+270"
+    }
+   }
+  },
+  "awayTeamOdds": {
+   "favorite": true,
+   "underdog": false,
+   "moneyLine": -340,
+   "spreadOdds": -115.0,
+   "close": {
+    "pointSpread": {
+     "alternateDisplayValue": "+110",
+     "american": "+110"
+    },
+    "spread": {
+     "value": 1.87,
+     "displayValue": "20/23",
+     "alternateDisplayValue": "-115",
+     "decimal": 1.87,
+     "fraction": "20/23",
+     "american": "-115"
+    },
+    "moneyLine": {
+     "value": 1.29,
+     "displayValue": "5/17",
+     "alternateDisplayValue": "-340",
+     "decimal": 1.29,
+     "fraction": "5/17",
+     "american": "-340"
+    }
+   },
+   "current": {
+    "pointSpread": {
+     "alternateDisplayValue": "-9.5",
+     "american": "-9.5"
+    },
+    "spread": {
+     "value": 1.87,
+     "displayValue": "20/23",
+     "alternateDisplayValue": "-115",
+     "decimal": 1.87,
+     "fraction": "20/23",
+     "american": "-115"
+    },
+    "moneyLine": {
+     "value": 1.29,
+     "displayValue": "5/17",
+     "alternateDisplayValue": "-340",
+     "decimal": 1.29,
+     "fraction": "5/17",
+     "american": "-340"
+    }
+   }
+  },
+  "open": null,
+  "close": {
+   "over": {
+    "value": 1.87,
+    "displayValue": "20/23",
+    "alternateDisplayValue": "-115",
+    "decimal": 1.87,
+    "fraction": "20/23",
+    "american": "-115"
+   },
+   "under": {
+    "value": 1.91,
+    "displayValue": "10/11",
+    "alternateDisplayValue": "-110",
+    "decimal": 1.91,
+    "fraction": "10/11",
+    "american": "-110"
+   },
+   "total": {
+    "alternateDisplayValue": "-115",
+    "american": "-115"
+   }
+  },
+  "current": {
+   "over": {
+    "value": 1.87,
+    "displayValue": "20/23",
+    "alternateDisplayValue": "-115",
+    "decimal": 1.87,
+    "fraction": "20/23",
+    "american": "-115"
+   },
+   "under": {
+    "value": 1.91,
+    "displayValue": "10/11",
+    "alternateDisplayValue": "-110",
+    "decimal": 1.91,
+    "fraction": "10/11",
+    "american": "-110"
+   },
+   "total": {
+    "alternateDisplayValue": "54.5",
+    "american": "54.5"
+   }
+  }
+ }
+}

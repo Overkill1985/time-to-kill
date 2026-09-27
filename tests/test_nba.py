@@ -10,12 +10,8 @@ from ttk.domain import Sport
 from ttk.models.elo import EloGame, EloPrediction
 from ttk.providers.base import ProviderError
 from ttk.providers.espn_odds import EspnCoreOdds, parse_item
-from ttk.research.nba_model import (
-    REST_CAP,
-    _representative,
-    opener_test,
-    rest_features,
-)
+from ttk.research.espn_models import _representative, opener_test, rest_features
+from ttk.research.nba_model import REST_CAP
 from ttk.research.nfl_elo import PricedSpread
 from ttk.services.espn_history_import import season_window
 
@@ -126,7 +122,7 @@ def g(gid: int, home: int, away: int, day: int) -> EloGame:
 
 def test_rest_features() -> None:
     games = [g(1, 1, 2, 0), g(2, 1, 3, 1), g(3, 2, 1, 5)]
-    rest = rest_features(games)
+    rest = rest_features(games, cap=REST_CAP)
     assert rest[1] == (REST_CAP, REST_CAP, False, False)  # first games: capped rest
     assert rest[2] == (1.0, REST_CAP, True, False)  # team 1 on a back-to-back
     assert rest[3] == (REST_CAP, REST_CAP, False, False)  # team 2 rested 5 days (capped)
@@ -163,3 +159,33 @@ def test_zero_prices_mean_not_offered() -> None:
     rows = [line("espn:consensus", -1.5, (0.0, 0.0)), line("espn:wynn", -1.5, (-105, -115))]
     r = _representative(rows)
     assert r is not None and r.provider == "espn:wynn"  # consensus ranks first but has no price
+
+
+def test_non_markets_are_excluded() -> None:
+    from ttk.providers.espn_odds import is_market
+
+    old = FIX["old_bos_at_cle_2017"][0]
+    for name in ("Opening", "Betegy", "fantasy911.com", "numberFire", "ESPN Bet - Live Odds"):
+        assert parse_item({**old, "provider": {"name": name}}) == []
+        assert not is_market(name)
+    assert is_market("espn:caesars-sportsbook") and not is_market("espn:betegy")
+    assert parse_item({**old, "provider": {"name": "Westgate"}})  # a real book
+
+
+def test_malformed_close_falls_back_to_current() -> None:
+    """Real ESPN BET item: Vanderbilt (away, -9.5) at Hawaii (home, +9.5), 2022.
+    ``close`` holds prices where the line belongs; ``current`` has the line."""
+    cfb = json.loads(
+        (Path(__file__).parent / "fixtures" / "espn_core_odds_cfb.json").read_text("utf-8")
+    )
+    item = cfb["malformed_close_espn_bet_2022"]
+    assert item["homeTeamOdds"]["close"]["pointSpread"]["american"] == "-110"  # the bug
+    (line,) = parse_item(item)
+    assert line.moment == "close" and line.book == "espn-bet"
+    assert (line.home_spread, line.total) == (9.5, 54.5)  # from `current`
+    assert (line.home_spread_odds, line.away_spread_odds) == (-110, -115)
+    assert (line.home_moneyline, line.away_moneyline) == (270, -340)
+    # Without a usable `current`, nothing is stored rather than a price as a line.
+    broken = {**item, "current": None, "spread": None}
+    broken["homeTeamOdds"] = {k: v for k, v in item["homeTeamOdds"].items() if k != "current"}
+    assert parse_item(broken) == []

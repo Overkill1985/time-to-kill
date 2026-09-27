@@ -37,7 +37,9 @@ src/ttk/
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence
-    nba_model.py       NBA: Elo + feature-set margin models (rest, lineups), market-anchored, opener test
+    espn_models.py     ESPN-history pipeline per SportConfig: feature-set margin models, market-anchored, opener test
+    nba_model.py       NBA config: splits, grids, rest and lineup feature sets
+    cfb_model.py       College football config: splits, grids, regression toward recent level
     nba_lineups.py     Walk-forward player value and availability (missing at tip / last game)
   db/
     models.py          ORM schema (changed only via migrations)
@@ -51,7 +53,7 @@ src/ttk/
     espn_history_import.py  ESPN season schedule + per-book open/close lines (resumable)
     boxscore_import.py ESPN box scores -> player_game_stats (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
-    repair.py          One-off data repairs, dry run first (split merged ESPN games)
+    repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
     collector.py       Polling passes: sports with upcoming games, quota-aware
@@ -66,8 +68,8 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | repair-merged-games
-                           | backtest-nfl-elo | backtest-nba | simulate
+                           | import-espn-history | import-boxscores | repair-merged-games | repair-espn-lines
+                           | backtest-nfl-elo | backtest-nba | backtest-cfb | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.

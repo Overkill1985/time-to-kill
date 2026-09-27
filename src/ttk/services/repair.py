@@ -81,3 +81,41 @@ def split_merged_espn_games(session: Session, *, apply: bool = False) -> list[Me
     if apply:
         session.flush()
     return out
+
+
+@dataclass(frozen=True)
+class MalformedLines:
+    sport: str
+    season: int | None
+    games: int
+    rows: int
+
+
+def drop_malformed_espn_lines(session: Session, *, apply: bool = False) -> list[MalformedLines]:
+    """Games with an ESPN line holding a price where the line belongs (see
+    providers/espn_odds._valid): a spread of 100+ points, or a total that is not
+    positive or equals its own over/under price. All of those games' ESPN lines
+    are dropped so the resumable importer re-fetches them with the fixed parser."""
+    bad = (ReportedLine.provider.like("espn:%") | ReportedLine.provider.like("espn-open:%")) & (
+        (func.abs(ReportedLine.home_spread) >= 100)
+        | (ReportedLine.total <= 0)
+        | (ReportedLine.total == ReportedLine.over_odds)
+        | (ReportedLine.total == ReportedLine.under_odds)
+    )
+    game_ids = set(session.scalars(select(ReportedLine.game_id).where(bad)).all())
+    if not game_ids:
+        return []
+    espn_rows = (ReportedLine.game_id.in_(game_ids)) & (
+        ReportedLine.provider.like("espn:%") | ReportedLine.provider.like("espn-open:%")
+    )
+    summary = session.execute(
+        select(Game.sport, Game.season, func.count(func.distinct(Game.id)), func.count())
+        .join(ReportedLine, ReportedLine.game_id == Game.id)
+        .where(espn_rows)
+        .group_by(Game.sport, Game.season)
+        .order_by(Game.sport, Game.season)
+    ).all()
+    if apply:
+        session.execute(delete(ReportedLine).where(espn_rows))
+        session.flush()
+    return [MalformedLines(sport, season, games, rows) for sport, season, games, rows in summary]

@@ -31,6 +31,7 @@ from ttk.providers.base import (
     ScheduleFetch,
     TeamRef,
 )
+from ttk.providers.http_retry import get_with_retries
 from ttk.providers.odds_api_format import parse_timestamp
 
 BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
@@ -126,19 +127,33 @@ def parse_event(event: Mapping[str, Any], sport: Sport) -> NormalizedGame | None
 class EspnScheduleProvider:
     name = "espn"
 
-    def __init__(self, *, client: httpx.Client | None = None, delay: float = 0.0) -> None:
+    def __init__(
+        self,
+        *,
+        client: httpx.Client | None = None,
+        delay: float = 0.0,
+        retries: int = 3,
+        backoff: float = 5.0,
+    ) -> None:
         self._client = client or httpx.Client(base_url=BASE_URL, timeout=30.0)
         self._delay = delay
         """Seconds to wait after each request (pacing for bulk history imports)."""
+        self._retries = retries
+        self._backoff = backoff
 
     def _scoreboard(self, path: str, day: date, group: str | None) -> list[dict[str, Any]]:
         params = {"dates": day.strftime("%Y%m%d"), "limit": str(PAGE_LIMIT)}
         if group:
             params["groups"] = group
-        try:
-            response = self._client.get(f"/{path}/scoreboard", params=params)
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"espn: request failed ({type(exc).__name__})") from None
+        # Transient 5xx (ESPN returned a 502 mid-import on 2026-09-27) are retried.
+        response = get_with_retries(
+            self._client,
+            f"/{path}/scoreboard",
+            name="espn",
+            retries=self._retries,
+            backoff=self._backoff,
+            params=params,
+        )
         if response.status_code != 200:
             raise ProviderError(f"espn: HTTP {response.status_code} for {path} {day}")
         events: list[dict[str, Any]] = response.json().get("events", [])

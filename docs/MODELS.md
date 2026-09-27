@@ -5,8 +5,8 @@ Every result lists sample sizes. "Market" means the no-vig probability from nflv
 
 **Status: every NFL spread model is DEVELOPMENT, including the EPA and QB models.** None has a demonstrated edge over the
 market. The 2022–2025 test seasons are **sealed and have not been scored**. No model is
-registered yet. **The NBA spread models are DEVELOPMENT too** (below); their 2025 and 2026
-test seasons are sealed.
+registered yet. **The NBA and college football spread models are DEVELOPMENT too** (below);
+their test seasons (NBA 2025-2026, CFB 2025) are sealed.
 
 ## NFL spread (2026-09-26)
 
@@ -129,8 +129,9 @@ Reproduce with `ttk backtest-nba`.
 Splits (ESPN season = the year it ends): burn-in 2018, **train 2019–2022**, **validate
 2023–2024**, test 2025–2026 (sealed).
 
-**Numbers changed slightly on 2026-09-27** after 66 wrongly merged games were split
-(DATA-SOURCES.md, "Identity bug"). None of the verdicts changed.
+**Numbers changed slightly on 2026-09-27** after 66 wrongly merged games were split and
+1,377 malformed ESPN BET lines (2023) were re-fetched (DATA-SOURCES.md). None of the
+verdicts changed.
 
 ### What was fitted on the training seasons (n=4,955 games)
 
@@ -151,16 +152,16 @@ Splits (ESPN season = the year it ends): burn-in 2018, **train 2019–2022**, **
   - **Previous game** (known before the opener): −0.080 per unit. Absences partly carry over
     to the next game.
 
-### Validation, 2023–2024 (n=2,599 spread games with real prices on both sides)
+### Validation, 2023–2024 (n=2,602 spread games with real prices on both sides)
 
 | Model | Spread log loss | vs market (paired) | z | Margin RMSE |
 |---|---|---|---|---|
 | Market no-vig (close) | 0.6932 | — | — | 13.15 |
-| Elo, key numbers | 0.7182 | +0.0250 | +5.7 (worse) | 13.67 |
-| Rest, key numbers | 0.7152 | +0.0220 | +5.2 (worse) | 13.61 |
-| Lineups at tip, key numbers | 0.7113 | +0.0181 | +5.4 (worse) | **13.46** |
-| Lineups previous game, key numbers | 0.7133 | +0.0201 | +5.0 (worse) | 13.56 |
-| Market-anchored (Elo, rest, either lineup) | 0.6938–0.6939 | +0.0006 to +0.0007 | +1.0 to +1.2 | — |
+| Elo, key numbers | 0.7181 | +0.0248 | +5.7 (worse) | 13.67 |
+| Rest, key numbers | 0.7152 | +0.0219 | +5.2 (worse) | 13.61 |
+| Lineups at tip, key numbers | 0.7114 | +0.0181 | +5.4 (worse) | **13.46** |
+| Lineups previous game, key numbers | 0.7133 | +0.0200 | +4.9 (worse) | 13.56 |
+| Market-anchored (Elo, rest, either lineup) | 0.6939 | +0.0006 to +0.0007 | +1.1 to +1.3 | — |
 
 - **Lineups are the strongest signal so far.** Who played closes about a third of the rest
   model's margin-error gap to the closing line (13.61 → 13.46, market 13.15); the previous
@@ -170,8 +171,8 @@ Splits (ESPN season = the year it ends): burn-in 2018, **train 2019–2022**, **
 - **Betting against the close with lineups loses more** (ROI −7% to −9%, against −5% to −6%
   for rest): where the lineup model disagrees with the close, the close knows something it
   doesn't (minutes limits, late scratches, matchups).
-- **Moneyline:** Elo log loss 0.6318 against the market's 0.6052 (n=2,639).
-- **Pushes:** actual 1.55%, predicted 1.24% by the key-number model.
+- **Moneyline:** Elo log loss 0.6316 against the market's 0.6050 (n=2,635).
+- **Pushes:** actual 1.44%, predicted 1.21% by the key-number model.
 
 ### Betting the opener (2023-24, n=1,314 games with openers)
 
@@ -206,6 +207,67 @@ here: they aren't known when the opener is posted.
   toward (+0.13 → +0.22 → +0.31 points). The real test is **injury status at the opener**,
   which exists only from our own polling (started 2026-09-27); the 2026-27 season, from
   October, will be the first with it. The later seasons with openers are sealed test data.
+
+## College football spread (2026-09-27)
+
+Data: ESPN (DATA-SOURCES.md), FBS and FCS, 2013 to 2025: 20,991 regular-season and postseason
+games, 15,370 with a closing line (books rarely list FCS-vs-FCS games). The books' own openers
+exist for part of 2023 and all of 2024-2025. Reproduce with `ttk backtest-cfb`.
+
+Splits (ESPN season = the year it starts): burn-in 2013–2014, **train 2015–2022**, **validate
+2023–2024**, test 2025 (sealed). 2026 is the live season.
+
+**The first run was wrong and is not reported.** 1,842 college games (mostly 2022–2023) had
+malformed ESPN BET lines, a price stored as the spread (DATA-SOURCES.md). It showed up as an
+impossible 34–0 record for the market-anchored model at edge ≥ 6%, and a closing-line margin
+error of 17.27. After the re-fetch: 2–1, and 15.30.
+
+### What was fitted on the training seasons (n=12,305 games)
+
+- **Elo:** K=40, margin-of-victory on, 50% regression each offseason **toward the team's own
+  recent level** (its average of the last three season-end ratings), which beat regression to
+  one global mean: FCS teams are a weaker tier. Home field is rolling: 10 Elo per point of the
+  prior three seasons' home margin (59–74 Elo by season). The first grid had both optima on an
+  edge; it was widened (K 20–80, 4–15 Elo per point) and the same values won inside it.
+- **Key-number weights:** 3 gets 2.56 and 7 gets 2.34, as in the NFL.
+- **Rest** (days since the last game, capped at 14, for byes and short weeks) adds nothing:
+  the fitted coefficient is small and margin error doesn't change.
+
+### Validation, 2023–2024 (n=3,017 spread games with real prices on both sides)
+
+| Model | Spread log loss | vs market (paired) | z | Margin RMSE |
+|---|---|---|---|---|
+| Market no-vig (close) | 0.6935 | — | — | 15.30 |
+| Elo, key numbers | 0.7431 | +0.0496 | +7.9 (worse) | 17.58 |
+| Rest, key numbers | 0.7453 | +0.0518 | +8.1 (worse) | 17.58 |
+| Market-anchored (Elo or rest) | 0.6942 | +0.0007 | +1.6 | — |
+
+- **Elo is far from the college market**, much further than in the NFL or NBA: 2.3 points of
+  margin error behind the close. Results alone miss what the market knows (roster turnover,
+  transfers, quarterback changes, coaching).
+- **Moneyline:** Elo log loss 0.5606 against the market's 0.5169 (n=2,031).
+- **Pushes:** actual 1.53%, predicted 0.79%. The key-number weights are fit around Elo's
+  means, which are too far off for the push rate to come out right.
+- **Betting at the close loses** at every threshold: Elo −2.5% to −4.8% ROI, market-anchored
+  −5.7% (3,064 games) and −9.0% on 170 bets at edge ≥ 2%.
+
+### Betting the opener (n=2,313 games with openers, 2023–2024)
+
+- **Price CLV** where the close stayed on the opening number: Elo and rest −5.3% (n≈435),
+  which is about the vig, so no movement toward the bet. Market-anchored −7.0% (n=13).
+- **Points versus the close**, where the line moved: Elo −0.15 (n=1,581), rest −0.16
+  (n=1,578). **College lines move away from the Elo side**, the opposite of the NBA: the
+  market's later information contradicts Elo. Market-anchored +0.49 to +0.73, but on only
+  41–51 games.
+- **ROI at the opener:** Elo −3.5%, rest −4.0%, market-anchored −6.3% (every game).
+
+### Verdicts
+
+- No college model comes near the closing line. Every one stays DEVELOPMENT, and 2025 stays
+  sealed.
+- The information that matters in college football (returning production, transfers,
+  quarterback and coaching changes, preseason ratings) isn't in results-only Elo. That, not
+  more tuning, is the next step here.
 
 ### What could actually beat the market (next, NFL)
 

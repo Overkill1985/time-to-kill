@@ -119,3 +119,26 @@ class TestMetrics:
         rows = calibration_table([0.15, 0.18, 0.72, 1.0], [0, 1, 1, 1])
         assert [(r.low, r.n) for r in rows] == [(0.1, 2), (0.7, 1), (0.9, 1)]
         assert rows[0].observed_rate == 0.5
+
+
+def test_elo_regression_toward_recent_seasons() -> None:
+    """'recent' regresses toward the team's own recent season-end average, so a
+    weaker tier (FCS) is not pulled up to the global mean every offseason."""
+    from datetime import UTC, datetime, timedelta
+
+    from ttk.models.elo import EloGame, EloParams, run_elo
+
+    t0 = datetime(2020, 9, 1, tzinfo=UTC)
+    # Team 1 beats team 2 by 30 in each of 3 seasons, then they meet again.
+    games = [
+        EloGame(i, 2020 + i, t0 + timedelta(days=365 * i), 1, 2, True, 40, 10) for i in range(4)
+    ]
+    mean = run_elo(games, EloParams(k=20, season_regression=0.5))
+    recent = run_elo(games, EloParams(k=20, season_regression=0.5, regression_target="recent"))
+    # Season 2: with one season-end on record, 'recent' targets the team's own
+    # rating (no pull); 'mean' halves the distance to 1500 from the same end rating.
+    end_of_first = recent[1].home_rating
+    assert mean[1].home_rating == pytest.approx(1500 + 0.5 * (end_of_first - 1500))
+    assert end_of_first > mean[1].home_rating > 1500
+    # By season 4 the gap persists: team 2 is not dragged back to 1500 each year.
+    assert recent[3].away_rating < mean[3].away_rating < 1500

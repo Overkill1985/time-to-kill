@@ -20,7 +20,7 @@ from __future__ import annotations
 import itertools
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 import numpy as np
 from sqlalchemy import select
@@ -190,6 +190,8 @@ def tune(
     *,
     home_field_grid: Sequence[float] = HOME_FIELD_GRID,
     k_grid: Sequence[float] = K_GRID,
+    regression_targets: Sequence[str] = ("mean",),
+    home_field_per_point_grid: Sequence[float] = HOME_FIELD_PER_POINT_GRID,
 ) -> TunedElo:
     """Grid search minimizing TRAIN moneyline log loss over two home-field modes.
     Never looks past TRAIN. Grids are overridable per sport (NBA home court is
@@ -203,13 +205,18 @@ def tune(
         if best is None or candidate.train_log_loss < best.train_log_loss:
             best = candidate
 
-    for k, reg, mov in itertools.product(k_grid, REGRESSION_GRID, MOV_GRID):
+    for k, reg, mov, target in itertools.product(
+        k_grid, REGRESSION_GRID, MOV_GRID, regression_targets
+    ):
+        base = EloParams(
+            k=k, season_regression=reg, margin_of_victory=mov, regression_target=target
+        )
         for hfa in home_field_grid:
-            params = EloParams(k=k, home_field=hfa, season_regression=reg, margin_of_victory=mov)
+            params = replace(base, home_field=hfa)
             loss = _win_log_loss(run_elo(games, params), by_id, splits.train)
             consider(TunedElo(params, "constant", None, loss))
-        for per_point in HOME_FIELD_PER_POINT_GRID:
-            params = EloParams(k=k, home_field=0.0, season_regression=reg, margin_of_victory=mov)
+        for per_point in home_field_per_point_grid:
+            params = replace(base, home_field=0.0)
             by_season = {s: per_point * m for s, m in prior_hfa.items()}
             loss = _win_log_loss(
                 run_elo(games, params, home_field_by_season=by_season), by_id, splits.train
@@ -634,10 +641,19 @@ def backtest(
     inputs: FeatureInputs | None = None,
     home_field_grid: Sequence[float] = HOME_FIELD_GRID,
     k_grid: Sequence[float] = K_GRID,
+    regression_targets: Sequence[str] = ("mean",),
+    home_field_per_point_grid: Sequence[float] = HOME_FIELD_PER_POINT_GRID,
 ) -> BacktestReport:
     by_id = {g.game_id: g for g in games}
     if params is None:
-        tuned = tune(games, splits, home_field_grid=home_field_grid, k_grid=k_grid)
+        tuned = tune(
+            games,
+            splits,
+            home_field_grid=home_field_grid,
+            k_grid=k_grid,
+            regression_targets=regression_targets,
+            home_field_per_point_grid=home_field_per_point_grid,
+        )
     else:
         loss = _win_log_loss(run_elo(games, params), by_id, splits.train)
         tuned = TunedElo(params, "constant", None, loss)

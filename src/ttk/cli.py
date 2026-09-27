@@ -70,21 +70,30 @@ def _print_betting(rows: list[BettingResult]) -> None:
         print(f"      edge >= {b.min_edge:.0%}: bets={b.bets:>5}  units={b.units:+.1f}  ROI={roi}")
 
 
-def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
+def _backtest_espn(args: argparse.Namespace, database_url: str, sport: Sport) -> int:
     from ttk.db.session import make_engine, make_session_factory
-    from ttk.research.nba_model import AT_TIP_ONLY, NBA_SPLITS, load_nba, nba_backtest
+    from ttk.research.cfb_model import CFB
+    from ttk.research.espn_models import load_sport, sport_backtest
+    from ttk.research.nba_model import NBA
 
+    config = {Sport.NBA: NBA, Sport.CFB: CFB}[sport]
     factory = make_session_factory(make_engine(database_url))
     with factory() as session:
-        data = load_nba(session)
+        data = load_sport(session, config)
     if not data.closes:
-        print("No NBA lines; run `ttk import-espn-history --sport NBA` first.", file=sys.stderr)
+        print(
+            f"No {sport} lines; run `ttk import-espn-history --sport {sport}` first.",
+            file=sys.stderr,
+        )
         return 2
-    report = nba_backtest(data, include_test=args.final_test)
+    report = sport_backtest(data, include_test=args.final_test)
     t, p = report.base.tuned, report.base.tuned.params
+    splits = config.splits
+    games_in_scope = {g.game_id for g in data.games}
     print(
-        f"NBA games {len(data.games)}, with closing lines {len(data.closes)}, "
-        f"with openers {len(data.opens)}"
+        f"{sport} games {len(data.games)}, with closing lines "
+        f"{len(games_in_scope & set(data.closes))}, with openers "
+        f"{len(games_in_scope & set(data.opens))}"
     )
     hfa = (
         f"home_field={p.home_field}"
@@ -92,8 +101,9 @@ def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
         else f"home_field={t.home_field_per_point} Elo per point of prior-3-season home margin"
     )
     print(
-        f"Tuned on TRAIN {NBA_SPLITS.train[0]}-{NBA_SPLITS.train[1]}: K={p.k} {hfa} "
-        f"regression={p.season_regression:.2f} mov={p.margin_of_victory} "
+        f"Tuned on TRAIN {splits.train[0]}-{splits.train[1]}: K={p.k} {hfa} "
+        f"regression={p.season_regression:.2f} toward {p.regression_target} "
+        f"mov={p.margin_of_victory} "
         f"(train logloss {t.train_log_loss:.4f})"
     )
     if t.home_field_by_season:
@@ -112,7 +122,7 @@ def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
         print(
             f"{name} model (TRAIN, n={m.n_train}): margin = {m.intercept:.2f} "
             + " ".join(f"{c:+.4f} x {n}" for n, c in m.coefs.items())
-            + (" [known at tip-off: close only]" if name in AT_TIP_ONLY else "")
+            + (" [known at tip-off: close only]" if name in config.at_tip_only else "")
         )
     _print_split("TRAIN", report.base.train)
     _print_split("VALIDATE", report.base.validate)
@@ -139,6 +149,34 @@ def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
         _print_split("TEST (sealed until now)", report.base.test)
     else:
         print("\nTEST seasons are sealed. Score them once, with --final-test, after freezing.")
+    return 0
+
+
+def _repair_espn_lines(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.espn_odds import EspnCoreOdds
+    from ttk.services.espn_history_import import import_season_odds
+    from ttk.services.repair import drop_malformed_espn_lines
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        found = drop_malformed_espn_lines(session, apply=args.apply)
+        if args.apply:
+            session.commit()
+    for m in found:
+        print(f"{m.sport} {m.season}: {m.games} games, {m.rows} ESPN line rows to re-fetch")
+    print(
+        f"{sum(m.games for m in found)} games with malformed lines"
+        + ("" if args.apply else " (dry run; --apply to drop and re-fetch)")
+    )
+    if not args.apply:
+        return 0
+    odds = EspnCoreOdds()
+    for m in found:
+        if m.season is None:
+            continue
+        run = import_season_odds(factory, Sport(m.sport), m.season, odds=odds, delay=args.delay)
+        print(f"{m.sport} {m.season}: {run.status} {run.records_written} rows, stats={run.stats}")
     return 0
 
 
@@ -702,6 +740,12 @@ def main(argv: list[str] | None = None) -> int:
     box.add_argument("--from-season", type=int, required=True, help="ESPN season year")
     box.add_argument("--to-season", type=int, required=True)
     box.add_argument("--delay", type=float, default=0.25, help="Seconds between requests")
+    fix_lines = sub.add_parser(
+        "repair-espn-lines",
+        help="Re-fetch ESPN lines that stored a price as a line (dry run unless --apply)",
+    )
+    fix_lines.add_argument("--apply", action="store_true")
+    fix_lines.add_argument("--delay", type=float, default=0.25)
     repair = sub.add_parser(
         "repair-merged-games",
         help="Split games that wrongly joined two ESPN events (dry run unless --apply)",
@@ -718,12 +762,13 @@ def main(argv: list[str] | None = None) -> int:
         "--register", action="store_true", help="Record the result in the model registry"
     )
     backtest.add_argument("--report", type=Path, help="Write the full report as JSON here")
-    nba_bt = sub.add_parser("backtest-nba", help="Tune and backtest the NBA spread models")
-    nba_bt.add_argument(
-        "--final-test",
-        action="store_true",
-        help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
-    )
+    for name, label in (("backtest-nba", "NBA"), ("backtest-cfb", "college football")):
+        espn_bt = sub.add_parser(name, help=f"Tune and backtest the {label} spread models")
+        espn_bt.add_argument(
+            "--final-test",
+            action="store_true",
+            help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
+        )
     card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
     card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
     card.add_argument(
@@ -843,6 +888,9 @@ def main(argv: list[str] | None = None) -> int:
             failed += run.status != "SUCCESS"
         return 1 if failed else 0
 
+    if args.command == "repair-espn-lines":
+        return _repair_espn_lines(args, settings)
+
     if args.command == "repair-merged-games":
         return _repair_merged_games(args, settings)
 
@@ -889,8 +937,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "backtest-nfl-elo":
         return _backtest_nfl_elo(args, settings.database_url)
 
-    if args.command == "backtest-nba":
-        return _backtest_nba(args, settings.database_url)
+    if args.command in ("backtest-nba", "backtest-cfb"):
+        sport = Sport.NBA if args.command == "backtest-nba" else Sport.CFB
+        return _backtest_espn(args, settings.database_url, sport)
 
     if args.command == "card":
         return _card(args, settings)

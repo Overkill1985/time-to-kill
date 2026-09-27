@@ -17,6 +17,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+RECENT_SEASONS = 3
+
 
 @dataclass(frozen=True)
 class EloParams:
@@ -27,6 +29,11 @@ class EloParams:
     """Fraction of the distance to the mean removed between seasons."""
     margin_of_victory: bool = True
     initial: float = 1500.0
+    regression_target: str = "mean"
+    """Between seasons, regress toward 'mean' (``initial``) or 'recent': the team's
+    average end-of-season rating over its last ``RECENT_SEASONS`` seasons. 'recent'
+    suits leagues with tiers (college FBS/FCS), where pulling every team to one mean
+    each offseason would inflate the weaker tier."""
 
 
 @dataclass(frozen=True)
@@ -77,12 +84,18 @@ def run_elo(
     must build it from earlier seasons only (see research.nfl_elo.prior_home_field)."""
     ratings: dict[int, float] = {}
     last_season: dict[int, int] = {}
+    season_ends: dict[int, list[float]] = {}
     predictions: list[EloPrediction] = []
 
     def rating(team: int, season: int) -> float:
         r = ratings.get(team, params.initial)
         if last_season.get(team, season) != season:
-            r = params.initial + (1.0 - params.season_regression) * (r - params.initial)
+            target = params.initial
+            if params.regression_target == "recent":
+                ends = season_ends.setdefault(team, [])
+                ends.append(r)  # the season just finished (known before this one)
+                target = sum(ends[-RECENT_SEASONS:]) / len(ends[-RECENT_SEASONS:])
+            r = target + (1.0 - params.season_regression) * (r - target)
         ratings[team] = r
         last_season[team] = season
         return r
