@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from ttk.db.models import Game, IngestionRun, utcnow
 from ttk.domain import Sport
 from ttk.providers.base import OddsProvider, ScheduleProvider
+from ttk.providers.espn_injuries import EspnInjuries
+from ttk.services.injury_ingest import ingest_injuries
 from ttk.services.odds_ingest import run_odds_ingestion
 from ttk.services.schedule_ingest import run_schedule_ingestion
 
@@ -36,6 +38,14 @@ SCHEDULE_REFRESH = timedelta(hours=6)
 # games from Oct 20 to Dec 25 (up to ~90 days out, 9-16 books each), but NFL and
 # CFB only about a week ahead.
 ODDS_LOOKAHEAD: dict[Sport, timedelta] = {Sport.NBA: timedelta(days=90)}
+
+# Injury lists (ESPN, free), polled on their own cadence. NBA's list is ~0.8 MB,
+# so every pass; NFL's is ~9 MB, so hourly. College lists are near-empty
+# (2026-09-27: CFB 3 entries, NCAAB none) and are not polled.
+INJURY_REFRESH: dict[Sport, timedelta] = {
+    Sport.NBA: timedelta(minutes=10),
+    Sport.NFL: timedelta(minutes=55),
+}
 
 
 def odds_lookahead(sport: Sport) -> timedelta:
@@ -80,6 +90,36 @@ def refresh_schedules(
                 (now + lookahead).date(),
             )
         )
+    return runs
+
+
+def _last_run(session: Session, sport: Sport, kind: str) -> datetime | None:
+    return session.scalar(
+        select(func.max(IngestionRun.finished_at)).where(
+            IngestionRun.kind == kind,
+            IngestionRun.sport == sport,
+            IngestionRun.status == "SUCCESS",
+        )
+    )
+
+
+def refresh_injuries(
+    session_factory: sessionmaker[Session],
+    source: EspnInjuries,
+    *,
+    now: datetime | None = None,
+    every: dict[Sport, timedelta] | None = None,
+) -> list[IngestionRun]:
+    """Store changes to each sport's injury list, at most every ``every[sport]``.
+    Each run's ``observed_at`` is ``now``: what we knew, and when."""
+    now = now or utcnow()
+    runs = []
+    for sport, interval in (every or INJURY_REFRESH).items():
+        with session_factory() as session:
+            last = _last_run(session, sport, "injuries")
+        if last is not None and now - last < interval:
+            continue
+        runs.append(ingest_injuries(session_factory, sport, source=source, now=now))
     return runs
 
 

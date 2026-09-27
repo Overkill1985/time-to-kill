@@ -65,6 +65,8 @@ composite "confidence" score is ever presented as a probability.
   - nflverse's reported lines have undocumented timing. So a market-anchored backtest bets at exactly the reported line it used as input.
   - They are never treated as closing lines for closing-line value.
 - **Starters (known at kickoff):** QB features use the quarterback who actually started. This is known once inactives are announced, about 90 minutes before kickoff. A model using it is valid only for bets placed after starters are known, and the bet tracker must record the bet time to hold it to that.
+- **NBA lineups (known at tip-off):** "missing at tip" uses who actually played, from the box score. Lineups are confirmed about 30 minutes before tip-off, so a model using it is scored against the close only, never at the opener. Its early-line counterpart uses the team's *previous* game ("who sat out last time"), which is known before the opener.
+- **Injury reports:** there is no free source of past injury status as of a given time. ESPN's game summaries show each player's *current* status even for old games (a 2017 game shows 2026 dates), so they are never used. Injury status comes only from our own polling (`injury_reports`, append-only, stamped with `observed_at`), queried with `injuries_at(t)`.
 - **Significance:** every model comparison against the market reports the paired per-game log-loss difference, with its standard error. A difference within about 2 standard errors is not an edge.
 
 ## Validation protocol

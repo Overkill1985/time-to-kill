@@ -249,18 +249,27 @@ def _find_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> Reso
             stats["linked_by_espn_event_id"] += 1
             return _link(session, g, game, swapped=game.home_team_id == away.id)
 
-    candidates = session.scalars(
-        select(Game).where(
-            Game.sport == g.sport,
-            or_(
-                (Game.home_team_id == home.id) & (Game.away_team_id == away.id),
-                (Game.home_team_id == away.id) & (Game.away_team_id == home.id),
-            ),
-            Game.commence_time.between(
-                g.commence_time - MATCH_WINDOW, g.commence_time + MATCH_WINDOW
-            ),
+    query = select(Game).where(
+        Game.sport == g.sport,
+        or_(
+            (Game.home_team_id == home.id) & (Game.away_team_id == away.id),
+            (Game.home_team_id == away.id) & (Game.away_team_id == home.id),
+        ),
+        Game.commence_time.between(g.commence_time - MATCH_WINDOW, g.commence_time + MATCH_WINDOW),
+    )
+    if g.provider == SCHEDULE_AUTHORITY:
+        # Each ESPN event is its own game: it may adopt a game another provider
+        # created, never one that already belongs to a different ESPN event (NBA
+        # teams can meet twice in two days with home and away reversed).
+        query = query.where(
+            ~select(GameSourceId.id)
+            .where(
+                GameSourceId.game_id == Game.id,
+                GameSourceId.provider == SCHEDULE_AUTHORITY,
+            )
+            .exists()
         )
-    ).all()
+    candidates = session.scalars(query).all()
     if len(candidates) == 1:
         game = candidates[0]
         stats["linked_by_teams_and_time"] += 1

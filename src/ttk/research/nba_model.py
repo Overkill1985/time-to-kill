@@ -31,11 +31,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, ReportedLine
+from ttk.db.models import Game, PlayerGameStat, ReportedLine
 from ttk.domain import GameStatus, Sport
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame, EloPrediction
 from ttk.models.margin import KeyNumberMarginModel, MarginModel, key_number_weights_for_means
+from ttk.research.nba_lineups import Availability, BoxRow, availability, hollinger_game_score
 from ttk.research.nfl_elo import (
     BacktestReport,
     BettingResult,
@@ -112,6 +113,8 @@ class NbaData:
     opens: dict[int, ReportedLine]
     rest: dict[int, tuple[float, float, bool, bool]]
     """game_id -> (home rest days, away rest days, home back-to-back, away back-to-back)."""
+    lineups: dict[int, Availability] = field(default_factory=dict)
+    """game_id -> walk-forward player availability (games with box scores)."""
 
 
 def load_nba(session: Session) -> NbaData:
@@ -155,7 +158,32 @@ def load_nba(session: Session) -> NbaData:
         for gid, rows_ in by_game["espn-open"].items()
         if (r := _representative(rows_)) is not None
     }
-    return NbaData(games, closes, opens, rest_features(games))
+    box: dict[int, list[BoxRow]] = defaultdict(list)
+    for stat in session.scalars(
+        select(PlayerGameStat).where(PlayerGameStat.game_id.in_([g.game_id for g in games]))
+    ):
+        box[stat.game_id].append(
+            BoxRow(
+                stat.player_id,
+                stat.team_id,
+                stat.played,
+                hollinger_game_score(
+                    points=stat.points,
+                    fgm=stat.fgm,
+                    fga=stat.fga,
+                    ftm=stat.ftm,
+                    fta=stat.fta,
+                    oreb=stat.oreb,
+                    dreb=stat.dreb,
+                    ast=stat.ast,
+                    stl=stat.stl,
+                    blk=stat.blk,
+                    tov=stat.tov,
+                    pf=stat.pf,
+                ),
+            )
+        )
+    return NbaData(games, closes, opens, rest_features(games), availability(games, box))
 
 
 def rest_features(games: Sequence[EloGame]) -> dict[int, tuple[float, float, bool, bool]]:
@@ -174,38 +202,70 @@ def rest_features(games: Sequence[EloGame]) -> dict[int, tuple[float, float, boo
     return out
 
 
-# --------------------------------------------------------------------------- rest model
+# --------------------------------------------------------------------------- margin models
 
 
 REST_FEATURES = ("elo_diff", "rest_diff", "home_b2b", "away_b2b")
+FEATURE_SETS: dict[str, tuple[str, ...]] = {
+    "rest": REST_FEATURES,
+    # Known at tip-off only: scored against the close, never used at the opener.
+    "lineup_tip": (*REST_FEATURES, "missing_diff"),
+    # Known before the opener (the team's previous game).
+    "lineup_prev": (*REST_FEATURES, "missing_prev_diff"),
+}
+AT_TIP_ONLY = frozenset({"lineup_tip"})
+LINEUP_FEATURES = frozenset({"missing_diff", "missing_prev_diff"})
+
+
+def feature_values(p: EloPrediction, data: NbaData) -> dict[str, float]:
+    """Every feature for one game. Lineup features are 0 (neutral) for a game
+    without a box score; fitting uses only games that have one."""
+    home_rest, away_rest, home_b2b, away_b2b = data.rest[p.game_id]
+    lineup = data.lineups.get(p.game_id)
+    return {
+        "elo_diff": p.elo_diff,
+        "rest_diff": home_rest - away_rest,
+        "home_b2b": float(home_b2b),
+        "away_b2b": float(away_b2b),
+        "missing_diff": lineup.missing_diff if lineup else 0.0,
+        "missing_prev_diff": lineup.missing_prev_diff if lineup else 0.0,
+    }
 
 
 @dataclass(frozen=True)
-class RestMarginModel:
+class FeatureMarginModel:
+    """Linear expected home margin on named features, with key-number cover and
+    push probabilities around it."""
+
+    names: tuple[str, ...]
     intercept: float
     coefs: dict[str, float]
     key: KeyNumberMarginModel
+    n_train: int
 
-    @staticmethod
-    def row(p: EloPrediction, rest: tuple[float, float, bool, bool]) -> list[float]:
-        home_rest, away_rest, home_b2b, away_b2b = rest
-        return [p.elo_diff, home_rest - away_rest, float(home_b2b), float(away_b2b)]
-
-    def expected_margin(self, p: EloPrediction, rest: tuple[float, float, bool, bool]) -> float:
-        return self.intercept + sum(
-            self.coefs[n] * x for n, x in zip(REST_FEATURES, self.row(p, rest), strict=True)
-        )
+    def expected_margin(self, values: dict[str, float]) -> float:
+        return self.intercept + sum(self.coefs[n] * values[n] for n in self.names)
 
 
-def fit_rest_model(
-    predictions: Sequence[EloPrediction], data: NbaData, train: tuple[int, int]
-) -> RestMarginModel:
+def fit_feature_model(
+    predictions: Sequence[EloPrediction],
+    data: NbaData,
+    train: tuple[int, int],
+    names: tuple[str, ...],
+) -> FeatureMarginModel:
     games = {g.game_id: g for g in data.games}
-    rows = [p for p in predictions if _in(p.season, train) and games[p.game_id].played]
+    needs_lineup = bool(LINEUP_FEATURES & set(names))
+    rows = [
+        p
+        for p in predictions
+        if _in(p.season, train)
+        and games[p.game_id].played
+        and (not needs_lineup or p.game_id in data.lineups)
+    ]
     x = np.column_stack(
         [
             np.ones(len(rows)),
-            np.asarray([RestMarginModel.row(p, data.rest[p.game_id]) for p in rows]),
+            np.asarray([[feature_values(p, data)[n] for n in names] for p in rows]),
         ]
     )
     y = np.asarray([_margin(games[p.game_id]) for p in rows], dtype=float)
@@ -213,10 +273,12 @@ def fit_rest_model(
     means = x @ beta
     sigma = float(np.std(y - means, ddof=x.shape[1]))
     weights = key_number_weights_for_means([float(m) for m in means], sigma, [int(v) for v in y])
-    return RestMarginModel(
+    return FeatureMarginModel(
+        names,
         float(beta[0]),
-        {n: float(b) for n, b in zip(REST_FEATURES, beta[1:], strict=True)},
+        {n: float(b) for n, b in zip(names, beta[1:], strict=True)},
         KeyNumberMarginModel(MarginModel(0.0, 0.0, sigma), weights),
+        len(rows),
     )
 
 
@@ -239,27 +301,34 @@ class OpenerResult:
 @dataclass
 class NbaReport:
     base: BacktestReport
-    rest: RestMarginModel
-    anchored_rest: MarketAnchoredModel
-    validate_rest: list[CandidateResult]
+    models: dict[str, FeatureMarginModel]
+    anchored: dict[str, MarketAnchoredModel]
+    validate_features: list[CandidateResult]
+    """Feature-model candidates on VALIDATE, scored against the close."""
     opener_games: int
     openers: list[OpenerResult] = field(default_factory=list)
     margin_rmse: dict[str, float] = field(default_factory=dict)
+    lineup_coverage: dict[str, int] = field(default_factory=dict)
+    """Games with walk-forward lineup features, per split."""
+
+    @property
+    def rest(self) -> FeatureMarginModel:
+        return self.models["rest"]
 
 
-def _rest_candidates(
-    rest: RestMarginModel, anchored: MarketAnchoredModel, data: NbaData
+def _feature_candidates(
+    name: str, model: FeatureMarginModel, anchored: MarketAnchoredModel, data: NbaData
 ) -> list[tuple[str, CoverFn]]:
-    def rest_fn(r: PricedSpread) -> tuple[float, float | None]:
-        mu = rest.expected_margin(r.prediction, data.rest[r.game.game_id])
-        probs = rest.key.spread_at_mean(r.home_line, mu)
+    def key_fn(r: PricedSpread) -> tuple[float, float | None]:
+        mu = model.expected_margin(feature_values(r.prediction, data))
+        probs = model.key.spread_at_mean(r.home_line, mu)
         return probs.home_cover_excluding_push, probs.push
 
     def anchored_fn(r: PricedSpread) -> tuple[float, float | None]:
-        mu = rest.expected_margin(r.prediction, data.rest[r.game.game_id])
+        mu = model.expected_margin(feature_values(r.prediction, data))
         return anchored.home_cover_probability(r.market_home_cover, mu + r.home_line), None
 
-    return [("rest_key_numbers", rest_fn), ("market_anchored_rest", anchored_fn)]
+    return [(f"{name}_key_numbers", key_fn), (f"market_anchored_{name}", anchored_fn)]
 
 
 def _no_vig_home(line: ReportedLine) -> float | None:
@@ -319,42 +388,61 @@ def nba_backtest(data: NbaData, *, include_test: bool = False) -> NbaReport:
     )
     predictions = base.tuned.run(data.games)
     games = {g.game_id: g for g in data.games}
-    rest = fit_rest_model(predictions, data, splits.train)
     train_rows = [
         r
         for r in priced_spreads(predictions, games, data.closes, splits.train)
         if r.cover_margin != 0
     ]
-    anchored_rest = fit_market_anchored(
-        [r.market_home_cover for r in train_rows],
-        [
-            rest.expected_margin(r.prediction, data.rest[r.game.game_id]) + r.home_line
-            for r in train_rows
-        ],
-        [int(r.cover_margin > 0) for r in train_rows],
-    )
-    candidates = _rest_candidates(rest, anchored_rest, data)
+    models: dict[str, FeatureMarginModel] = {}
+    anchored: dict[str, MarketAnchoredModel] = {}
+    candidates: dict[str, list[tuple[str, CoverFn]]] = {}
+    for name, names in FEATURE_SETS.items():
+        if LINEUP_FEATURES & set(names) and not data.lineups:
+            continue  # no box scores imported
+        model = fit_feature_model(predictions, data, splits.train, names)
+        models[name] = model
+        anchored[name] = fit_market_anchored(
+            [r.market_home_cover for r in train_rows],
+            [
+                model.expected_margin(feature_values(r.prediction, data)) + r.home_line
+                for r in train_rows
+            ],
+            [int(r.cover_margin > 0) for r in train_rows],
+        )
+        candidates[name] = _feature_candidates(name, model, anchored[name], data)
     validate_rows = priced_spreads(predictions, games, data.closes, splits.validate)
-    validate_rest = [_evaluate_candidate(name, validate_rows, fn) for name, fn in candidates]
+    validate_features = [
+        _evaluate_candidate(label, validate_rows, fn)
+        for pairs in candidates.values()
+        for label, fn in pairs
+    ]
 
-    # Opening-line test on VALIDATE seasons (openers exist from 2023-24).
+    # Opening-line test on VALIDATE seasons (openers exist from 2023-24). Features
+    # known only at tip-off are excluded: using them at the opener would be leakage.
     opener_rows = priced_spreads(predictions, games, data.opens, splits.validate)
     base_fns = dict(base.models.candidates())
     openers = [
-        opener_test(name, fn, opener_rows, data.closes)
-        for name, fn in [
+        opener_test(label, fn, opener_rows, data.closes)
+        for label, fn in [
             ("market_anchored", base_fns["market_anchored"]),
             ("elo_key_numbers", base_fns["elo_key_numbers"]),
-            *candidates,
+            *[
+                pair
+                for name, pairs in candidates.items()
+                if name not in AT_TIP_ONLY
+                for pair in pairs
+            ],
         ]
     ]
 
-    errors: dict[str, list[float]] = {"elo": [], "rest": []}
+    errors: dict[str, list[float]] = defaultdict(list)
     for p in predictions:
         g = games[p.game_id]
         if _in(p.season, splits.validate) and g.played:
             errors["elo"].append(base.models.normal.expected_margin(p.elo_diff) - _margin(g))
-            errors["rest"].append(rest.expected_margin(p, data.rest[p.game_id]) - _margin(g))
+            values = feature_values(p, data)
+            for name, model in models.items():
+                errors[name].append(model.expected_margin(values) - _margin(g))
     line_errors = [
         (-data.closes[p.game_id].home_spread) - _margin(games[p.game_id])  # type: ignore[operator]
         for p in predictions
@@ -366,4 +454,21 @@ def nba_backtest(data: NbaData, *, include_test: bool = False) -> NbaReport:
     rmse = {k: float(np.sqrt(np.mean(np.square(v)))) for k, v in errors.items() if v}
     if line_errors:
         rmse["market_close"] = float(np.sqrt(np.mean(np.square(line_errors))))
-    return NbaReport(base, rest, anchored_rest, validate_rest, len(opener_rows), openers, rmse)
+    coverage = {
+        label: sum(
+            1
+            for g in data.games
+            if _in(g.season, window) and g.played and g.game_id in data.lineups
+        )
+        for label, window in (("train", splits.train), ("validate", splits.validate))
+    }
+    return NbaReport(
+        base,
+        models,
+        anchored,
+        validate_features,
+        len(opener_rows),
+        openers,
+        rmse,
+        coverage,
+    )

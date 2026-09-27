@@ -118,68 +118,94 @@ Margin error, RMSE in points, on validation games with a reported line:
 - **In the Parlay Lab:** a same-game NFL group gets the simulation's lift, P(all legs) ÷ the product of each leg's probability in the same simulated games. The lift multiplies the displayed leg probabilities, and the result is capped at the weakest leg's probability.
 
 
-## NBA spread (2026-09-26)
+## NBA spread (2026-09-27)
 
-Data: ESPN's core API, one line per game per sportsbook (DATA-SOURCES.md): 11,592 games from
-2017-18 to 2025-26, 11,589 with a closing line. Each game's benchmark is the most common home
-spread across books, priced by the highest-priority book with real prices on both sides.
-Openers are the books' own, and exist from 2023-24 only. Reproduce with `ttk backtest-nba`.
+Data: ESPN's core API, one line per game per sportsbook, and ESPN box scores
+(DATA-SOURCES.md): 11,648 regular-season and playoff games from 2017-18 to 2025-26. Each
+game's benchmark is the most common home spread across books, priced by the highest-priority
+book with real prices on both sides. Openers are the books' own, and exist from 2023-24 only.
+Reproduce with `ttk backtest-nba`.
 
 Splits (ESPN season = the year it ends): burn-in 2018, **train 2019–2022**, **validate
 2023–2024**, test 2025–2026 (sealed).
 
-### What was fitted on the training seasons
+**Numbers changed slightly on 2026-09-27** after 66 wrongly merged games were split
+(DATA-SOURCES.md, "Identity bug"). None of the verdicts changed.
+
+### What was fitted on the training seasons (n=4,955 games)
 
 - **Elo:** K=10 (the grid was extended down to 5 because 10 had sat at its edge; 10 remained
   best), margin-of-victory on, 50% regression between seasons. Home court is rolling: 20 Elo
-  per point of the prior three seasons' home margin, which gives 35–51 Elo by season. NBA home
-  advantage varied by season (it dipped for 2022–2024), and the rolling value fit TRAIN better than every constant.
-- **Key-number weights:** 0 gets 0.13 (NBA games can't end tied), 1
-  gets 0.76, then 2–7 are near 1. NBA margins don't cluster the way the NFL's do.
-- **Rest model:** margin = 0.16 + 0.042 × elo_diff + 0.029 × rest_diff − 2.20 × home
-  back-to-back + 1.54 × away back-to-back. Rest days are capped at 4. A back-to-back is worth
-  about 2 points: real signal.
+  per point of the prior three seasons' home margin, which gives 34–52 Elo by season. NBA home
+  advantage varied by season (it dipped for 2022–2024), and the rolling value fit TRAIN better
+  than every constant.
+- **Key-number weights:** 0 gets 0.13 (NBA games can't end tied), 1 gets 0.76, then 2–7 are
+  near 1. NBA margins don't cluster the way the NFL's do.
+- **Rest:** margin = 0.15 + 0.042 × elo_diff + 0.017 × rest_diff − 2.25 × home back-to-back +
+  1.49 × away back-to-back. Rest days are capped at 4. A back-to-back is worth about 2 points.
+- **Lineups** (`research/nba_lineups.py`, walk-forward from box scores): each player's value is
+  a recency-weighted Game Score; each team's "missing value" sums the value of its regular
+  rotation players who didn't play, weighted by how regular they were.
+  - **At tip-off** (who actually played; close only): −0.171 points per unit of missing value
+    (home minus away). A star worth ~18 missing costs about 3 points.
+  - **Previous game** (known before the opener): −0.080 per unit. Absences partly carry over
+    to the next game.
 
-### Validation, 2023–2024 (n=2,590 spread games with real prices on both sides)
+### Validation, 2023–2024 (n=2,599 spread games with real prices on both sides)
 
-| Model | Spread log loss | vs market (paired) | z |
-|---|---|---|---|
-| Market no-vig (close) | 0.6932 | — | — |
-| Elo, normal margin | 0.7182 | +0.0249 | +5.7 (worse) |
-| Elo, key numbers | 0.7178 | +0.0246 | +5.6 (worse) |
-| Rest, key numbers | 0.7147 | +0.0215 | +5.1 (worse) |
-| Market-anchored (Elo) | 0.6939 | +0.0007 | +1.2 |
-| Market-anchored (rest) | 0.6939 | +0.0007 | +1.3 |
+| Model | Spread log loss | vs market (paired) | z | Margin RMSE |
+|---|---|---|---|---|
+| Market no-vig (close) | 0.6932 | — | — | 13.15 |
+| Elo, key numbers | 0.7182 | +0.0250 | +5.7 (worse) | 13.67 |
+| Rest, key numbers | 0.7152 | +0.0220 | +5.2 (worse) | 13.61 |
+| Lineups at tip, key numbers | 0.7113 | +0.0181 | +5.4 (worse) | **13.46** |
+| Lineups previous game, key numbers | 0.7133 | +0.0201 | +5.0 (worse) | 13.56 |
+| Market-anchored (Elo, rest, either lineup) | 0.6938–0.6939 | +0.0006 to +0.0007 | +1.0 to +1.2 | — |
 
-- **Margin RMSE:** Elo 13.66, rest 13.60, the closing line 13.18. Rest closes about an eighth of
-  Elo's gap to the market.
-- **Moneyline:** Elo log loss 0.6309 against the market's 0.6052 (n=2,629).
-- **Pushes:** actual 1.52%, predicted 1.24% by the key-number model.
-- **Betting every edge at the close loses about the vig** (ROI −4% to −7% at every threshold).
-  The market-anchored models bet rarely: +0.8% ROI on 268 bets at edge ≥ 2%, which is noise.
+- **Lineups are the strongest signal so far.** Who played closes about a third of the rest
+  model's margin-error gap to the closing line (13.61 → 13.46, market 13.15); the previous
+  game's absences close about a tenth.
+- **The close already has it.** No model beats the closing line, and anchoring any of them to
+  the market adds nothing (z about +1).
+- **Betting against the close with lineups loses more** (ROI −7% to −9%, against −5% to −6%
+  for rest): where the lineup model disagrees with the close, the close knows something it
+  doesn't (minutes limits, late scratches, matchups).
+- **Moneyline:** Elo log loss 0.6318 against the market's 0.6052 (n=2,639).
+- **Pushes:** actual 1.55%, predicted 1.24% by the key-number model.
 
-### Betting the opener (2023-24, n=1,310 games with openers)
+### Betting the opener (2023-24, n=1,314 games with openers)
 
-The model sees the opener; bets are placed at the opener and settled against results.
+Bets are placed at the opener and settled against results. Lineups at tip-off are **excluded**
+here: they aren't known when the opener is posted.
 - **Price CLV** is reported only when the close stayed on the opening number. It is the bet's
   price against the close's no-vig probability, so a line that didn't move at −110 scores
-  about −4.5% (the vig). Elo and rest: −4.6% (n≈200), meaning no movement toward the bet.
-  Market-anchored: −7.6% (n=51), meaning prices moved against it.
-- **Points versus the close**, where the line moved: Elo +0.12 (n=842), rest +0.21 (n=852),
-  market-anchored +0.49 (n=168). Lines tended to move toward the models' sides, the
-  market-anchored model most. This is the only encouraging number here. It isn't a price and
-  isn't converted into one.
-- **ROI at the opener:** Elo −8.8% to −13.8%, rest −8.4% to −10.4%, market-anchored −4.6% on
-  every game and +5.2% on 52 bets at edge ≥ 4% (noise at that n).
+  about −4.5% (the vig). Every key-number model: about −4.7% (n≈200), i.e. no movement.
+  Market-anchored: about −7.6% (n≈52), i.e. prices moved against it.
+- **Points versus the close**, where the line moved (positive = the line moved toward the
+  bet's side):
+
+  | Model | Points | n |
+  |---|---|---|
+  | Elo, key numbers | +0.13 | 849 |
+  | Rest, key numbers | +0.22 | 853 |
+  | Lineups previous game, key numbers | **+0.31** | 847 |
+  | Market-anchored (any) | +0.45 to +0.50 | 169–182 |
+
+  Adding last game's absences moves the key-number model's picks further toward where the line
+  goes. This isn't a price and isn't converted into one.
+- **ROI at the opener** is still negative: lineups previous game −6.3% on every game (rest
+  −8.8%, Elo −9.2%), market-anchored about −4.5%. The small positive results at edge ≥ 4–6%
+  (10–57 bets) are noise.
 
 ### Verdicts
 
 - No NBA model beats the closing line. Every one stays DEVELOPMENT, and the test seasons stay
   sealed.
-- Rest and back-to-back are real signal that the market already prices.
-- Worth pursuing: the market-anchored model's tendency to be on the side the line moves toward
-  from the opener. The seasons after 2023-24 with openers are sealed test data, so a second look waits for
-  live collection; injury and lineup news at the opener is the next input to test.
+- Rest and lineups are real signal that the market prices by the close.
+- The early-line lead to follow: models with more information pick the side the line moves
+  toward (+0.13 → +0.22 → +0.31 points). The real test is **injury status at the opener**,
+  which exists only from our own polling (started 2026-09-27); the 2026-27 season, from
+  October, will be the first with it. The later seasons with openers are sealed test data.
 
 ### What could actually beat the market (next, NFL)
 

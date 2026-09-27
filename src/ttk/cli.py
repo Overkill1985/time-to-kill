@@ -72,7 +72,7 @@ def _print_betting(rows: list[BettingResult]) -> None:
 
 def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
     from ttk.db.session import make_engine, make_session_factory
-    from ttk.research.nba_model import NBA_SPLITS, load_nba, nba_backtest
+    from ttk.research.nba_model import AT_TIP_ONLY, NBA_SPLITS, load_nba, nba_backtest
 
     factory = make_session_factory(make_engine(database_url))
     with factory() as session:
@@ -103,15 +103,21 @@ def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
         )
     w = report.base.models.key_number.weights
     print("Key-number weights (TRAIN): " + ", ".join(f"{k}:{w[k]:.2f}" for k in sorted(w)[:8]))
-    r = report.rest
-    print(
-        f"Rest model (TRAIN): margin = {r.intercept:.2f} "
-        + " ".join(f"{c:+.4f} x {n}" for n, c in r.coefs.items())
-    )
+    if report.lineup_coverage:
+        print(
+            "Games with lineup features: "
+            + ", ".join(f"{k} {v}" for k, v in report.lineup_coverage.items())
+        )
+    for name, m in report.models.items():
+        print(
+            f"{name} model (TRAIN, n={m.n_train}): margin = {m.intercept:.2f} "
+            + " ".join(f"{c:+.4f} x {n}" for n, c in m.coefs.items())
+            + (" [known at tip-off: close only]" if name in AT_TIP_ONLY else "")
+        )
     _print_split("TRAIN", report.base.train)
     _print_split("VALIDATE", report.base.validate)
-    print("  Rest candidates on VALIDATE:")
-    for c in report.validate_rest:
+    print("  Feature candidates on VALIDATE (vs the close):")
+    for c in report.validate_features:
         v = c.vs_market
         print(
             f"    {c.name:<21} logloss {c.spread.log_loss:.4f}  vs market "
@@ -133,6 +139,41 @@ def _backtest_nba(args: argparse.Namespace, database_url: str) -> int:
         _print_split("TEST (sealed until now)", report.base.test)
     else:
         print("\nTEST seasons are sealed. Score them once, with --final-test, after freezing.")
+    return 0
+
+
+def _repair_merged_games(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.espn import EspnScheduleProvider
+    from ttk.providers.espn_odds import EspnCoreOdds
+    from ttk.services.espn_history_import import import_season_odds
+    from ttk.services.repair import split_merged_espn_games
+    from ttk.services.schedule_ingest import run_schedule_ingestion
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        merged = split_merged_espn_games(session, apply=args.apply)
+        if args.apply:
+            session.commit()
+    for m in merged:
+        print(
+            f"game {m.game_id} {m.sport} {m.season}: keep ESPN {m.kept_event}, "
+            f"unlink {', '.join(m.removed_events)}; drop {m.reported_lines} ESPN lines, "
+            f"{m.player_rows} box-score rows; re-ingest {m.window[0]}..{m.window[1]}"
+        )
+    print(f"{len(merged)} merged games" + ("" if args.apply else " (dry run; --apply to repair)"))
+    if not args.apply or not merged:
+        return 0
+    schedule = EspnScheduleProvider(delay=args.delay)
+    for m in merged:
+        run = run_schedule_ingestion(factory, schedule, Sport(m.sport), *m.window)
+        if run.status != "SUCCESS":
+            print(f"game {m.game_id}: schedule re-ingest failed: {run.error}", file=sys.stderr)
+            return 1
+    odds = EspnCoreOdds()
+    for sport, season in sorted({(m.sport, m.season) for m in merged if m.season is not None}):
+        run = import_season_odds(factory, Sport(sport), season, odds=odds, delay=args.delay)
+        print(f"{sport} {season} lines: {run.status} {run.records_written} rows, stats={run.stats}")
     return 0
 
 
@@ -285,8 +326,9 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
 
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn import EspnScheduleProvider
+    from ttk.providers.espn_injuries import EspnInjuries
     from ttk.services.bets import settle_bets
-    from ttk.services.collector import collect_once, refresh_schedules
+    from ttk.services.collector import collect_once, refresh_injuries, refresh_schedules
     from ttk.services.parlay_lab import settle_parlays
 
     log_file = None
@@ -308,6 +350,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     sports = [Sport(s.strip().upper()) for s in args.sports.split(",") if s.strip()]
     factory = make_session_factory(make_engine(settings.database_url))
     schedule_provider = EspnScheduleProvider()
+    injuries = EspnInjuries()
     remaining: int | None = None
     emit(
         f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
@@ -321,6 +364,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             for run in refresh_schedules(factory, schedule_provider, sports):
                 emit(
                     f"{run.sport} schedule: {run.status} {run.records_written} games, "
+                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+                )
+            for run in refresh_injuries(factory, injuries):
+                emit(
+                    f"{run.sport} injuries: {run.status} {run.records_written} changes, "
                     f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
                 )
             with factory() as session:
@@ -646,6 +694,20 @@ def main(argv: list[str] | None = None) -> int:
     espn_history.add_argument(
         "--delay", type=float, default=0.25, help="Seconds between requests (be polite to ESPN)"
     )
+    box = sub.add_parser(
+        "import-boxscores",
+        help="Import player box scores (who played, minutes, stats) for final games, from ESPN",
+    )
+    box.add_argument("--sport", type=Sport, choices=[Sport.NBA, Sport.NCAAB], default=Sport.NBA)
+    box.add_argument("--from-season", type=int, required=True, help="ESPN season year")
+    box.add_argument("--to-season", type=int, required=True)
+    box.add_argument("--delay", type=float, default=0.25, help="Seconds between requests")
+    repair = sub.add_parser(
+        "repair-merged-games",
+        help="Split games that wrongly joined two ESPN events (dry run unless --apply)",
+    )
+    repair.add_argument("--apply", action="store_true")
+    repair.add_argument("--delay", type=float, default=0.25)
     backtest = sub.add_parser("backtest-nfl-elo", help="Tune and backtest the NFL spread models")
     backtest.add_argument(
         "--final-test",
@@ -780,6 +842,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             failed += run.status != "SUCCESS"
         return 1 if failed else 0
+
+    if args.command == "repair-merged-games":
+        return _repair_merged_games(args, settings)
+
+    if args.command == "import-boxscores":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.espn_boxscore import EspnBoxscores
+        from ttk.services.boxscore_import import import_boxscores
+
+        factory = make_session_factory(make_engine(settings.database_url))
+        run = import_boxscores(
+            factory,
+            args.sport,
+            (args.from_season, args.to_season),
+            boxscores=EspnBoxscores(),
+            delay=args.delay,
+        )
+        print(f"box scores {run.status}: {run.records_written} player rows, stats={run.stats}")
+        if run.error:
+            print(run.error, file=sys.stderr)
+        return 0 if run.status == "SUCCESS" else 1
 
     if args.command == "import-espn-history":
         from ttk.db.session import make_engine, make_session_factory

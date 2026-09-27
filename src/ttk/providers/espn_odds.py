@@ -18,7 +18,6 @@ NBA games 2017-18 through 2025-26:
 
 from __future__ import annotations
 
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +26,7 @@ import httpx
 
 from ttk.domain import Sport
 from ttk.providers.base import ProviderError
+from ttk.providers.http_retry import get_with_retries
 
 CORE_URL = (
     "https://sports.core.api.espn.com/v2/sports/{path}/events/{event}/competitions/{event}/odds"
@@ -137,24 +137,14 @@ class EspnCoreOdds:
         self._retries = retries
         self._backoff = backoff
 
-    def _get(self, url: str) -> httpx.Response:
-        """GET with retries on transport errors and 5xx (ESPN returns occasional 503s)."""
-        for attempt in range(self._retries + 1):
-            try:
-                response = self._client.get(url)
-            except httpx.HTTPError as exc:
-                if attempt == self._retries:
-                    raise ProviderError(
-                        f"espn-core: request failed ({type(exc).__name__})"
-                    ) from None
-            else:
-                if response.status_code < 500 or attempt == self._retries:
-                    return response
-            time.sleep(self._backoff * (attempt + 1))
-        raise AssertionError("unreachable")
-
     def fetch(self, sport: Sport, event_id: str) -> list[dict[str, Any]]:
-        response = self._get(CORE_URL.format(path=CORE_PATHS[sport], event=event_id))
+        response = get_with_retries(
+            self._client,
+            CORE_URL.format(path=CORE_PATHS[sport], event=event_id),
+            name=self.name,
+            retries=self._retries,
+            backoff=self._backoff,
+        )
         if response.status_code == 404:
             return []
         if response.status_code != 200:

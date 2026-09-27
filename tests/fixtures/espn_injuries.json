@@ -1,0 +1,433 @@
+{
+ "NBA": {
+  "timestamp": "2026-09-27T11:14:28Z",
+  "injuries": [
+   {
+    "id": "1",
+    "displayName": "Atlanta Hawks",
+    "injuries": [
+     {
+      "id": "-57577",
+      "date": "2026-09-21T19:50Z",
+      "status": "Out",
+      "type": {
+       "id": "4",
+       "name": "INJURY_STATUS_OUT",
+       "description": "out",
+       "abbreviation": "O"
+      },
+      "shortComment": "Veesaar was diagnosed with a torn right ACL and is expected to miss the 2026-27 season, the Hawks announced Monday.",
+      "details": {
+       "fantasyStatus": {
+        "description": "OFS",
+        "abbreviation": "OFS"
+       },
+       "type": "Knee",
+       "location": "Leg",
+       "side": "Right",
+       "returnDate": "2027-07-01"
+      },
+      "athlete": {
+       "displayName": "Henri Veesaar",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nba/player/_/id/5105571/henri-veesaar",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     },
+     {
+      "id": "-56292",
+      "date": "2026-07-19T00:14Z",
+      "status": "Day-To-Day",
+      "type": {
+       "id": "6",
+       "name": "INJURY_STATUS_DAYTODAY",
+       "description": "day-to-day",
+       "abbreviation": "DD"
+      },
+      "shortComment": "Gueye underwent surgery Tuesday to repair a fractured left foot that he suffered during a workout last week, Brad Rowland of the Locked On Podcast Network reports.",
+      "details": {
+       "fantasyStatus": {
+        "description": "GTD",
+        "abbreviation": "GTD"
+       },
+       "type": "Foot",
+       "location": "Leg",
+       "detail": "Fracture",
+       "side": "Left",
+       "returnDate": "2026-10-15"
+      },
+      "athlete": {
+       "displayName": "Mouhamed Gueye",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nba/player/_/id/4712863/mouhamed-gueye",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     },
+     {
+      "id": "532102",
+      "date": "2026-07-18T23:19Z",
+      "status": "Day-To-Day",
+      "type": {
+       "id": "6",
+       "name": "INJURY_STATUS_DAYTODAY",
+       "description": "day-to-day",
+       "abbreviation": "DD"
+      },
+      "shortComment": "Gilbert (hip) won't play in Saturday's Las Vegas Summer League game against the Wizards, Brad Rowland of the Locked On Podcast Network reports.",
+      "details": {
+       "fantasyStatus": {
+        "description": "GTD",
+        "abbreviation": "GTD"
+       },
+       "type": "Hip",
+       "location": "Torso",
+       "returnDate": "2026-10-01"
+      },
+      "athlete": {
+       "displayName": "Keshon Gilbert",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nba/player/_/id/4585618/keshon-gilbert",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "17",
+    "displayName": "Brooklyn Nets",
+    "injuries": [
+     {
+      "id": "-55021",
+      "date": "2026-06-30T13:28Z",
+      "status": "Day-To-Day",
+      "type": {
+       "id": "6",
+       "name": "INJURY_STATUS_DAYTODAY",
+       "description": "day-to-day",
+       "abbreviation": "DD"
+      },
+      "shortComment": "Brooklyn general manager Sean Marks announced Monday that Traore underwent right knee surgery and won't play in Summer League, C.J. Holmes of the New York Daily News reports.",
+      "details": {
+       "fantasyStatus": {
+        "description": "GTD",
+        "abbreviation": "GTD"
+       },
+       "type": "Knee",
+       "location": "Leg",
+       "detail": "Surgery",
+       "side": "Right",
+       "returnDate": "2026-10-01"
+      },
+      "athlete": {
+       "displayName": "Nolan Traore",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nba/player/_/id/5279130/nolan-traore",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "17"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "NFL": {
+  "timestamp": "2026-09-27T11:14:35Z",
+  "injuries": [
+   {
+    "id": "22",
+    "displayName": "Arizona Cardinals",
+    "injuries": [
+     {
+      "id": "639237",
+      "date": "2026-09-26T00:39Z",
+      "status": "Questionable",
+      "type": {
+       "id": "2",
+       "name": "INJURY_STATUS_QUESTIONABLE",
+       "description": "questionable",
+       "abbreviation": "Q"
+      },
+      "shortComment": "Lopez (groin) is listed as questionable for Sunday's game versus the 49ers, Darren Urban of the Cardinals' official site reports.",
+      "details": {
+       "fantasyStatus": {
+        "description": "QUESTIONABLE",
+        "abbreviation": "QUESTIONABLE"
+       },
+       "type": "Groin",
+       "location": "Groin",
+       "detail": "Not Specified",
+       "side": "Not Specified",
+       "returnDate": "2026-09-27"
+      },
+      "athlete": {
+       "displayName": "Roy Lopez",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/4040805/roy-lopez",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "22"
+       }
+      }
+     },
+     {
+      "id": "639235",
+      "date": "2026-09-26T00:34Z",
+      "status": "Active",
+      "type": {
+       "id": "0",
+       "name": "INJURY_STATUS_ACTIVE",
+       "description": "active",
+       "abbreviation": "A"
+      },
+      "shortComment": "Williams (Achilles) does not carry an injury designation ahead of Sunday's game against the 49ers, Darren Urban of the Cardinals' official site reports.",
+      "details": null,
+      "athlete": {
+       "displayName": "Garrett Williams",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/4568506/garrett-williams",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "22"
+       }
+      }
+     },
+     {
+      "id": "639233",
+      "date": "2026-09-26T00:29Z",
+      "status": "Questionable",
+      "type": {
+       "id": "2",
+       "name": "INJURY_STATUS_QUESTIONABLE",
+       "description": "questionable",
+       "abbreviation": "Q"
+      },
+      "shortComment": "Melton (toe) is listed as questionable for Sunday's game versus San Francisco, Darren Urban of the Cardinals' official site reports.",
+      "details": {
+       "fantasyStatus": {
+        "description": "QUESTIONABLE",
+        "abbreviation": "QUESTIONABLE"
+       },
+       "type": "Toe",
+       "location": "Leg",
+       "detail": "Not Specified",
+       "side": "Left",
+       "returnDate": "2026-09-27"
+      },
+      "athlete": {
+       "displayName": "Max Melton",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/4698113/max-melton",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "22"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "1",
+    "displayName": "Atlanta Falcons",
+    "injuries": [
+     {
+      "id": "639334",
+      "date": "2026-09-27T03:52Z",
+      "status": "Active",
+      "type": {
+       "id": "0",
+       "name": "INJURY_STATUS_ACTIVE",
+       "description": "active",
+       "abbreviation": "A"
+      },
+      "shortComment": "Bates recorded four tackles (one solo) and one pass defense during the Falcons' 35-14 victory over the Packers on Thursday.",
+      "details": null,
+      "athlete": {
+       "displayName": "Jessie Bates III",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/3919512/jessie-bates-iii",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     },
+     {
+      "id": "639333",
+      "date": "2026-09-27T03:46Z",
+      "status": "Active",
+      "type": {
+       "id": "0",
+       "name": "INJURY_STATUS_ACTIVE",
+       "description": "active",
+       "abbreviation": "A"
+      },
+      "shortComment": "Watts recorded five tackles (three solo) and one interception during Thursday's 35-14 win over the Packers.",
+      "details": null,
+      "athlete": {
+       "displayName": "Xavier Watts",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/4431005/xavier-watts",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     },
+     {
+      "id": "639327",
+      "date": "2026-09-27T00:17Z",
+      "status": "Active",
+      "type": {
+       "id": "0",
+       "name": "INJURY_STATUS_ACTIVE",
+       "description": "active",
+       "abbreviation": "A"
+      },
+      "shortComment": "Hooper caught both of his targets for 11 yards and a touchdown during Atlanta's 35-14 win over Green Bay on Thursday.",
+      "details": null,
+      "athlete": {
+       "displayName": "Austin Hooper",
+       "links": [
+        {
+         "language": "en-US",
+         "rel": [
+          "playercard",
+          "desktop",
+          "athlete"
+         ],
+         "href": "https://www.espn.com/nfl/player/_/id/3043275/austin-hooper",
+         "text": "Player Card",
+         "shortText": "Player Card",
+         "isExternal": false,
+         "isPremium": false
+        }
+       ],
+       "team": {
+        "id": "1"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -13,6 +13,8 @@ immutable snapshots.
 | nflverse play-by-play (`nflverse-data` release `pbp`) | Per-game team offense (EPA, success, dropbacks, rushes) and QB dropback EPA, aggregated from ~48k plays per season | None | On demand: `ttk import-nfl-pbp --from-season Y --to-season Y` (~15 MB download per season; raw plays are discarded) | See the upstream repo | - | Previous week complete by Tuesday | **Built** (1999–2026 imported) |
 | nflverse games: starting QBs | `home_qb_id` / `away_qb_id` for every played game, and for upcoming games once listed | None | With `ttk import-nfl-history` | See the upstream repo | - | Known at kickoff | **Built** |
 | ESPN core API odds | Per-game lines from real sportsbooks (spread + prices, total + prices, moneylines); **opening and closing** from 2023-24 on, closing only before | None (undocumented public API) | On demand: `ttk import-espn-history --sport NBA --from-season Y --to-season Y` (resumable, paced) | Unofficial; one request per game (~1,300 per NBA season) | - | Historical only | **Built** (NBA 2017-18 onward) |
+| ESPN game summaries (box scores) | Per-player lines for final games: starter, minutes, points, shooting, rebounds, assists, steals, blocks, turnovers, fouls, +/-; healthy scratches with a reason | None (undocumented public API) | On demand: `ttk import-boxscores --sport NBA --from-season Y --to-season Y` (resumable, paced) | Unofficial; one request per game | - | Historical | **Built** (NBA 2017-18 onward) |
+| ESPN injury lists | Current injury status per player (NFL, NBA): status, injury, comment, expected return, ESPN's update time | None (undocumented public API) | The collector: NBA every pass, NFL hourly; `injury_reports` stores changes only | Unofficial; NFL list is ~9 MB | - | Live only: **no history endpoint**, so history starts with our polling (2026-09-27) | **Built and running** |
 | Open-Meteo | Weather for outdoor football | None | 4 h | Free non-commercial | - | Forecast <= 16 days out | Planned (NFL/CFB features) |
 
 Timestamped odds history (verified 2026-09-26):
@@ -66,6 +68,15 @@ ESPN core API odds, verified 2026-09-26 on NBA games 2017-18 through 2025-26 (`s
 - From 2023-24, `homeTeamOdds.open` / `.close` carry the home team's line ("+5.5") and prices, so **openers are real book openers**, not our first poll. Before that only the item-level `spread` exists; it is the home line (it agreed with the moneyline favorite in 142 of 146 sampled games).
 - Stored in `reported_lines` as `espn:<book>` (close) and `espn-open:<book>` (open). Evaluation data only (MODEL-GOVERNANCE.md). Season years are ESPN's: the year a season ends (2025-26 = 2026).
 - Season windows (`services/espn_history_import.py`): Sep 25 to Jun 30, except the 2019-20 bubble (to Oct 15 2020) and 2020-21 (Dec 1 2020 to Jul 25 2021). Preseason games are imported but excluded from models.
+
+ESPN game summaries and injury lists, verified 2026-09-27 (`providers/espn_boxscore.py`, `providers/espn_injuries.py`):
+
+- **Box scores:** healthy scratches are listed with `didNotPlay` and a reason ("COACH'S DECISION"). **Injured and inactive players are not listed at all**, so a regular missing from the box score is an absence. Minutes are whole numbers.
+- **The summary's `injuries` block is not historical.** It shows the player's current status: a 2017-18 game lists injuries dated 2026. It is never read.
+- **Injury lists** (`/injuries`): NBA ~70 entries (Out, Day-To-Day), NFL ~800 (Out, Doubtful, Questionable, Injured Reserve, and Active = cleared). CFB has a handful, NCAAB none; neither is polled. Each entry has ESPN's update time and an expected return date. The athlete id is only in the profile link.
+- **Change log:** a row is written when a player's report changes, and a `cleared` row when the player leaves the list. An empty list while players are listed is treated as a feed glitch (counted, nothing cleared).
+
+**Identity bug fixed 2026-09-27:** an ESPN event not yet linked could be matched by teams and time to *another* ESPN event's game. NBA teams can meet twice within 24 hours with home and away reversed (for example DAL-MEM on 2017-10-25, then MEM-DAL the next night). 66 NBA games 2017-18 to 2025-26 had merged; no other sport. Now an ESPN event can only adopt a game with no ESPN link. `ttk repair-merged-games` split the 66, dropped their ESPN lines and re-imported them.
 
 nflverse games, verified 2026-09-26 (`src/ttk/providers/nflverse.py`):
 

@@ -32,7 +32,8 @@ ttk bets list | settle | summary  # the collector also settles bets and parlays 
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game
 ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
-ttk backtest-nba                 # NBA: Elo, rest, market-anchored, betting the opener
+ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
+ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).
@@ -48,7 +49,8 @@ A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon
 - **Settings:** no time limit; restarts after a crash (every 5 minutes); runs on battery; never starts a second copy.
 - **Each pass:**
   1. Refreshes the ESPN schedules (free), at most every 6 hours.
-  2. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
+  2. Stores changes to ESPN's injury lists: NBA every pass, NFL hourly. There is no historical injury source, so this is the only record of what was known when.
+  3. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
 
 Manage it from PowerShell:
 

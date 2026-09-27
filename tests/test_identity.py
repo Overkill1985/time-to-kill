@@ -301,3 +301,112 @@ def test_espn_renames_team_first_seen_elsewhere(session_factory: sessionmaker[Se
             s, provider="books", sport=Sport.CFB, ref=TeamRef("Boise St."), stats=stats
         )
         assert team.espn_id == "68" and stats == Counter()
+
+
+def test_espn_events_never_merge_with_each_other(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Real case: DAL-MEM on 2017-10-26 00:30Z, then MEM-DAL on 2017-10-27 00:00Z
+    (23.5 hours apart, home and away reversed). Two ESPN events, two games."""
+    dal, mem = TeamRef("Dallas Mavericks", "6"), TeamRef("Memphis Grizzlies", "29")
+    first = replace(
+        espn_game(dal, mem),
+        source_identifier="400974812",
+        espn_event_id="400974812",
+        sport=Sport.NBA,
+        commence_time=datetime(2017, 10, 26, 0, 30, tzinfo=UTC),
+        status=GameStatus.FINAL,
+        home_score=103,
+        away_score=94,
+    )
+    second = replace(
+        espn_game(mem, dal),
+        source_identifier="400974817",
+        espn_event_id="400974817",
+        sport=Sport.NBA,
+        commence_time=datetime(2017, 10, 27, 0, 0, tzinfo=UTC),
+        status=GameStatus.FINAL,
+        home_score=96,
+        away_score=91,
+    )
+    provider = Schedule(first, second)
+    run = run_schedule_ingestion(
+        session_factory, provider, Sport.NBA, date(2017, 10, 25), date(2017, 10, 27)
+    )
+    assert run.status == "SUCCESS"
+    with session_factory() as session:
+        games = session.scalars(select(Game).order_by(Game.commence_time)).all()
+        assert len(games) == 2
+        assert [(g.home_score, g.away_score) for g in games] == [(103, 94), (96, 91)]
+        links = session.scalars(select(GameSourceId)).all()
+        assert sorted((link.source_identifier, link.swapped) for link in links) == [
+            ("400974812", False),
+            ("400974817", False),
+        ]
+
+
+def test_repair_splits_games_merged_before_the_fix(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.db.models import ReportedLine
+    from ttk.services.repair import split_merged_espn_games
+
+    dal, mem = TeamRef("Dallas Mavericks", "6"), TeamRef("Memphis Grizzlies", "29")
+    first = replace(
+        espn_game(dal, mem),
+        source_identifier="400974812",
+        espn_event_id="400974812",
+        sport=Sport.NBA,
+        commence_time=datetime(2017, 10, 26, 0, 30, tzinfo=UTC),
+        status=GameStatus.FINAL,
+        home_score=103,
+        away_score=94,
+        season=2018,
+    )
+    second = replace(
+        first,
+        home=mem,
+        away=dal,
+        source_identifier="400974817",
+        espn_event_id="400974817",
+        commence_time=datetime(2017, 10, 27, 0, 0, tzinfo=UTC),
+        home_score=96,
+        away_score=91,
+    )
+    run_schedule_ingestion(
+        session_factory, Schedule(first), Sport.NBA, date(2017, 10, 25), date(2017, 10, 25)
+    )
+    with session_factory() as session:  # what the old matcher left behind
+        game = session.scalars(select(Game)).one()
+        game.commence_time, game.home_score, game.away_score = second.commence_time, 91, 96
+        session.add(
+            GameSourceId(
+                game_id=game.id, provider="espn", source_identifier="400974817", swapped=True
+            )
+        )
+        session.add(ReportedLine(game_id=game.id, provider="espn:consensus", home_spread=-4.0))
+        session.add(ReportedLine(game_id=game.id, provider="nflverse", home_spread=-4.0))
+        session.commit()
+        dry = split_merged_espn_games(session)
+        assert [(m.kept_event, m.removed_events, m.reported_lines) for m in dry] == [
+            ("400974812", ("400974817",), 1)
+        ]
+        assert session.scalar(select(func.count()).select_from(GameSourceId)) == 2  # dry run
+        split_merged_espn_games(session, apply=True)
+        session.commit()
+        providers = session.scalars(select(ReportedLine.provider)).all()
+        assert providers == ["nflverse"]  # only ESPN-derived rows are dropped
+    run_schedule_ingestion(
+        session_factory,
+        Schedule(first, second),
+        Sport.NBA,
+        date(2017, 10, 24),
+        date(2017, 10, 27),
+    )
+    with session_factory() as session:
+        games = session.scalars(select(Game).order_by(Game.commence_time)).all()
+        assert [(g.home_score, g.away_score, g.commence_time) for g in games] == [
+            (103, 94, first.commence_time),
+            (96, 91, second.commence_time),
+        ]
+        assert split_merged_espn_games(session) == []

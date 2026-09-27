@@ -286,6 +286,42 @@ class GameStarter(Base):
     imported_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class PlayerGameStat(Base):
+    """One player's box-score line in one game (ESPN). Players who were injured or
+    inactive are absent; healthy scratches appear with ``played`` False and a
+    ``dnp_reason``. Known at tip-off: a model using who played assumes the bet is
+    placed once lineups are known (never at an earlier price)."""
+
+    __tablename__ = "player_game_stats"
+    __table_args__ = (UniqueConstraint("game_id", "player_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    player_id: Mapped[str] = mapped_column(String(20))
+    """ESPN athlete id."""
+    player_name: Mapped[str | None] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(50))
+    starter: Mapped[bool] = mapped_column(Boolean)
+    played: Mapped[bool] = mapped_column(Boolean)
+    dnp_reason: Mapped[str | None] = mapped_column(String(100))
+    minutes: Mapped[float | None] = mapped_column(Float)
+    points: Mapped[int | None] = mapped_column(Integer)
+    fgm: Mapped[int | None] = mapped_column(Integer)
+    fga: Mapped[int | None] = mapped_column(Integer)
+    ftm: Mapped[int | None] = mapped_column(Integer)
+    fta: Mapped[int | None] = mapped_column(Integer)
+    oreb: Mapped[int | None] = mapped_column(Integer)
+    dreb: Mapped[int | None] = mapped_column(Integer)
+    ast: Mapped[int | None] = mapped_column(Integer)
+    stl: Mapped[int | None] = mapped_column(Integer)
+    blk: Mapped[int | None] = mapped_column(Integer)
+    tov: Mapped[int | None] = mapped_column(Integer)
+    pf: Mapped[int | None] = mapped_column(Integer)
+    plus_minus: Mapped[int | None] = mapped_column(Integer)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class ReportedLine(Base):
     """A historical line as reported by a data provider (e.g. nflverse), with no
     documented timestamp. Benchmark data. A model may take it as an input only when
@@ -315,6 +351,15 @@ class InjuryReport(Base):
     """Append-only injury observations; a prediction references the state it used."""
 
     __tablename__ = "injury_reports"
+    __table_args__ = (
+        Index(
+            "ix_injury_reports_player",
+            "provider",
+            "sport",
+            "player_source_identifier",
+            "observed_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sport: Mapped[str] = mapped_column(String(10))
@@ -327,7 +372,13 @@ class InjuryReport(Base):
     estimated_impact: Mapped[float | None] = mapped_column(Float)
     provider: Mapped[str] = mapped_column(String(50))
     source_timestamp: Mapped[datetime | None]
+    """When the provider last updated the entry (ESPN's ``date``)."""
     observed_at: Mapped[datetime] = mapped_column(default=utcnow)
+    comment: Mapped[str | None] = mapped_column(Text)
+    return_date: Mapped[str | None] = mapped_column(String(10))
+    """The provider's expected return date (YYYY-MM-DD), as reported."""
+    cleared: Mapped[bool] = mapped_column(Boolean, default=False)
+    """True: the player left the provider's injury list at ``observed_at``."""
 
 
 # ----------------------------------------------------------------------- models
