@@ -36,6 +36,8 @@ ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player b
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
 ttk backtest-cfb                 # college football: Elo, rest, market-anchored, opener
+ttk import-espn-history --sport NCAAB --from-season 2015 --to-season 2026  # ~12 h
+ttk backtest-ncaab               # college basketball: Elo, rest, market-anchored, opener
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).
@@ -48,7 +50,9 @@ A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon
 
 - **Command:** `.venv\Scripts\pythonw.exe -m ttk.cli collect-odds --loop-minutes 15 --log data\logs\collector.log`
 - **Working directory:** this folder.
-- **Settings:** no time limit; restarts after a crash (every 5 minutes); runs on battery; never starts a second copy.
+- **Triggers:** at logon, and a watchdog every 15 minutes that starts the collector if it isn't running. Windows' own "restart on failure" doesn't cover a program that exits with an error, which once left the collector down for 15 hours.
+- **Settings:** no time limit; runs on battery; never starts a second copy (so the watchdog does nothing while it runs).
+- **Inside the collector:** a failed pass (for example, the database busy with a bulk import) is logged and retried next pass; the database waits up to 2 minutes for a lock.
 - **Each pass:**
   1. Refreshes the ESPN schedules (free), at most every 6 hours.
   2. Stores changes to ESPN's injury lists: NBA every pass, NFL hourly. There is no historical injury source, so this is the only record of what was known when.

@@ -79,6 +79,10 @@ def test_season_windows() -> None:
     assert (w.start, w.end) == (date(2024, 9, 25), date(2025, 6, 30))
     assert season_window(Sport.NBA, 2020).end == date(2020, 10, 15)  # the bubble
     assert season_window(Sport.NBA, 2021).start == date(2020, 12, 1)
+    # NBA's COVID dates don't apply to college basketball (2020-21 began Nov 25).
+    assert season_window(Sport.NCAAB, 2021).start == date(2020, 9, 25)
+    assert season_window(Sport.NCAAB, 2020).end == date(2020, 6, 30)
+    assert season_window(Sport.CFB, 2025).start == date(2025, 8, 20)  # football: start year
 
 
 def line(
@@ -189,3 +193,22 @@ def test_malformed_close_falls_back_to_current() -> None:
     broken = {**item, "current": None, "spread": None}
     broken["homeTeamOdds"] = {k: v for k, v in item["homeTeamOdds"].items() if k != "current"}
     assert parse_item(broken) == []
+
+
+def test_line_check_flags_spreads_that_contradict_the_moneyline() -> None:
+    from ttk.research.espn_models import SportData
+    from ttk.research.nba_model import NBA
+
+    games = [g(i, 1, 2, i) for i in range(1, 5)]
+
+    def close(spread: float, hml: float, aml: float) -> ReportedLine:
+        return ReportedLine(home_spread=spread, home_moneyline=hml, away_moneyline=aml)
+
+    closes = {
+        1: close(-5.5, -220, 180),  # home favoured both ways
+        2: close(6.5, -250, 200),  # spread says away, moneyline says home: flagged
+        3: close(-1.0, 110, -130),  # under 2 points: too close to call, not checked
+        4: close(-110.0, -150, 130),  # (a price as a line would be caught by the parser)
+    }
+    data = SportData(NBA, games, closes, {}, {})
+    assert data.line_check() == (3, 1)

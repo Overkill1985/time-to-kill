@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,11 +38,14 @@ class SeasonWindow:
 
 def season_window(sport: Sport, season: int) -> SeasonWindow:
     """ESPN season years are the year a season ends (2025-26 = 2026)."""
-    if sport in (Sport.NBA, Sport.NCAAB):
+    if sport == Sport.NBA:
         if season == 2020:  # the bubble: the 2019-20 season finished in October 2020
             return SeasonWindow(date(2019, 9, 25), date(2020, 10, 15))
         if season == 2021:  # shortened 2020-21 season started in December 2020
             return SeasonWindow(date(2020, 12, 1), date(2021, 7, 25))
+    if sport in (Sport.NBA, Sport.NCAAB):
+        # College basketball: early November to early April, so this covers every
+        # season, including 2020-21 (from November 25, 2020).
         return SeasonWindow(date(season - 1, 9, 25), date(season, 6, 30))
     return SeasonWindow(date(season, 8, 20), date(season + 1, 2, 20))  # football
 
@@ -74,7 +77,7 @@ def import_season_odds(
     *,
     odds: EspnCoreOdds,
     delay: float = 0.25,
-    batch: int = 50,
+    batch: int = 10,
 ) -> IngestionRun:
     """Closing/opening lines for every final game of the season lacking ESPN lines."""
 
@@ -119,13 +122,21 @@ def import_season(
     season: int,
     *,
     delay: float = 0.25,
-) -> tuple[IngestionRun, IngestionRun]:
-    """Schedule/results for the season window, then its odds history."""
+) -> tuple[int, IngestionRun]:
+    """Schedule/results for the season window, then its odds history. Returns the
+    number of games written by the schedule runs, and the odds run."""
     window = season_window(sport, season)
-    schedule = run_schedule_ingestion(
-        session_factory, EspnScheduleProvider(delay=delay), sport, window.start, window.end
-    )
-    if schedule.status != "SUCCESS":
-        raise ProviderError(schedule.error or "schedule import failed")
+    provider = EspnScheduleProvider(delay=delay)
+    # A month per transaction: a whole season in one held the database write lock
+    # for minutes and starved the collector (2026-09-27).
+    start = window.start
+    games = 0
+    while start <= window.end:
+        end = min(start + timedelta(days=30), window.end)
+        schedule = run_schedule_ingestion(session_factory, provider, sport, start, end)
+        if schedule.status != "SUCCESS":
+            raise ProviderError(schedule.error or "schedule import failed")
+        games += schedule.records_written
+        start = end + timedelta(days=1)
     odds_run = import_season_odds(session_factory, sport, season, odds=EspnCoreOdds(), delay=delay)
-    return schedule, odds_run
+    return games, odds_run

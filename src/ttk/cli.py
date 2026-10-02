@@ -75,8 +75,9 @@ def _backtest_espn(args: argparse.Namespace, database_url: str, sport: Sport) ->
     from ttk.research.cfb_model import CFB
     from ttk.research.espn_models import load_sport, sport_backtest
     from ttk.research.nba_model import NBA
+    from ttk.research.ncaab_model import NCAAB
 
-    config = {Sport.NBA: NBA, Sport.CFB: CFB}[sport]
+    config = {Sport.NBA: NBA, Sport.CFB: CFB, Sport.NCAAB: NCAAB}[sport]
     factory = make_session_factory(make_engine(database_url))
     with factory() as session:
         data = load_sport(session, config)
@@ -94,6 +95,13 @@ def _backtest_espn(args: argparse.Namespace, database_url: str, sport: Sport) ->
         f"{sport} games {len(data.games)}, with closing lines "
         f"{len(games_in_scope & set(data.closes))}, with openers "
         f"{len(games_in_scope & set(data.opens))}"
+    )
+    checked, disagree = data.line_check()
+    print(
+        f"Line check: {disagree} of {checked} closing lines (2+ points) favour a different "
+        f"team than the moneyline ({disagree / checked:.1%})"
+        if checked
+        else "Line check: no lines with moneylines to check"
     )
     hfa = (
         f"home_field={p.home_field}"
@@ -394,45 +402,60 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
         f"every {args.loop_minutes or 0:g} min"
     )
+
+    def one_pass() -> list[str]:
+        """One collection pass; returns the statuses of the odds polls."""
+        nonlocal remaining
+        # Provider errors (including 429/503 rate limits) are recorded on the run as
+        # FAILED inside each step; that sport waits for the next pass.
+        for run in refresh_schedules(factory, schedule_provider, sports):
+            emit(
+                f"{run.sport} schedule: {run.status} {run.records_written} games, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        for run in refresh_injuries(factory, injuries):
+            emit(
+                f"{run.sport} injuries: {run.status} {run.records_written} changes, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        with factory() as session:
+            for bet in settle_bets(session):
+                emit(
+                    f"settled bet {bet.id}: {bet.result} {bet.description} "
+                    f"P/L {bet.profit_loss or 0:+.2f}"
+                )
+            for parlay in settle_parlays(session):
+                emit(
+                    f"settled parlay {parlay.id}: {parlay.result} "
+                    f"P/L {parlay.profit_loss or 0:+.2f}"
+                )
+            session.commit()
+        result = collect_once(factory, provider, sports, remaining=remaining)
+        remaining = result.remaining
+        for run in result.runs:
+            emit(
+                f"{run.sport}: {run.status} {run.records_written} changes, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        for sport, why in result.skipped.items():
+            emit(f"{sport}: skipped ({why})")
+        emit(f"quota remaining: {remaining}")
+        return [r.status for r in result.runs]
+
     try:
         while True:
             started = time.monotonic()
-            # Provider errors (including 429/503 rate limits) are recorded on the
-            # run as FAILED inside collect_once; that sport waits for the next pass.
-            for run in refresh_schedules(factory, schedule_provider, sports):
-                emit(
-                    f"{run.sport} schedule: {run.status} {run.records_written} games, "
-                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
-                )
-            for run in refresh_injuries(factory, injuries):
-                emit(
-                    f"{run.sport} injuries: {run.status} {run.records_written} changes, "
-                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
-                )
-            with factory() as session:
-                for bet in settle_bets(session):
-                    emit(
-                        f"settled bet {bet.id}: {bet.result} {bet.description} "
-                        f"P/L {bet.profit_loss or 0:+.2f}"
-                    )
-                for parlay in settle_parlays(session):
-                    emit(
-                        f"settled parlay {parlay.id}: {parlay.result} "
-                        f"P/L {parlay.profit_loss or 0:+.2f}"
-                    )
-                session.commit()
-            result = collect_once(factory, provider, sports, remaining=remaining)
-            remaining = result.remaining
-            for run in result.runs:
-                emit(
-                    f"{run.sport}: {run.status} {run.records_written} changes, "
-                    f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
-                )
-            for sport, why in result.skipped.items():
-                emit(f"{sport}: skipped ({why})")
-            emit(f"quota remaining: {remaining}")
+            try:
+                statuses = one_pass()
+            except Exception:
+                if args.loop_minutes is None:
+                    raise
+                # One bad pass (e.g. the database locked by a bulk import) must not end
+                # collection: log it and retry next pass. It once sat dead for 15 hours.
+                emit("pass failed; the collector keeps running:\n" + traceback.format_exc())
+                statuses = ["FAILED"]
             if args.loop_minutes is None:
-                return 0 if all(r.status == "SUCCESS" for r in result.runs) else 1
+                return 0 if all(st == "SUCCESS" for st in statuses) else 1
             time.sleep(max(args.loop_minutes * 60 - (time.monotonic() - started), 0))
     except KeyboardInterrupt:
         emit("collector stopped")
@@ -762,7 +785,11 @@ def main(argv: list[str] | None = None) -> int:
         "--register", action="store_true", help="Record the result in the model registry"
     )
     backtest.add_argument("--report", type=Path, help="Write the full report as JSON here")
-    for name, label in (("backtest-nba", "NBA"), ("backtest-cfb", "college football")):
+    for name, label in (
+        ("backtest-nba", "NBA"),
+        ("backtest-cfb", "college football"),
+        ("backtest-ncaab", "men's college basketball"),
+    ):
         espn_bt = sub.add_parser(name, help=f"Tune and backtest the {label} spread models")
         espn_bt.add_argument(
             "--final-test",
@@ -920,14 +947,12 @@ def main(argv: list[str] | None = None) -> int:
         factory = make_session_factory(make_engine(settings.database_url))
         for season in range(args.from_season, args.to_season + 1):
             try:
-                schedule_run, odds_run = import_season(
-                    factory, args.sport, season, delay=args.delay
-                )
+                games, odds_run = import_season(factory, args.sport, season, delay=args.delay)
             except ProviderError as exc:
                 print(f"{season}: schedule failed: {exc}", file=sys.stderr)
                 return 1
             print(
-                f"{season}: {schedule_run.records_written} games; odds {odds_run.status} "
+                f"{season}: {games} games; odds {odds_run.status} "
                 f"{odds_run.records_written} lines, stats={odds_run.stats}"
                 + (f", error={odds_run.error}" if odds_run.error else ""),
                 flush=True,
@@ -937,9 +962,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "backtest-nfl-elo":
         return _backtest_nfl_elo(args, settings.database_url)
 
-    if args.command in ("backtest-nba", "backtest-cfb"):
-        sport = Sport.NBA if args.command == "backtest-nba" else Sport.CFB
-        return _backtest_espn(args, settings.database_url, sport)
+    espn_backtests = {
+        "backtest-nba": Sport.NBA,
+        "backtest-cfb": Sport.CFB,
+        "backtest-ncaab": Sport.NCAAB,
+    }
+    if args.command in espn_backtests:
+        return _backtest_espn(args, settings.database_url, espn_backtests[args.command])
 
     if args.command == "card":
         return _card(args, settings)

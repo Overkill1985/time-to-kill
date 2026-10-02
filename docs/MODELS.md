@@ -5,8 +5,8 @@ Every result lists sample sizes. "Market" means the no-vig probability from nflv
 
 **Status: every NFL spread model is DEVELOPMENT, including the EPA and QB models.** None has a demonstrated edge over the
 market. The 2022–2025 test seasons are **sealed and have not been scored**. No model is
-registered yet. **The NBA and college football spread models are DEVELOPMENT too** (below);
-their test seasons (NBA 2025-2026, CFB 2025) are sealed.
+registered yet. **The NBA, college football and college basketball spread models are
+DEVELOPMENT too** (below); their test seasons (NBA and NCAAB 2025-2026, CFB 2025) are sealed.
 
 ## NFL spread (2026-09-26)
 
@@ -207,6 +207,65 @@ here: they aren't known when the opener is posted.
   toward (+0.13 → +0.22 → +0.31 points). The real test is **injury status at the opener**,
   which exists only from our own polling (started 2026-09-27); the 2026-27 season, from
   October, will be the first with it. The later seasons with openers are sealed test data.
+
+## Men's college basketball spread (2026-09-28)
+
+Data: ESPN (DATA-SOURCES.md), Division I, 2014-15 to 2025-26: 70,991 regular-season and
+postseason games, 58,762 with a closing line. The books' own openers exist from 2023-24.
+Line check: 102 of 50,076 closing lines of 2+ points favour a different team than the
+moneyline (0.2%). Reproduce with `ttk backtest-ncaab`.
+
+Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–2022**, **validate
+2023–2024**, test 2025–2026 (sealed).
+
+### What was fitted on the training seasons (n=34,044 games)
+
+- **Elo:** K=30, margin-of-victory on, 50% regression each offseason toward the team's own
+  recent level (which beat one global mean: power conferences and low-majors are different
+  tiers). Home court is rolling: 15 Elo per point of the prior three seasons' home margin
+  (109–128 Elo by season, about 4 points). Both optima are inside their grids.
+- **Key-number weights:** close to 1 everywhere except 0 (ties are impossible).
+- **Rest:** margin = 1.27 + 0.037 × elo_diff − 1.26 × rest_diff − 4.04 × home back-to-back +
+  2.58 × away back-to-back (rest capped at 7 days). Back-to-backs are mostly conference
+  tournaments, where the team that played the day before is usually the lower seed, so the
+  flags partly measure strength that Elo misses rather than fatigue alone.
+
+### Validation, 2023–2024 (n=11,414 spread games with real prices on both sides)
+
+| Model | Spread log loss | vs market (paired) | z | Margin RMSE |
+|---|---|---|---|---|
+| Market no-vig (close) | 0.6931 | — | — | 11.36 |
+| Elo, key numbers | 0.7249 | +0.0318 | +12.0 (worse) | 14.31 |
+| Rest, key numbers | 0.7296 | +0.0365 | +12.9 (worse) | 14.06 |
+| Market-anchored (Elo) | 0.6933 | +0.0002 | +1.2 | — |
+| Market-anchored (rest) | 0.6934 | +0.0003 | +1.2 | — |
+
+- **Elo is 3 points of margin error behind the close**, the widest gap of any sport here:
+  with ~360 teams and few games between most of them, results alone rate teams poorly.
+- **Moneyline:** Elo log loss 0.5648 against the market's 0.5401 (n=11,177).
+- **Pushes:** actual 0.99%, predicted 0.81%.
+- **Betting at the close loses** about the vig at every threshold (−4% to −6%).
+- **A pattern to watch, not an edge:** the market-anchored model's rare large edges won
+  55–33 at edge ≥ 4% in validation (and 40–19 in training), but that is 88 bets at a
+  threshold chosen among many, the same model loses 3.4% on its 693 bets at edge ≥ 2%, and
+  its per-game score is worse than the market's. Its large edges come from lopsided prices at
+  a spread; whether that is signal or a pricing quirk of the benchmark book is untested.
+
+### Betting the opener (2023-24, n=5,755 games with openers)
+
+- **Price CLV** where the close stayed on the opening number: Elo and rest −4.6% (n≈1,280),
+  about the vig. Market-anchored −1.9% (n=123) and −2.7% (n=187): prices moved toward it
+  somewhat, on small samples.
+- **Points versus the close**, where the line moved: Elo +0.07 (n=3,623), rest +0.06
+  (n=3,696), market-anchored −0.16 and −0.10 (n=263, 494). No consistent direction.
+- **ROI at the opener:** Elo −5.9%, rest −4.4%, market-anchored −2.8% (every game).
+
+### Verdicts
+
+- No college basketball model beats the closing line. Every one stays DEVELOPMENT, and
+  2025–2026 stay sealed.
+- The gap to the market is widest here; team ratings need information beyond scores (tempo
+  and efficiency, rosters, schedule strength across conferences).
 
 ## College football spread (2026-09-27)
 

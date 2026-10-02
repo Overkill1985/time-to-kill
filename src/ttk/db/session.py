@@ -6,6 +6,8 @@ from typing import Any
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+BUSY_TIMEOUT_MS = 120_000
+
 
 def make_engine(url: str) -> Engine:
     if url.startswith("sqlite:///") and not url.startswith("sqlite:///:memory:"):
@@ -18,7 +20,9 @@ def make_engine(url: str) -> Engine:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA busy_timeout=5000")
+            # Wait up to 2 minutes for another writer (a bulk import) instead of
+            # failing: a 5 s timeout crashed the collector on 2026-09-27.
+            cur.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
             cur.close()
 
     return engine

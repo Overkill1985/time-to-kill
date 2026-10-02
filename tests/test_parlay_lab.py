@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -279,7 +279,12 @@ def test_settle_loss_and_performance(session_factory: sessionmaker[Session]) -> 
 def test_parlay_api(database_url: str, session_factory: sessionmaker[Session]) -> None:
     # The API prices "now", so this fixture lives on the real clock.
     real_now = datetime.now(UTC)
-    kick = real_now + timedelta(days=2)
+    # 1 PM Eastern two days out: a card day runs 6 AM to 6 AM Eastern, so "now + 2
+    # days" failed whenever the suite ran between midnight and 6 AM Eastern.
+    eastern = ZoneInfo("America/New_York")
+    kick = datetime.combine(
+        real_now.astimezone(eastern).date() + timedelta(days=2), time(13, 0), tzinfo=eastern
+    )
     g = seed(session_factory, kick=kick, observed=real_now - timedelta(minutes=5))
     app = create_app(Settings(database_url=database_url))
     app.state.predictor = (real_now, None)  # skip model fitting in tests

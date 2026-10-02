@@ -130,6 +130,22 @@ class SportData:
     lineups: dict[int, Availability] = field(default_factory=dict)
     """game_id -> walk-forward player availability (games with box scores)."""
 
+    def line_check(self) -> tuple[int, int]:
+        """(checked, disagreeing): closing lines of 2+ points whose favourite differs
+        from the moneyline favourite. A few are real (stale or asymmetric quotes);
+        many mean corrupted lines - it is how two ESPN data bugs were caught."""
+        checked = disagree = 0
+        in_scope = {g.game_id for g in self.games}
+        for game_id, line in self.closes.items():
+            hs, hml, aml = line.home_spread, line.home_moneyline, line.away_moneyline
+            if game_id not in in_scope or hs is None or abs(hs) < 2 or hml is None or aml is None:
+                continue
+            if hml == aml:
+                continue
+            checked += 1
+            disagree += (hs < 0) != (hml < aml)
+        return checked, disagree
+
 
 def load_sport(session: Session, config: SportConfig) -> SportData:
     rows = session.scalars(
@@ -173,9 +189,16 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         if (r := _representative(rows_)) is not None
     }
     box: dict[int, list[BoxRow]] = defaultdict(list)
+    # A join, not IN (game ids): college basketball has ~70k games, past SQLite's
+    # 32,766-parameter limit.
+    in_scope = {g.game_id for g in games}
     for stat in session.scalars(
-        select(PlayerGameStat).where(PlayerGameStat.game_id.in_([g.game_id for g in games]))
+        select(PlayerGameStat)
+        .join(Game, Game.id == PlayerGameStat.game_id)
+        .where(Game.sport == config.sport)
     ):
+        if stat.game_id not in in_scope:
+            continue
         box[stat.game_id].append(
             BoxRow(
                 stat.player_id,

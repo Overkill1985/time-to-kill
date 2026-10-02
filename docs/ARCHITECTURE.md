@@ -40,6 +40,7 @@ src/ttk/
     espn_models.py     ESPN-history pipeline per SportConfig: feature-set margin models, market-anchored, opener test
     nba_model.py       NBA config: splits, grids, rest and lineup feature sets
     cfb_model.py       College football config: splits, grids, regression toward recent level
+    ncaab_model.py     College basketball config: splits, grids, rest with back-to-backs
     nba_lineups.py     Walk-forward player value and availability (missing at tip / last game)
   db/
     models.py          ORM schema (changed only via migrations)
@@ -69,7 +70,7 @@ src/ttk/
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
                            | import-espn-history | import-boxscores | repair-merged-games | repair-espn-lines
-                           | backtest-nfl-elo | backtest-nba | backtest-cfb | simulate
+                           | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
