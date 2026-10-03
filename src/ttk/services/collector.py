@@ -24,7 +24,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from ttk.db.models import Game, IngestionRun, utcnow
 from ttk.domain import Sport
 from ttk.providers.base import OddsProvider, ScheduleProvider
+from ttk.providers.espn_boxscore import EspnBoxscores
 from ttk.providers.espn_injuries import EspnInjuries
+from ttk.services.boxscore_import import import_boxscores
 from ttk.services.injury_ingest import ingest_injuries
 from ttk.services.odds_ingest import run_odds_ingestion
 from ttk.services.schedule_ingest import run_schedule_ingestion
@@ -120,6 +122,34 @@ def refresh_injuries(
         if last is not None and now - last < interval:
             continue
         runs.append(ingest_injuries(session_factory, sport, source=source, now=now))
+    return runs
+
+
+BOXSCORE_REFRESH = timedelta(hours=6)
+BOXSCORE_SPORTS = (Sport.NBA,)
+
+
+def refresh_boxscores(
+    session_factory: sessionmaker[Session],
+    source: EspnBoxscores,
+    *,
+    now: datetime | None = None,
+    every: timedelta = BOXSCORE_REFRESH,
+    sports: Sequence[Sport] = BOXSCORE_SPORTS,
+) -> list[IngestionRun]:
+    """Box scores of newly finished games (they value players and show who sat, for
+    the injury features). Resumable: only games without box scores are fetched."""
+    now = now or utcnow()
+    runs = []
+    for sport in sports:
+        with session_factory() as session:
+            last = _last_run(session, sport, "boxscores")
+        if last is not None and now - last < every:
+            continue
+        # ESPN season year: NBA seasons end in the year after they start.
+        runs.append(
+            import_boxscores(session_factory, sport, (now.year, now.year + 1), boxscores=source)
+        )
     return runs
 
 

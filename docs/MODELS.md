@@ -208,6 +208,28 @@ here: they aren't known when the opener is posted.
   which exists only from our own polling (started 2026-09-27); the 2026-27 season, from
   October, will be the first with it. The later seasons with openers are sealed test data.
 
+### NBA injury features (built 2026-10-03; awaiting data)
+
+`research/nba_injuries.py`. For a game and a horizon (24 hours and 1 hour before tip-off), each
+rotation player listed on the injury report at that moment counts q(status) × rotation weight ×
+player value (the box-score values above) toward his team's expected missing value; the
+feature is home minus away. Only our own injury history exists (the collector, from
+2026-09-27), so:
+
+- q(status), the chance a listed player sits, is learned walk-forward from finished games,
+  starting from a weak prior (two pseudo-games: Out 95%, Day-To-Day 50%). ESPN's NBA list
+  only says "Out" or "Day-To-Day", so how often a Day-To-Day player sits is the key unknown.
+- A player counts only for the team the report lists him with: rotations only learn of
+  off-season moves once games are played.
+- Games before tracking began get no injury feature (unknown, not healthy).
+- `ttk injury-check` shows the learned sit rates with sample sizes.
+
+**Nothing is validated yet.** The first regular-season games are on 2026-10-20; every game
+with injury data is in the 2026-27 season, after all the backtest's splits. Testing needs a
+walk-forward evaluation on that season with our own timestamped odds (bet at the line we saw
+at the horizon, scored against results and the close). Planned once a few hundred games are
+played.
+
 ## Men's college basketball spread (2026-09-28)
 
 Data: ESPN (DATA-SOURCES.md), Division I, 2014-15 to 2025-26: 70,991 regular-season and

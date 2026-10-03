@@ -44,6 +44,7 @@ src/ttk/
     ncaab_model.py     College basketball config: splits, grids, rest with back-to-backs
     cfb_preseason.py   Per-game preseason features known at kickoff (fading early-season changes)
     nba_lineups.py     Walk-forward player value and availability (missing at tip / last game)
+    nba_injuries.py    Injury features at a horizon before tip-off; walk-forward sit rates
   db/
     models.py          ORM schema (changed only via migrations)
     session.py         Engine/session setup (SQLite pragmas)
@@ -60,7 +61,7 @@ src/ttk/
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
-    collector.py       Polling passes: sports with upcoming games, quota-aware
+    collector.py       Polling passes: schedules, injuries, NBA box scores, odds; quota-aware
     line_history.py    Opening/previous/current/closing per book; CLV at the bet's own line
     data_quality.py    Rule-based data quality and uncertainty, each with reasons
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
@@ -72,7 +73,7 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-cfbd | import-cfbd-games | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-cfbd | import-cfbd-games | injury-check | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.

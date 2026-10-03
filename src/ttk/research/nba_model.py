@@ -31,6 +31,7 @@ NBA = SportConfig(
     },
     rest_cap=REST_CAP,
     at_tip_only=frozenset({"lineup_tip"}),
+    injuries=True,
 )
 
 

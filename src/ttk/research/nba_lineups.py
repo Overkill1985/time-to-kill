@@ -95,9 +95,14 @@ def availability(
     *,
     value_half_life: float = VALUE_HALF_LIFE,
     rotation_half_life: float = ROTATION_HALF_LIFE,
+    snapshots: dict[tuple[int, int], dict[str, tuple[float, float]]] | None = None,
 ) -> dict[int, Availability]:
     """Features for every game with a box score, computed in time order from
-    earlier games only. Games without a box score get no entry (and teach nothing)."""
+    earlier games only. Games without a box score get no entry (and teach nothing).
+
+    ``snapshots``, if given, is filled for every game (upcoming ones too) with each
+    team's rotation before it: (game_id, team_id) -> player -> (rotation weight,
+    value). Injury features (research/nba_injuries.py) are built on it."""
     value_decay = 0.5 ** (1.0 / value_half_life)
     rotation_decay = 0.5 ** (1.0 / rotation_half_life)
     value_sum: dict[str, float] = defaultdict(float)
@@ -114,13 +119,16 @@ def availability(
 
     for g in sorted(games, key=lambda g: (g.commence_time, g.game_id)):
         rows = box.get(g.game_id)
-        if not rows:
-            continue
         if season is not None and g.season != season:
             for team_rotation in rotation.values():
                 for player in team_rotation:
                     team_rotation[player] *= SEASON_CARRYOVER
         season = g.season
+        if snapshots is not None:  # every game, upcoming ones included
+            for team in (g.home_id, g.away_id):
+                snapshots[(g.game_id, team)] = {p: (a, value(p)) for p, a in rotation[team].items()}
+        if not rows:
+            continue
         missing = {}
         played_by_team: dict[int, set[str]] = defaultdict(set)
         for row in rows:

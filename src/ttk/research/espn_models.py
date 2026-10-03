@@ -24,7 +24,7 @@ from __future__ import annotations
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 import numpy as np
@@ -32,7 +32,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, PlayerGameStat, ReportedLine, TeamGameStat, TeamSeasonFeature
+from ttk.db.models import (
+    Game,
+    InjuryReport,
+    PlayerGameStat,
+    ReportedLine,
+    TeamGameStat,
+    TeamSeasonFeature,
+)
 from ttk.domain import GameStatus, Sport
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame, EloPrediction
@@ -40,6 +47,13 @@ from ttk.models.margin import KeyNumberMarginModel, MarginModel, key_number_weig
 from ttk.models.nfl_features import FeatureParams, TeamGameEpa, compute_features
 from ttk.providers.espn_odds import is_market
 from ttk.research.cfb_preseason import PRESEASON_FEATURES, SeasonFact, preseason_features
+from ttk.research.nba_injuries import (
+    HORIZONS_HOURS,
+    InjuryTimeline,
+    Report,
+    SitRates,
+    injury_features,
+)
 from ttk.research.nba_lineups import Availability, BoxRow, availability, hollinger_game_score
 from ttk.research.nfl_elo import (
     HOME_FIELD_PER_POINT_GRID,
@@ -83,6 +97,8 @@ class SportConfig:
     """Rest days are capped here (and a team's first game gets the cap)."""
     regression_targets: tuple[str, ...] = ("mean",)
     home_field_per_point_grid: tuple[float, ...] = HOME_FIELD_PER_POINT_GRID
+    injuries: bool = False
+    """Injury features from our own injury-report history (research/nba_injuries.py)."""
     team_epa: bool = False
     """Walk-forward team efficiency from team_game_stats (models/nfl_features.py):
     ``epa_diff`` opponent-adjusted, ``epa_raw_diff`` not."""
@@ -138,6 +154,10 @@ class SportData:
     """game_id -> preseason features known at kickoff (college football)."""
     efficiency: dict[int, dict[str, float]] = field(default_factory=dict)
     """game_id -> team efficiency from earlier games (``epa_diff``, ``epa_raw_diff``)."""
+    injuries: dict[int, dict[str, float]] = field(default_factory=dict)
+    """game_id -> injury features at each horizon (games after tracking began)."""
+    sit_rates: SitRates | None = None
+    """Sit rates per (horizon, status) learned from finished games."""
 
     def line_check(self) -> tuple[int, int]:
         """(checked, disagreeing): closing lines of 2+ points whose favourite differs
@@ -229,22 +249,41 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
                 ),
             )
         )
+    snapshots: dict[tuple[int, int], dict[str, tuple[float, float]]] = {}
     facts = [
         SeasonFact(f.season, f.team_id, f.name, f.value, f.known_at)
         for f in session.scalars(
             select(TeamSeasonFeature).where(TeamSeasonFeature.sport == config.sport)
         )
     ]
-    return SportData(
+    data = SportData(
         config,
         games,
         closes,
         opens,
         rest_features(games, cap=config.rest_cap),
-        availability(games, box),
+        availability(games, box, snapshots=snapshots),
         preseason_features(games, facts) if facts else {},
         _efficiency(session, config, games) if config.team_epa else {},
     )
+    if config.injuries:
+        timeline = InjuryTimeline.build(
+            [
+                Report(r.player_source_identifier, r.status, r.cleared, r.observed_at, r.team_id)
+                for r in session.scalars(
+                    select(InjuryReport).where(
+                        InjuryReport.sport == config.sport,
+                        InjuryReport.provider == "espn",
+                        InjuryReport.player_source_identifier.is_not(None),
+                    )
+                )
+                if r.player_source_identifier
+            ]
+        )
+        played = {gid: {row.player_id for row in rows if row.played} for gid, rows in box.items()}
+        features, rates = injury_features(games, snapshots, timeline, played)
+        data = replace(data, injuries=features, sit_rates=rates)
+    return data
 
 
 def _efficiency(
@@ -309,6 +348,8 @@ def feature_values(p: EloPrediction, data: SportData) -> dict[str, float]:
         "epa_diff": 0.0,
         "epa_raw_diff": 0.0,
         **data.efficiency.get(p.game_id, {}),
+        **{f"injury_missing_diff_{h}h": 0.0 for h in HORIZONS_HOURS},
+        **data.injuries.get(p.game_id, {}),
     }
 
 

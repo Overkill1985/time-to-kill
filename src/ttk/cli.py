@@ -234,6 +234,37 @@ def _repair_merged_games(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _injury_check(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.espn_models import load_sport
+    from ttk.research.nba_injuries import HORIZONS_HOURS, STATUS_PRIORS
+    from ttk.research.nba_model import NBA
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        data = load_sport(session, NBA)
+    rates = data.sit_rates
+    if rates is None or not data.injuries:
+        print("No NBA injury history yet (the collector records it from 2026-09-27).")
+        return 0
+    finished = [g for g in data.games if g.played and g.game_id in data.injuries]
+    upcoming = [g for g in data.games if not g.played and g.game_id in data.injuries]
+    print(
+        f"Games with injury features: {len(finished)} finished, {len(upcoming)} upcoming "
+        "(upcoming games use what we know now)"
+    )
+    statuses = sorted({status for _, status in rates.counts} | set(STATUS_PRIORS))
+    for h in HORIZONS_HOURS:
+        print(f"\nListed {h} h before tip-off: how often the player sat (rotation players)")
+        for status in statuses:
+            sat, n = rates.observed(h, status)
+            if n == 0 and status not in ("Out", "Day-To-Day"):
+                continue
+            seen = f"{sat}/{n} sat ({sat / n:.0%})" if n else "no finished games yet"
+            print(f"  {status:<12} {seen:<28} model uses q={rates.q(h, status):.2f}")
+    return 0
+
+
 def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
     import json
 
@@ -383,9 +414,15 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
 
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn import EspnScheduleProvider
+    from ttk.providers.espn_boxscore import EspnBoxscores
     from ttk.providers.espn_injuries import EspnInjuries
     from ttk.services.bets import settle_bets
-    from ttk.services.collector import collect_once, refresh_injuries, refresh_schedules
+    from ttk.services.collector import (
+        collect_once,
+        refresh_boxscores,
+        refresh_injuries,
+        refresh_schedules,
+    )
     from ttk.services.parlay_lab import settle_parlays
 
     log_file = None
@@ -408,6 +445,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     factory = make_session_factory(make_engine(settings.database_url))
     schedule_provider = EspnScheduleProvider()
     injuries = EspnInjuries()
+    boxscores = EspnBoxscores()
     remaining: int | None = None
     emit(
         f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
@@ -427,6 +465,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         for run in refresh_injuries(factory, injuries):
             emit(
                 f"{run.sport} injuries: {run.status} {run.records_written} changes, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        for run in refresh_boxscores(factory, boxscores):
+            emit(
+                f"{run.sport} box scores: {run.status} {run.records_written} player rows, "
                 f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
             )
         with factory() as session:
@@ -792,6 +835,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    sub.add_parser(
+        "injury-check",
+        help="NBA: how often players listed on the injury report actually sat, by status",
+    )
     repair = sub.add_parser(
         "repair-merged-games",
         help="Split games that wrongly joined two ESPN events (dry run unless --apply)",
@@ -940,6 +987,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "repair-espn-lines":
         return _repair_espn_lines(args, settings)
+
+    if args.command == "injury-check":
+        return _injury_check(args, settings)
 
     if args.command == "repair-merged-games":
         return _repair_merged_games(args, settings)

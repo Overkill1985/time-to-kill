@@ -34,6 +34,7 @@ ttk backtest-nfl-elo             # tune on train, report validation; test stays 
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
 ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
+ttk injury-check                 # NBA: how often players on the injury report actually sat
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
 ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseason facts (TTK_CFBD_API_KEY)
 ttk import-cfbd-games --from-season 2013 --to-season 2026  # per-game team efficiency (1 call a season)
@@ -58,7 +59,8 @@ A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon
 - **Each pass:**
   1. Refreshes the ESPN schedules (free), at most every 6 hours.
   2. Stores changes to ESPN's injury lists: NBA every pass, NFL hourly. There is no historical injury source, so this is the only record of what was known when.
-  3. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
+  3. Imports box scores of newly finished NBA games, every 6 hours (player values, and who actually sat).
+  4. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
 
 Manage it from PowerShell:
 
