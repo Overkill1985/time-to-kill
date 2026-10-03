@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///data/time_to_kill.db"
     odds_api_key: SecretStr | None = None
     propline_api_key: SecretStr | None = None
+    cfbd_api_key: SecretStr | None = None
+    """CollegeFootballData.com (college football preseason data); bearer token."""
     unit_size: float = 1.0
     """Currency per unit for performance reports (1.0 = units are currency)."""
     bettable_books: str | None = None

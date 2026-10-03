@@ -17,6 +17,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ttk.domain import Sport
+from ttk.research.cfb_preseason import PRESEASON_FEATURES
 from ttk.research.espn_models import SportConfig, SportData, load_sport
 from ttk.research.nfl_elo import Splits
 
@@ -31,7 +32,11 @@ CFB = SportConfig(
     # 10 Elo per point of 10-35). College home margins are large (FCS teams travel).
     k_grid=(20.0, 30.0, 40.0, 50.0, 60.0, 80.0),
     home_field_per_point_grid=(4.0, 6.0, 8.0, 10.0, 12.0, 15.0),
-    feature_sets={"rest": ("elo_diff", "rest_diff")},  # byes and short weeks
+    feature_sets={
+        "rest": ("elo_diff", "rest_diff"),  # byes and short weeks
+        # CollegeFootballData facts known before kickoff (research/cfb_preseason.py)
+        "preseason": ("elo_diff", "rest_diff", *PRESEASON_FEATURES),
+    },
     rest_cap=14,
     regression_targets=("mean", "recent"),
 )

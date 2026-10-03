@@ -121,6 +121,17 @@ def _backtest_espn(args: argparse.Namespace, database_url: str, sport: Sport) ->
         )
     w = report.base.models.key_number.weights
     print("Key-number weights (TRAIN): " + ", ".join(f"{k}:{w[k]:.2f}" for k in sorted(w)[:8]))
+    if data.preseason:
+        with_facts = {gid for gid, f in data.preseason.items() if any(f.values())}
+
+        def covered(lo: int, hi: int) -> int:
+            return sum(1 for g in data.games if g.game_id in with_facts and lo <= g.season <= hi)
+
+        coverage = ", ".join(
+            f"{label} {covered(*window)}"
+            for label, window in (("train", splits.train), ("validate", splits.validate))
+        )
+        print(f"Games with preseason facts: {coverage}")
     if report.lineup_coverage:
         print(
             "Games with lineup features: "
@@ -755,6 +766,12 @@ def main(argv: list[str] | None = None) -> int:
     espn_history.add_argument(
         "--delay", type=float, default=0.25, help="Seconds between requests (be polite to ESPN)"
     )
+    cfbd = sub.add_parser(
+        "import-cfbd",
+        help="Import college football preseason facts from CollegeFootballData (TTK_CFBD_API_KEY)",
+    )
+    cfbd.add_argument("--from-season", type=int, required=True, help="Season year (start year)")
+    cfbd.add_argument("--to-season", type=int, required=True)
     box = sub.add_parser(
         "import-boxscores",
         help="Import player box scores (who played, minutes, stats) for final games, from ESPN",
@@ -920,6 +937,28 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "repair-merged-games":
         return _repair_merged_games(args, settings)
+
+    if args.command == "import-cfbd":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.cfbd import CfbdClient
+        from ttk.services.cfbd_import import import_cfbd
+
+        if settings.cfbd_api_key is None:
+            print(
+                "Set TTK_CFBD_API_KEY in .env (free at collegefootballdata.com).", file=sys.stderr
+            )
+            return 2
+        factory = make_session_factory(make_engine(settings.database_url))
+        client = CfbdClient(settings.cfbd_api_key.get_secret_value())
+        runs = import_cfbd(factory, client, (args.from_season, args.to_season))
+        for run in runs:
+            print(
+                f"{run.stats.get('season') if run.stats else '?'}: {run.status} "
+                f"{run.records_written} facts, stats={run.stats}"
+                + (f", error={run.error}" if run.error else "")
+            )
+        print(f"CFBD calls left this month: {client.calls_remaining}")
+        return 0 if all(r.status == "SUCCESS" for r in runs) else 1
 
     if args.command == "import-boxscores":
         from ttk.db.session import make_engine, make_session_factory

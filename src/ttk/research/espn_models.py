@@ -32,12 +32,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, PlayerGameStat, ReportedLine
+from ttk.db.models import Game, PlayerGameStat, ReportedLine, TeamSeasonFeature
 from ttk.domain import GameStatus, Sport
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame, EloPrediction
 from ttk.models.margin import KeyNumberMarginModel, MarginModel, key_number_weights_for_means
 from ttk.providers.espn_odds import is_market
+from ttk.research.cfb_preseason import PRESEASON_FEATURES, SeasonFact, preseason_features
 from ttk.research.nba_lineups import Availability, BoxRow, availability, hollinger_game_score
 from ttk.research.nfl_elo import (
     HOME_FIELD_PER_POINT_GRID,
@@ -129,6 +130,8 @@ class SportData:
     """game_id -> (home rest days, away rest days, home back-to-back, away back-to-back)."""
     lineups: dict[int, Availability] = field(default_factory=dict)
     """game_id -> walk-forward player availability (games with box scores)."""
+    preseason: dict[int, dict[str, float]] = field(default_factory=dict)
+    """game_id -> preseason features known at kickoff (college football)."""
 
     def line_check(self) -> tuple[int, int]:
         """(checked, disagreeing): closing lines of 2+ points whose favourite differs
@@ -220,6 +223,12 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
                 ),
             )
         )
+    facts = [
+        SeasonFact(f.season, f.team_id, f.name, f.value, f.known_at)
+        for f in session.scalars(
+            select(TeamSeasonFeature).where(TeamSeasonFeature.sport == config.sport)
+        )
+    ]
     return SportData(
         config,
         games,
@@ -227,6 +236,7 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         opens,
         rest_features(games, cap=config.rest_cap),
         availability(games, box),
+        preseason_features(games, facts) if facts else {},
     )
 
 
@@ -266,6 +276,8 @@ def feature_values(p: EloPrediction, data: SportData) -> dict[str, float]:
         "away_b2b": float(away_b2b),
         "missing_diff": lineup.missing_diff if lineup else 0.0,
         "missing_prev_diff": lineup.missing_prev_diff if lineup else 0.0,
+        **{name: 0.0 for name in PRESEASON_FEATURES},
+        **data.preseason.get(p.game_id, {}),
     }
 
 

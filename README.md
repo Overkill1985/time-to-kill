@@ -35,7 +35,8 @@ ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN 
 ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
-ttk backtest-cfb                 # college football: Elo, rest, market-anchored, opener
+ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseason facts (TTK_CFBD_API_KEY)
+ttk backtest-cfb                 # college football: Elo, rest, preseason, market-anchored, opener
 ttk import-espn-history --sport NCAAB --from-season 2015 --to-season 2026  # ~12 h
 ttk backtest-ncaab               # college basketball: Elo, rest, market-anchored, opener
 ```

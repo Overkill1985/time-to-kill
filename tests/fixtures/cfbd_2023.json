@@ -1,0 +1,1214 @@
+{
+ "talent_2023": [
+  {
+   "year": 2023,
+   "team": "Alabama",
+   "talent": 1015.43
+  },
+  {
+   "year": 2023,
+   "team": "Georgia",
+   "talent": 977.87
+  },
+  {
+   "year": 2023,
+   "team": "Michigan",
+   "talent": 850.43
+  },
+  {
+   "year": 2023,
+   "team": "Colorado",
+   "talent": 711.87
+  },
+  {
+   "year": 2023,
+   "team": "Vanderbilt",
+   "talent": 639.88
+  },
+  {
+   "year": 2023,
+   "team": "Hawai'i",
+   "talent": 407.77
+  },
+  {
+   "year": 2023,
+   "team": "Ohio",
+   "talent": 342.6
+  }
+ ],
+ "returning_2023": [
+  {
+   "season": 2023,
+   "team": "Alabama",
+   "conference": "SEC",
+   "totalPPA": 233.1,
+   "totalPassingPPA": 23.9,
+   "totalReceivingPPA": 158.8,
+   "totalRushingPPA": 50.3,
+   "percentPPA": 0.423,
+   "percentPassingPPA": 0.135,
+   "percentReceivingPPA": 0.584,
+   "percentRushingPPA": 0.492,
+   "usage": 0.409,
+   "passingUsage": 0.147,
+   "receivingUsage": 0.58,
+   "rushingUsage": 0.54
+  },
+  {
+   "season": 2023,
+   "team": "Colorado",
+   "conference": "Pac-12",
+   "totalPPA": 16.6,
+   "totalPassingPPA": 0,
+   "totalReceivingPPA": 7.8,
+   "totalRushingPPA": 8.8,
+   "percentPPA": 0.077,
+   "percentPassingPPA": 0,
+   "percentReceivingPPA": 0.053,
+   "percentRushingPPA": 0.272,
+   "usage": 0.13,
+   "passingUsage": 0,
+   "receivingUsage": 0.066,
+   "rushingUsage": 0.301
+  },
+  {
+   "season": 2023,
+   "team": "Georgia",
+   "conference": "SEC",
+   "totalPPA": 300.2,
+   "totalPassingPPA": 44.4,
+   "totalReceivingPPA": 180.3,
+   "totalRushingPPA": 75.5,
+   "percentPPA": 0.43,
+   "percentPassingPPA": 0.178,
+   "percentReceivingPPA": 0.59,
+   "percentRushingPPA": 0.532,
+   "usage": 0.446,
+   "passingUsage": 0.084,
+   "receivingUsage": 0.647,
+   "rushingUsage": 0.622
+  },
+  {
+   "season": 2023,
+   "team": "Hawai'i",
+   "conference": "Mountain West",
+   "totalPPA": 172.4,
+   "totalPassingPPA": 48.1,
+   "totalReceivingPPA": 80.5,
+   "totalRushingPPA": 43.7,
+   "percentPPA": 0.627,
+   "percentPassingPPA": 0.92,
+   "percentReceivingPPA": 0.541,
+   "percentRushingPPA": 0.595,
+   "usage": 0.67,
+   "passingUsage": 0.995,
+   "receivingUsage": 0.422,
+   "rushingUsage": 0.487
+  },
+  {
+   "season": 2023,
+   "team": "Michigan",
+   "conference": "Big Ten",
+   "totalPPA": 409.3,
+   "totalPassingPPA": 131.4,
+   "totalReceivingPPA": 110.9,
+   "totalRushingPPA": 167,
+   "percentPPA": 0.777,
+   "percentPassingPPA": 0.936,
+   "percentReceivingPPA": 0.519,
+   "percentRushingPPA": 0.963,
+   "usage": 0.825,
+   "passingUsage": 0.898,
+   "receivingUsage": 0.498,
+   "rushingUsage": 0.955
+  },
+  {
+   "season": 2023,
+   "team": "Ohio",
+   "conference": "Mid-American",
+   "totalPPA": 491.8,
+   "totalPassingPPA": 189,
+   "totalReceivingPPA": 238.4,
+   "totalRushingPPA": 64.4,
+   "percentPPA": 0.921,
+   "percentPassingPPA": 1,
+   "percentReceivingPPA": 0.85,
+   "percentRushingPPA": 0.998,
+   "usage": 0.935,
+   "passingUsage": 1,
+   "receivingUsage": 0.86,
+   "rushingUsage": 0.924
+  },
+  {
+   "season": 2023,
+   "team": "Vanderbilt",
+   "conference": "SEC",
+   "totalPPA": 139.7,
+   "totalPassingPPA": 44.5,
+   "totalReceivingPPA": 104.9,
+   "totalRushingPPA": -9.7,
+   "percentPPA": 0.519,
+   "percentPassingPPA": 0.501,
+   "percentReceivingPPA": 0.696,
+   "percentRushingPPA": -0.328,
+   "usage": 0.618,
+   "passingUsage": 0.628,
+   "receivingUsage": 0.796,
+   "rushingUsage": 0.427
+  }
+ ],
+ "recruiting_2023": [
+  {
+   "year": 2023,
+   "team": "Alabama",
+   "rank": 1,
+   "points": 328
+  },
+  {
+   "year": 2023,
+   "team": "Georgia",
+   "rank": 2,
+   "points": 315.68
+  },
+  {
+   "year": 2023,
+   "team": "Michigan",
+   "rank": 17,
+   "points": 245.13
+  },
+  {
+   "year": 2023,
+   "team": "Colorado",
+   "rank": 29,
+   "points": 219.75
+  },
+  {
+   "year": 2023,
+   "team": "Vanderbilt",
+   "rank": 52,
+   "points": 195.39
+  },
+  {
+   "year": 2023,
+   "team": "Ohio",
+   "rank": 97,
+   "points": 140.79
+  },
+  {
+   "year": 2023,
+   "team": "Hawai'i",
+   "rank": 117,
+   "points": 111.34
+  }
+ ],
+ "coaches_2023": [
+  {
+   "id": 1718,
+   "firstName": "Tim",
+   "lastName": "Albin",
+   "hireDate": "2021-07-14T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 195,
+     "school": "Ohio",
+     "year": 2023,
+     "games": 13
+    }
+   ]
+  },
+  {
+   "id": 1740,
+   "firstName": "Timmy",
+   "lastName": "Chang",
+   "hireDate": "2022-01-22T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 62,
+     "school": "Hawai'i",
+     "year": 2023,
+     "games": 13
+    }
+   ]
+  },
+  {
+   "id": 195,
+   "firstName": "Jim",
+   "lastName": "Harbaugh",
+   "hireDate": "2014-12-30T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 130,
+     "school": "Michigan",
+     "year": 2023,
+     "games": 15
+    }
+   ]
+  },
+  {
+   "id": 1721,
+   "firstName": "Clark",
+   "lastName": "Lea",
+   "hireDate": "2020-12-14T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 238,
+     "school": "Vanderbilt",
+     "year": 2023,
+     "games": 12
+    }
+   ]
+  },
+  {
+   "id": 406,
+   "firstName": "Nick",
+   "lastName": "Saban",
+   "hireDate": "2007-01-03T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 333,
+     "school": "Alabama",
+     "year": 2023,
+     "games": 14
+    }
+   ]
+  },
+  {
+   "id": 1770,
+   "firstName": "Deion",
+   "lastName": "Sanders",
+   "hireDate": "2022-12-03T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 38,
+     "school": "Colorado",
+     "year": 2023,
+     "games": 12
+    }
+   ]
+  },
+  {
+   "id": 429,
+   "firstName": "Kirby",
+   "lastName": "Smart",
+   "hireDate": "2015-12-06T00:00:00.000Z",
+   "seasons": [
+    {
+     "teamId": 61,
+     "school": "Georgia",
+     "year": 2023,
+     "games": 14
+    }
+   ]
+  }
+ ],
+ "portal_2023": [
+  {
+   "season": 2023,
+   "firstName": "Jamil",
+   "lastName": "Burroughs",
+   "position": "DL",
+   "origin": "Alabama",
+   "destination": null,
+   "transferDate": "2023-06-30T15:39:00.000Z",
+   "rating": null,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Patrick",
+   "lastName": "Hisatake",
+   "position": "LB",
+   "origin": "California",
+   "destination": "Hawai'i",
+   "transferDate": "2022-12-14T00:57:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Tar'varish",
+   "lastName": "Dawson",
+   "position": "WR",
+   "origin": "Auburn",
+   "destination": "Colorado",
+   "transferDate": "2023-04-15T13:04:00.000Z",
+   "rating": 0.88,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Grant",
+   "lastName": "Page",
+   "position": "WR",
+   "origin": "Colorado",
+   "destination": "Utah State",
+   "transferDate": "2023-04-24T18:41:00.000Z",
+   "rating": 0.85,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Ches",
+   "lastName": "Jackson",
+   "position": "OT",
+   "origin": "Colorado State",
+   "destination": "Ohio",
+   "transferDate": "2022-11-02T16:24:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Jace",
+   "lastName": "Feely",
+   "position": "K",
+   "origin": "Arizona State",
+   "destination": "Colorado",
+   "transferDate": "2022-12-05T21:18:00.000Z",
+   "rating": 0.78,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Marshawn",
+   "lastName": "Kneeland",
+   "position": "EDGE",
+   "origin": "Western Michigan",
+   "destination": "Colorado",
+   "transferDate": "2022-12-02T23:13:00.000Z",
+   "rating": 0.87,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Nathanial",
+   "lastName": "Vakos",
+   "position": "K",
+   "origin": "Ohio",
+   "destination": "Wisconsin",
+   "transferDate": "2022-12-31T00:53:00.000Z",
+   "rating": 0.79,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Arden",
+   "lastName": "Walker",
+   "position": "DL",
+   "origin": "Missouri",
+   "destination": "Colorado",
+   "transferDate": "2023-05-01T16:40:00.000Z",
+   "rating": 0.86,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Isaiah",
+   "lastName": "Lewis",
+   "position": "CB",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2022-11-30T16:21:00.000Z",
+   "rating": null,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Diego",
+   "lastName": "LaMonica",
+   "position": "TE",
+   "origin": "Vanderbilt",
+   "destination": null,
+   "transferDate": "2022-12-05T14:25:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Allan",
+   "lastName": "Baugh",
+   "position": "DL",
+   "origin": "Colorado",
+   "destination": "Valdosta State",
+   "transferDate": "2023-04-19T15:17:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Aaron",
+   "lastName": "Austin",
+   "position": "DL",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-24T18:44:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Jack",
+   "lastName": "Martin",
+   "position": "P",
+   "origin": "Alabama",
+   "destination": "Houston",
+   "transferDate": "2022-10-31T13:57:00.000Z",
+   "rating": null,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Edgar",
+   "lastName": "Amaya",
+   "position": "IOL",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2022-11-02T14:01:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Marcus",
+   "lastName": "Washington",
+   "position": "CB",
+   "origin": "Georgia",
+   "destination": "Louisville",
+   "transferDate": "2023-04-23T14:39:00.000Z",
+   "rating": 0.92,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Jeremy",
+   "lastName": "Mack",
+   "position": "S",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-24T22:05:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Dylan",
+   "lastName": "Dixson",
+   "position": "S",
+   "origin": "Colorado",
+   "destination": "Missouri State",
+   "transferDate": "2023-04-15T13:43:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Josh",
+   "lastName": "Jerome",
+   "position": "DL",
+   "origin": "Eastern Washington",
+   "destination": "Hawai'i",
+   "transferDate": "2022-12-07T00:03:00.000Z",
+   "rating": null,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Nikko",
+   "lastName": "Reed",
+   "position": "CB",
+   "origin": "Colorado",
+   "destination": "Oregon",
+   "transferDate": "2023-04-15T14:05:00.000Z",
+   "rating": 0.89,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Aaron",
+   "lastName": "Anderson",
+   "position": "WR",
+   "origin": "Alabama",
+   "destination": "LSU",
+   "transferDate": "2022-12-12T23:58:00.000Z",
+   "rating": 0.91,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Rian",
+   "lastName": "Davis",
+   "position": "LB",
+   "origin": "Georgia",
+   "destination": "UCF",
+   "transferDate": "2023-04-17T22:25:00.000Z",
+   "rating": 0.89,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Maurice",
+   "lastName": "Edwards",
+   "position": "RB",
+   "origin": "Vanderbilt",
+   "destination": null,
+   "transferDate": "2022-09-02T17:28:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Traeshon",
+   "lastName": "Holden",
+   "position": "WR",
+   "origin": "Alabama",
+   "destination": "Oregon",
+   "transferDate": "2022-12-06T00:49:00.000Z",
+   "rating": 0.91,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Yousef",
+   "lastName": "Mugharbil",
+   "position": "IOL",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-26T18:49:00.000Z",
+   "rating": null,
+   "stars": 4,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Jordan",
+   "lastName": "Woolverton",
+   "position": "S",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-28T19:23:00.000Z",
+   "rating": null,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Damani",
+   "lastName": "Dent",
+   "position": "S",
+   "origin": "Michigan",
+   "destination": null,
+   "transferDate": "2023-04-27T14:18:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Tyler",
+   "lastName": "Brown",
+   "position": "IOL",
+   "origin": "Jackson State",
+   "destination": "Colorado",
+   "transferDate": "2022-12-21T01:23:00.000Z",
+   "rating": 0.86,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Shane",
+   "lastName": "Cokes",
+   "position": "DL",
+   "origin": "Dartmouth",
+   "destination": "Colorado",
+   "transferDate": "2022-11-21T14:52:00.000Z",
+   "rating": 0.88,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Janaz",
+   "lastName": "Jordan",
+   "position": "DL",
+   "origin": "Colorado",
+   "destination": "Towson",
+   "transferDate": "2022-08-26T17:48:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Dane",
+   "lastName": "Jackson",
+   "position": "IOL",
+   "origin": "North Texas",
+   "destination": "Ohio",
+   "transferDate": "2023-04-27T18:56:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Oakie",
+   "lastName": "Salave'a",
+   "position": "S",
+   "origin": "Colorado",
+   "destination": "Hawai'i",
+   "transferDate": "2023-04-24T15:52:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Victor",
+   "lastName": "Venn",
+   "position": "RB",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-24T22:08:00.000Z",
+   "rating": 0.85,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Zion",
+   "lastName": "Magalei",
+   "position": "LB",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-25T22:12:00.000Z",
+   "rating": 0.82,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Simeon",
+   "lastName": "Smith",
+   "position": "WR",
+   "origin": "Michigan",
+   "destination": null,
+   "transferDate": "2022-12-05T22:07:00.000Z",
+   "rating": null,
+   "stars": null,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Nigel",
+   "lastName": "Bethel",
+   "position": "CB",
+   "origin": "Colorado",
+   "destination": null,
+   "transferDate": "2023-04-27T14:31:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Joshua",
+   "lastName": "Wiggins",
+   "position": "CB",
+   "origin": "Colorado",
+   "destination": "Liberty",
+   "transferDate": "2023-04-20T22:02:00.000Z",
+   "rating": null,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Tyler",
+   "lastName": "Mullins",
+   "position": "S",
+   "origin": "Ohio",
+   "destination": null,
+   "transferDate": "2022-12-06T22:29:00.000Z",
+   "rating": null,
+   "stars": 2,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Tyler",
+   "lastName": "Buchner",
+   "position": "QB",
+   "origin": "Notre Dame",
+   "destination": "Alabama",
+   "transferDate": "2023-04-25T17:41:00.000Z",
+   "rating": 0.88,
+   "stars": 3,
+   "eligibility": "Immediate"
+  },
+  {
+   "season": 2023,
+   "firstName": "Montana",
+   "lastName": "Lemonious-Craig",
+   "position": "WR",
+   "origin": "Colorado",
+   "destination": "Arizona",
+   "transferDate": "2023-04-24T14:24:00.000Z",
+   "rating": 0.91,
+   "stars": 4,
+   "eligibility": "Immediate"
+  }
+ ],
+ "rankings_2023": [
+  {
+   "season": 2023,
+   "seasonType": "regular",
+   "week": 2,
+   "polls": [
+    {
+     "poll": "AP Top 25",
+     "isFinal": null,
+     "ranks": [
+      {
+       "rank": 1,
+       "teamId": 61,
+       "school": "Georgia",
+       "conference": "SEC",
+       "firstPlaceVotes": 58,
+       "points": 1569
+      },
+      {
+       "rank": 9,
+       "teamId": 2633,
+       "school": "Tennessee",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 975
+      },
+      {
+       "rank": 15,
+       "teamId": 2306,
+       "school": "Kansas State",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 579
+      },
+      {
+       "rank": 14,
+       "teamId": 99,
+       "school": "LSU",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 706
+      },
+      {
+       "rank": 16,
+       "teamId": 204,
+       "school": "Oregon State",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 558
+      },
+      {
+       "rank": 6,
+       "teamId": 30,
+       "school": "USC",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 1255
+      },
+      {
+       "rank": 3,
+       "teamId": 333,
+       "school": "Alabama",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 1424
+      },
+      {
+       "rank": 20,
+       "teamId": 145,
+       "school": "Ole Miss",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 379
+      },
+      {
+       "rank": 13,
+       "teamId": 2483,
+       "school": "Oregon",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 823
+      },
+      {
+       "rank": 8,
+       "teamId": 264,
+       "school": "Washington",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 1107
+      },
+      {
+       "rank": 12,
+       "teamId": 254,
+       "school": "Utah",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 919
+      },
+      {
+       "rank": 22,
+       "teamId": 38,
+       "school": "Colorado",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 269
+      },
+      {
+       "rank": 23,
+       "teamId": 245,
+       "school": "Texas A&M",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 267
+      },
+      {
+       "rank": 5,
+       "teamId": 194,
+       "school": "Ohio State",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 1308
+      },
+      {
+       "rank": 2,
+       "teamId": 130,
+       "school": "Michigan",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 2,
+       "points": 1485
+      },
+      {
+       "rank": 7,
+       "teamId": 213,
+       "school": "Penn State",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 1212
+      },
+      {
+       "rank": 19,
+       "teamId": 275,
+       "school": "Wisconsin",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 407
+      },
+      {
+       "rank": 11,
+       "teamId": 251,
+       "school": "Texas",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 935
+      },
+      {
+       "rank": 18,
+       "teamId": 201,
+       "school": "Oklahoma",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 426
+      },
+      {
+       "rank": 10,
+       "teamId": 87,
+       "school": "Notre Dame",
+       "conference": "FBS Independents",
+       "firstPlaceVotes": 0,
+       "points": 967
+      },
+      {
+       "rank": 24,
+       "teamId": 2655,
+       "school": "Tulane",
+       "conference": "American Athletic",
+       "firstPlaceVotes": 0,
+       "points": 241
+      },
+      {
+       "rank": 4,
+       "teamId": 52,
+       "school": "Florida State",
+       "conference": "ACC",
+       "firstPlaceVotes": 3,
+       "points": 1384
+      },
+      {
+       "rank": 21,
+       "teamId": 150,
+       "school": "Duke",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 343
+      },
+      {
+       "rank": 17,
+       "teamId": 153,
+       "school": "North Carolina",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 551
+      },
+      {
+       "rank": 25,
+       "teamId": 228,
+       "school": "Clemson",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 141
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "season": 2023,
+   "seasonType": "regular",
+   "week": 1,
+   "polls": [
+    {
+     "poll": "AP Top 25",
+     "isFinal": null,
+     "ranks": [
+      {
+       "rank": 1,
+       "teamId": 61,
+       "school": "Georgia",
+       "conference": "SEC",
+       "firstPlaceVotes": 60,
+       "points": 1572
+      },
+      {
+       "rank": 12,
+       "teamId": 2633,
+       "school": "Tennessee",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 868
+      },
+      {
+       "rank": 16,
+       "teamId": 2306,
+       "school": "Kansas State",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 501
+      },
+      {
+       "rank": 17,
+       "teamId": 2628,
+       "school": "TCU",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 416
+      },
+      {
+       "rank": 5,
+       "teamId": 99,
+       "school": "LSU",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 1276
+      },
+      {
+       "rank": 18,
+       "teamId": 204,
+       "school": "Oregon State",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 406
+      },
+      {
+       "rank": 6,
+       "teamId": 30,
+       "school": "USC",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 1245
+      },
+      {
+       "rank": 4,
+       "teamId": 333,
+       "school": "Alabama",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 1398
+      },
+      {
+       "rank": 22,
+       "teamId": 145,
+       "school": "Ole Miss",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 281
+      },
+      {
+       "rank": 15,
+       "teamId": 2483,
+       "school": "Oregon",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 732
+      },
+      {
+       "rank": 10,
+       "teamId": 264,
+       "school": "Washington",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 977
+      },
+      {
+       "rank": 14,
+       "teamId": 254,
+       "school": "Utah",
+       "conference": "Pac-12",
+       "firstPlaceVotes": 0,
+       "points": 811
+      },
+      {
+       "rank": 23,
+       "teamId": 245,
+       "school": "Texas A&M",
+       "conference": "SEC",
+       "firstPlaceVotes": 0,
+       "points": 227
+      },
+      {
+       "rank": 3,
+       "teamId": 194,
+       "school": "Ohio State",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 1,
+       "points": 1400
+      },
+      {
+       "rank": 2,
+       "teamId": 130,
+       "school": "Michigan",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 2,
+       "points": 1490
+      },
+      {
+       "rank": 7,
+       "teamId": 213,
+       "school": "Penn State",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 1177
+      },
+      {
+       "rank": 19,
+       "teamId": 275,
+       "school": "Wisconsin",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 386
+      },
+      {
+       "rank": 25,
+       "teamId": 2294,
+       "school": "Iowa",
+       "conference": "Big Ten",
+       "firstPlaceVotes": 0,
+       "points": 131
+      },
+      {
+       "rank": 11,
+       "teamId": 251,
+       "school": "Texas",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 882
+      },
+      {
+       "rank": 20,
+       "teamId": 201,
+       "school": "Oklahoma",
+       "conference": "Big 12",
+       "firstPlaceVotes": 0,
+       "points": 296
+      },
+      {
+       "rank": 13,
+       "teamId": 87,
+       "school": "Notre Dame",
+       "conference": "FBS Independents",
+       "firstPlaceVotes": 0,
+       "points": 863
+      },
+      {
+       "rank": 24,
+       "teamId": 2655,
+       "school": "Tulane",
+       "conference": "American Athletic",
+       "firstPlaceVotes": 0,
+       "points": 224
+      },
+      {
+       "rank": 8,
+       "teamId": 52,
+       "school": "Florida State",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 1147
+      },
+      {
+       "rank": 21,
+       "teamId": 153,
+       "school": "North Carolina",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 292
+      },
+      {
+       "rank": 9,
+       "teamId": 228,
+       "school": "Clemson",
+       "conference": "ACC",
+       "firstPlaceVotes": 0,
+       "points": 1032
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

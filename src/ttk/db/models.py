@@ -229,6 +229,26 @@ class BookObservation(Base):
     """How many quotes the book showed for the game in this poll."""
 
 
+class TeamSeasonFeature(Base):
+    """One preseason fact about a team-season (e.g. returning production, roster
+    talent, recruiting, a new head coach, the preseason poll). ``known_at`` is when
+    it became public; a model may use it only for games after that time.
+    Re-imports replace rows (providers revise)."""
+
+    __tablename__ = "team_season_features"
+    __table_args__ = (UniqueConstraint("sport", "season", "team_id", "provider", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sport: Mapped[str] = mapped_column(String(10))
+    season: Mapped[int] = mapped_column(Integer)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    provider: Mapped[str] = mapped_column(String(50))
+    name: Mapped[str] = mapped_column(String(50))
+    value: Mapped[float] = mapped_column(Float)
+    known_at: Mapped[datetime | None]
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class TeamGameStat(Base):
     """One team's offensive play-by-play aggregates for one game (its defense is the
     opponent's row). Offensive plays = pass or run plays with an EPA value,

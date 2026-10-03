@@ -27,6 +27,7 @@ src/ttk/
     espn_boxscore.py   ESPN game summaries -> player box-score lines (never the summary's injuries)
     espn_injuries.py   ESPN current injury lists (NFL, NBA)
     http_retry.py      GET with retries for transient 5xx (ESPN)
+    cfbd.py            CollegeFootballData: preseason facts, each with known_at
   models/              Pure model code, no I/O
     elo.py             Sport-agnostic Elo run in time order (walk-forward by construction)
     margin.py          Normal + key-number margin models -> cover/push probabilities
@@ -41,6 +42,7 @@ src/ttk/
     nba_model.py       NBA config: splits, grids, rest and lineup feature sets
     cfb_model.py       College football config: splits, grids, regression toward recent level
     ncaab_model.py     College basketball config: splits, grids, rest with back-to-backs
+    cfb_preseason.py   Per-game preseason features known at kickoff (fading early-season changes)
     nba_lineups.py     Walk-forward player value and availability (missing at tip / last game)
   db/
     models.py          ORM schema (changed only via migrations)
@@ -54,6 +56,7 @@ src/ttk/
     espn_history_import.py  ESPN season schedule + per-book open/close lines (resumable)
     boxscore_import.py ESPN box scores -> player_game_stats (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
+    cfbd_import.py     CollegeFootballData -> team_season_features (portal aggregated, dated)
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
@@ -69,12 +72,13 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-cfbd | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0009: team_season_features (preseason facts with known_at).
                        - 0008: player box scores; injury change-log fields (added natively; triggers kept).
                        - 0005: change-only odds (a `withdrawn` flag and `book_observations`). Its column is added natively so the table's triggers survive.
                        On SQLite, migrations turn off foreign-key enforcement while batch mode rebuilds tables, then run the foreign-key integrity check.

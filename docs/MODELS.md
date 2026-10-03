@@ -291,6 +291,17 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 - **Key-number weights:** 3 gets 2.56 and 7 gets 2.34, as in the NFL.
 - **Rest** (days since the last game, capped at 14, for byes and short weeks) adds nothing:
   the fitted coefficient is small and margin error doesn't change.
+- **Preseason** (added 2026-10-03; CollegeFootballData, `research/cfb_preseason.py`): each
+  fact is used only for games after it became public. Fitted per unit, home minus away:
+  - returning production share +20.8 points per unit (a team returning 20 percentage points
+    more of last season's production: about +4 points early in the season);
+  - four-year recruiting average +1.2 per standard deviation, transfer-portal balance +1.4
+    per SD, preseason AP poll +0.9 per 1,000 points, a new head coach −0.8;
+  - talent composite and returning passing share ≈ 0 once those are in (talent is built
+    from recruiting).
+  The "change" features fade with games played (half weight after 4). 11,464 of 12,305
+  training games and 3,256 of 3,330 validation games have preseason facts; most of the rest
+  are FCS teams, which the source barely covers.
 
 ### Validation, 2023–2024 (n=3,017 spread games with real prices on both sides)
 
@@ -299,11 +310,14 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 | Market no-vig (close) | 0.6935 | — | — | 15.30 |
 | Elo, key numbers | 0.7431 | +0.0496 | +7.9 (worse) | 17.58 |
 | Rest, key numbers | 0.7453 | +0.0518 | +8.1 (worse) | 17.58 |
-| Market-anchored (Elo or rest) | 0.6942 | +0.0007 | +1.6 | — |
+| Preseason, key numbers | 0.7310 | +0.0375 | +6.8 (worse) | **17.20** |
+| Market-anchored (Elo, rest or preseason) | 0.6941–0.6942 | +0.0006 to +0.0007 | +1.4 to +1.6 | — |
 
 - **Elo is far from the college market**, much further than in the NFL or NBA: 2.3 points of
   margin error behind the close. Results alone miss what the market knows (roster turnover,
   transfers, quarterback changes, coaching).
+- **Preseason information closes about a sixth of that gap** (17.58 → 17.20; close 15.30) and
+  cuts the log-loss deficit from +0.050 to +0.038. Real signal, still far from the close.
 - **Moneyline:** Elo log loss 0.5606 against the market's 0.5169 (n=2,031).
 - **Pushes:** actual 1.53%, predicted 0.79%. The key-number weights are fit around Elo's
   means, which are too far off for the push rate to come out right.
@@ -315,18 +329,20 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 - **Price CLV** where the close stayed on the opening number: Elo and rest −5.3% (n≈435),
   which is about the vig, so no movement toward the bet. Market-anchored −7.0% (n=13).
 - **Points versus the close**, where the line moved: Elo −0.15 (n=1,581), rest −0.16
-  (n=1,578). **College lines move away from the Elo side**, the opposite of the NBA: the
-  market's later information contradicts Elo. Market-anchored +0.49 to +0.73, but on only
-  41–51 games.
-- **ROI at the opener:** Elo −3.5%, rest −4.0%, market-anchored −6.3% (every game).
+  (n=1,578), preseason −0.06 (n=1,563). **College lines move away from the Elo side**, the
+  opposite of the NBA; preseason information removes most of that. Market-anchored +0.49 to
+  +0.73, but on only 34–51 games.
+- **ROI at the opener:** Elo −3.5%, rest −4.0%, preseason −4.2%, market-anchored −6.3% to
+  −7.2% (every game).
 
 ### Verdicts
 
 - No college model comes near the closing line. Every one stays DEVELOPMENT, and 2025 stays
   sealed.
-- The information that matters in college football (returning production, transfers,
-  quarterback and coaching changes, preseason ratings) isn't in results-only Elo. That, not
-  more tuning, is the next step here.
+- Preseason information (returning production, recruiting, transfers, coaching, the
+  preseason poll) is real signal, but the market prices it: the preseason model is still
+  2 points of margin error behind the close. The next steps are in-season information the
+  market may price late (injuries, quarterback changes during the season).
 
 ### What could actually beat the market (next, NFL)
 
