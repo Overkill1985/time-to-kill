@@ -302,6 +302,13 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
   The "change" features fade with games played (half weight after 4). 11,464 of 12,305
   training games and 3,256 of 3,330 validation games have preseason facts; most of the rest
   are FCS teams, which the source barely covers.
+- **In-season efficiency** (added 2026-10-03; CollegeFootballData per-game PPA, the NFL's
+  walk-forward EPA features in `models/nfl_features.py`): team offense minus defense per
+  play from earlier games, **opponent-adjusted** (each game judged against the opponent's
+  rating going in) because college schedules range from the SEC to FCS. Raw efficiency
+  adds nothing to Elo; adjusted, +0.15 points per point of efficiency edge. A grid over its
+  memory settings on TRAIN only (36 combinations) moved TRAIN margin error by 0.02 points,
+  so the NFL settings stay.
 
 ### Validation, 2023–2024 (n=3,017 spread games with real prices on both sides)
 
@@ -310,7 +317,10 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 | Market no-vig (close) | 0.6935 | — | — | 15.30 |
 | Elo, key numbers | 0.7431 | +0.0496 | +7.9 (worse) | 17.58 |
 | Rest, key numbers | 0.7453 | +0.0518 | +8.1 (worse) | 17.58 |
-| Preseason, key numbers | 0.7310 | +0.0375 | +6.8 (worse) | **17.20** |
+| Efficiency, raw | 0.7453 | +0.0518 | +8.2 (worse) | 17.57 |
+| Efficiency, opponent-adjusted | 0.7422 | +0.0487 | +8.0 (worse) | 17.49 |
+| Preseason, key numbers | 0.7310 | +0.0375 | +6.8 (worse) | 17.20 |
+| Preseason + adjusted efficiency | 0.7305 | +0.0370 | +6.8 (worse) | **17.18** |
 | Market-anchored (Elo, rest or preseason) | 0.6941–0.6942 | +0.0006 to +0.0007 | +1.4 to +1.6 | — |
 
 - **Elo is far from the college market**, much further than in the NFL or NBA: 2.3 points of
@@ -318,6 +328,9 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
   transfers, quarterback changes, coaching).
 - **Preseason information closes about a sixth of that gap** (17.58 → 17.20; close 15.30) and
   cuts the log-loss deficit from +0.050 to +0.038. Real signal, still far from the close.
+- **In-season efficiency adds almost nothing on top** (17.20 → 17.18): Elo, updating fast
+  (K=40), already learns most of what per-play efficiency shows. Unlike the NFL, where EPA
+  closed a third of Elo's gap.
 - **Moneyline:** Elo log loss 0.5606 against the market's 0.5169 (n=2,031).
 - **Pushes:** actual 1.53%, predicted 0.79%. The key-number weights are fit around Elo's
   means, which are too far off for the push rate to come out right.
@@ -329,7 +342,7 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 - **Price CLV** where the close stayed on the opening number: Elo and rest −5.3% (n≈435),
   which is about the vig, so no movement toward the bet. Market-anchored −7.0% (n=13).
 - **Points versus the close**, where the line moved: Elo −0.15 (n=1,581), rest −0.16
-  (n=1,578), preseason −0.06 (n=1,563). **College lines move away from the Elo side**, the
+  (n=1,578), preseason −0.06 (n=1,563), preseason + efficiency −0.05 (n=1,573). **College lines move away from the Elo side**, the
   opposite of the NBA; preseason information removes most of that. Market-anchored +0.49 to
   +0.73, but on only 34–51 games.
 - **ROI at the opener:** Elo −3.5%, rest −4.0%, preseason −4.2%, market-anchored −6.3% to
@@ -341,8 +354,9 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
   sealed.
 - Preseason information (returning production, recruiting, transfers, coaching, the
   preseason poll) is real signal, but the market prices it: the preseason model is still
-  2 points of margin error behind the close. The next steps are in-season information the
-  market may price late (injuries, quarterback changes during the season).
+  2 points of margin error behind the close. Team efficiency adds almost nothing beyond Elo.
+- Not yet tested: in-season quarterback changes (needs ~220 CollegeFootballData calls, a
+  quarter of the monthly quota). There is no historical college injury source.
 
 ### What could actually beat the market (next, NFL)
 

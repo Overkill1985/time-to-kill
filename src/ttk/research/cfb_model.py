@@ -36,7 +36,12 @@ CFB = SportConfig(
         "rest": ("elo_diff", "rest_diff"),  # byes and short weeks
         # CollegeFootballData facts known before kickoff (research/cfb_preseason.py)
         "preseason": ("elo_diff", "rest_diff", *PRESEASON_FEATURES),
+        # Team efficiency (CFBD PPA) from earlier games: raw, and opponent-adjusted
+        "epa_raw": ("elo_diff", "rest_diff", "epa_raw_diff"),
+        "epa": ("elo_diff", "rest_diff", "epa_diff"),
+        "inseason": ("elo_diff", "rest_diff", *PRESEASON_FEATURES, "epa_diff"),
     },
+    team_epa=True,
     rest_cap=14,
     regression_targets=("mean", "recent"),
 )

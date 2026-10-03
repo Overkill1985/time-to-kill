@@ -178,3 +178,45 @@ def test_client_retries_throttling_and_reads_the_quota() -> None:
     )
     with pytest.raises(ProviderError, match="unauthorized"):
         denied.get("/talent", year=2023)
+
+
+def test_parse_advanced_game_stats() -> None:
+    from ttk.providers.cfbd import parse_advanced
+
+    rows = {r.team: r for r in parse_advanced(FIX["advanced_2023_one_game"])}
+    jsu = rows["Jacksonville State"]
+    # Real game 401520145 (= ESPN's event id): Jacksonville State vs UTEP, 2023 week 1.
+    assert (jsu.event_id, jsu.plays) == ("401520145", 64)
+    assert jsu.total_ppa == pytest.approx(0.6249, abs=1e-4)
+    assert (jsu.pass_plays, jsu.rush_plays) == (21, 43)  # derived: totalPPA / ppa
+    assert jsu.pass_plays + jsu.rush_plays == jsu.plays
+    assert rows["UTEP"].plays == 70
+
+
+def test_opponent_adjustment_discounts_soft_schedules() -> None:
+    """Teams 1 and 2 post identical offensive EPA, but team 1 did it against team 3,
+    whose defense had been allowing a lot; adjusted, team 1 rates lower."""
+    from ttk.models.nfl_features import FeatureParams, TeamGameEpa, compute_features
+
+    t0 = datetime(2023, 9, 2, tzinfo=UTC)
+    g = [
+        EloGame(1, 2023, t0, 4, 3, False, 50, 0),  # team 3's defense gets shredded
+        EloGame(2, 2023, t0 + timedelta(days=1), 4, 3, False, 50, 0),
+        EloGame(3, 2023, t0 + timedelta(days=7), 1, 3, False, 30, 20),  # 1 vs soft 3
+        EloGame(4, 2023, t0 + timedelta(days=7), 2, 5, False, 30, 20),  # 2 vs neutral 5
+        EloGame(5, 2023, t0 + timedelta(days=14), 1, 2, False, 0, 0),  # to be predicted
+    ]
+    stats = [
+        TeamGameEpa(1, 4, 70, 35.0, 30),
+        TeamGameEpa(1, 3, 70, 0.0, 30),
+        TeamGameEpa(2, 4, 70, 35.0, 30),
+        TeamGameEpa(2, 3, 70, 0.0, 30),
+        TeamGameEpa(3, 1, 70, 14.0, 30),
+        TeamGameEpa(3, 3, 70, 0.0, 30),
+        TeamGameEpa(4, 2, 70, 14.0, 30),
+        TeamGameEpa(4, 5, 70, 0.0, 30),
+    ]
+    raw = compute_features(g, stats, [], {}, FeatureParams())
+    adj = compute_features(g, stats, [], {}, FeatureParams(opponent_adjust=True))
+    assert raw[5].epa_net_diff_pts == pytest.approx(0.0, abs=1e-9)  # identical raw numbers
+    assert adj[5].epa_net_diff_pts < -1.0  # team 1's came against a soft defense

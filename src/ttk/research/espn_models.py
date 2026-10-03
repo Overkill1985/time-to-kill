@@ -32,11 +32,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, PlayerGameStat, ReportedLine, TeamSeasonFeature
+from ttk.db.models import Game, PlayerGameStat, ReportedLine, TeamGameStat, TeamSeasonFeature
 from ttk.domain import GameStatus, Sport
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame, EloPrediction
 from ttk.models.margin import KeyNumberMarginModel, MarginModel, key_number_weights_for_means
+from ttk.models.nfl_features import FeatureParams, TeamGameEpa, compute_features
 from ttk.providers.espn_odds import is_market
 from ttk.research.cfb_preseason import PRESEASON_FEATURES, SeasonFact, preseason_features
 from ttk.research.nba_lineups import Availability, BoxRow, availability, hollinger_game_score
@@ -82,6 +83,9 @@ class SportConfig:
     """Rest days are capped here (and a team's first game gets the cap)."""
     regression_targets: tuple[str, ...] = ("mean",)
     home_field_per_point_grid: tuple[float, ...] = HOME_FIELD_PER_POINT_GRID
+    team_epa: bool = False
+    """Walk-forward team efficiency from team_game_stats (models/nfl_features.py):
+    ``epa_diff`` opponent-adjusted, ``epa_raw_diff`` not."""
     at_tip_only: frozenset[str] = frozenset()
     """Feature sets known only at tip-off: scored against the close, never the opener."""
 
@@ -132,6 +136,8 @@ class SportData:
     """game_id -> walk-forward player availability (games with box scores)."""
     preseason: dict[int, dict[str, float]] = field(default_factory=dict)
     """game_id -> preseason features known at kickoff (college football)."""
+    efficiency: dict[int, dict[str, float]] = field(default_factory=dict)
+    """game_id -> team efficiency from earlier games (``epa_diff``, ``epa_raw_diff``)."""
 
     def line_check(self) -> tuple[int, int]:
         """(checked, disagreeing): closing lines of 2+ points whose favourite differs
@@ -237,7 +243,29 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         rest_features(games, cap=config.rest_cap),
         availability(games, box),
         preseason_features(games, facts) if facts else {},
+        _efficiency(session, config, games) if config.team_epa else {},
     )
+
+
+def _efficiency(
+    session: Session, config: SportConfig, games: list[EloGame]
+) -> dict[int, dict[str, float]]:
+    stats = [
+        TeamGameEpa(s.game_id, s.team_id, s.plays, s.epa_total, s.dropbacks)
+        for s in session.scalars(
+            select(TeamGameStat)
+            .join(Game, Game.id == TeamGameStat.game_id)
+            .where(Game.sport == config.sport)
+        )
+    ]
+    if not stats:
+        return {}
+    adjusted = compute_features(games, stats, [], {}, FeatureParams(opponent_adjust=True))
+    raw = compute_features(games, stats, [], {}, FeatureParams())
+    return {
+        gid: {"epa_diff": f.epa_net_diff_pts, "epa_raw_diff": raw[gid].epa_net_diff_pts}
+        for gid, f in adjusted.items()
+    }
 
 
 def rest_features(
@@ -278,6 +306,9 @@ def feature_values(p: EloPrediction, data: SportData) -> dict[str, float]:
         "missing_prev_diff": lineup.missing_prev_diff if lineup else 0.0,
         **{name: 0.0 for name in PRESEASON_FEATURES},
         **data.preseason.get(p.game_id, {}),
+        "epa_diff": 0.0,
+        "epa_raw_diff": 0.0,
+        **data.efficiency.get(p.game_id, {}),
     }
 
 

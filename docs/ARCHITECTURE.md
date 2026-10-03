@@ -32,7 +32,7 @@ src/ttk/
     elo.py             Sport-agnostic Elo run in time order (walk-forward by construction)
     margin.py          Normal + key-number margin models -> cover/push probabilities
     anchored.py        Market-anchored cover model (market no-vig + rating disagreement)
-    nfl_features.py    Walk-forward EPA team strength and QB-change features
+    nfl_features.py    Walk-forward EPA team strength (optionally opponent-adjusted) and QB-change features
     metrics.py         Brier, log loss, calibration tables (always with n)
     simulation.py      Monte Carlo: key-number margin x market total, rank copula, seeded
   research/
@@ -56,7 +56,7 @@ src/ttk/
     espn_history_import.py  ESPN season schedule + per-book open/close lines (resumable)
     boxscore_import.py ESPN box scores -> player_game_stats (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
-    cfbd_import.py     CollegeFootballData -> team_season_features (portal aggregated, dated)
+    cfbd_import.py     CollegeFootballData -> team_season_features (dated) and team_game_stats (PPA)
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
@@ -72,7 +72,7 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-cfbd | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-cfbd | import-cfbd-games | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.

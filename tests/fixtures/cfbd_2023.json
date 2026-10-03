@@ -1210,5 +1210,65 @@
     }
    ]
   }
+ ],
+ "advanced_2023_one_game": [
+  {
+   "gameId": 401520145,
+   "season": 2023,
+   "week": 1,
+   "seasonType": "regular",
+   "team": "Jacksonville State",
+   "opponent": "UTEP",
+   "offense": {
+    "plays": 64,
+    "ppa": 0.009763407841738325,
+    "totalPPA": 0.6248581018712528,
+    "successRate": 0.34375,
+    "passingPlays": {
+     "ppa": -0.048341241235156616,
+     "totalPPA": -1.0151660659382888,
+     "successRate": 0.2857142857142857,
+     "explosiveness": 1.3476630371859804
+    },
+    "rushingPlays": {
+     "ppa": 0.038140096925803293,
+     "totalPPA": 1.6400241678095417,
+     "successRate": 0.37209302325581395,
+     "explosiveness": 0.9993480758605118
+    }
+   },
+   "defense": {
+    "plays": 70
+   }
+  },
+  {
+   "gameId": 401520145,
+   "season": 2023,
+   "week": 1,
+   "seasonType": "regular",
+   "team": "UTEP",
+   "opponent": "Jacksonville State",
+   "offense": {
+    "plays": 70,
+    "ppa": -0.03129510236688491,
+    "totalPPA": -2.190657165681944,
+    "successRate": 0.44285714285714284,
+    "passingPlays": {
+     "ppa": 0.11149641712896405,
+     "totalPPA": 3.1218996796109937,
+     "successRate": 0.42857142857142855,
+     "explosiveness": 1.4555175347691538
+    },
+    "rushingPlays": {
+     "ppa": 0.07208005506179584,
+     "totalPPA": 2.883202202471834,
+     "successRate": 0.475,
+     "explosiveness": 0.6212076218430944
+    }
+   },
+   "defense": {
+    "plays": 64
+   }
+  }
  ]
 }

@@ -16,12 +16,21 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ttk.db.models import IngestionRun, Team, TeamSeasonFeature
+from ttk.db.models import (
+    Game,
+    GameSourceId,
+    IngestionRun,
+    Team,
+    TeamGameStat,
+    TeamSeasonFeature,
+)
 from ttk.domain import Sport
 from ttk.providers.cfbd import (
     CfbdClient,
+    GameTeamPpa,
     TeamFact,
     Transfer,
+    parse_advanced,
     parse_coaches,
     parse_portal,
     parse_preseason_poll,
@@ -129,6 +138,90 @@ def import_cfbd(
         runs.append(
             audited_run(
                 session_factory, provider=PROVIDER, kind="preseason", sport=Sport.CFB, work=work
+            )
+        )
+    return runs
+
+
+def store_game_stats(
+    session: Session, sport_season: int, rows: list[GameTeamPpa], school_ids: dict[str, int]
+) -> Counter[str]:
+    """team_game_stats rows (provider ``cfbd``) for one season; replaces that season's."""
+    teams = {
+        espn_id: team_id
+        for team_id, espn_id in session.execute(
+            select(Team.id, Team.espn_id).where(Team.sport == Sport.CFB, Team.espn_id.is_not(None))
+        )
+    }
+    games = {
+        event: game_id
+        for game_id, event in session.execute(
+            select(GameSourceId.game_id, GameSourceId.source_identifier)
+            .join(Game, Game.id == GameSourceId.game_id)
+            .where(
+                GameSourceId.provider == "espn",
+                Game.sport == Sport.CFB,
+                Game.season == sport_season,
+            )
+        )
+    }
+    # one season of game ids (~1,700) is far below SQLite's parameter limit
+    session.execute(
+        delete(TeamGameStat).where(
+            TeamGameStat.provider == PROVIDER, TeamGameStat.game_id.in_(list(games.values()))
+        )
+    )
+    stats: Counter[str] = Counter()
+    seen: set[tuple[int, int]] = set()
+    for r in rows:
+        game_id = games.get(r.event_id)
+        cfbd_id = school_ids.get(r.team)
+        team_id = teams.get(str(cfbd_id)) if cfbd_id is not None else None
+        if game_id is None:
+            stats["unmatched_game"] += 1
+            continue
+        if team_id is None:
+            stats["unmatched_school"] += 1
+            continue
+        if (game_id, team_id) in seen:
+            stats["duplicate"] += 1
+            continue
+        seen.add((game_id, team_id))
+        session.add(
+            TeamGameStat(
+                game_id=game_id,
+                team_id=team_id,
+                provider=PROVIDER,
+                plays=r.plays,
+                epa_total=r.total_ppa,
+                successes=round((r.success_rate or 0.0) * r.plays),
+                dropbacks=r.pass_plays,
+                dropback_epa_total=r.pass_total_ppa,
+                rushes=r.rush_plays,
+                rush_epa_total=r.rush_total_ppa,
+            )
+        )
+        stats["team_games"] += 1
+    return stats
+
+
+def import_cfbd_games(
+    session_factory: sessionmaker[Session], cfbd: CfbdClient, seasons: tuple[int, int]
+) -> list[IngestionRun]:
+    """Per-game team efficiency (one call per season)."""
+    school_ids = {str(t["school"]): int(t["id"]) for t in cfbd.get("/teams") if t.get("id")}
+    runs = []
+    for season in range(seasons[0], seasons[1] + 1):
+
+        def work(session: Session, run: IngestionRun, season: int = season) -> RunResult:
+            rows = parse_advanced(cfbd.get("/stats/game/advanced", year=season))
+            stats = store_game_stats(session, season, rows, school_ids)
+            stats["season"] = season
+            return RunResult(stats["team_games"], {}, stats)
+
+        runs.append(
+            audited_run(
+                session_factory, provider=PROVIDER, kind="game-stats", sport=Sport.CFB, work=work
             )
         )
     return runs

@@ -60,6 +60,11 @@ class FeatureParams:
     """Shrinkage target for QBs with little history (below-average backup level)."""
     team_qb_half_life_games: float = 4.0
     """How quickly the team's 'recent QB' mix follows a new passer."""
+    opponent_adjust: bool = False
+    """Credit each game's EPA relative to the opponent's rating going in (offense vs
+    its defense, defense vs its offense, both versus the league average). Off for
+    the NFL (balanced schedules); on for college football, where schedules range
+    from the SEC to FCS opponents."""
 
 
 @dataclass(frozen=True)
@@ -127,6 +132,9 @@ def compute_features(
 
     teams: dict[int, _Team] = {}
     qbs: dict[str, _Qb] = {}
+    league = _Weighted()
+    """All teams' offensive EPA per play so far (the opponent adjustment's baseline)."""
+    league_season: int | None = None
     team_decay = _decay(params.team_half_life_games)
     qb_decay = _decay(params.qb_half_life_games)
     mix_decay = _decay(params.team_qb_half_life_games)
@@ -181,19 +189,37 @@ def compute_features(
 
         # Update state with this game's own stats (after its features were taken).
         game_stats = stats_by_game.get(g.game_id, {})
+        prior = params.team_prior_plays
+        league_mean = league.mean(1.0)
+        # Opponent ratings going in, read before either side is updated.
+        going_in = {
+            tid: (t.offense.mean(prior) - league_mean, t.defense.mean(prior) - league_mean)
+            for tid, t in ((g.home_id, home), (g.away_id, away))
+        }
         for tid, opp_id, t in ((g.home_id, g.away_id, home), (g.away_id, g.home_id, away)):
             own, opp = game_stats.get(tid), game_stats.get(opp_id)
             if own is None or opp is None:
                 continue
+            off_adjust = def_adjust = 0.0
+            if params.opponent_adjust:
+                opp_offense, opp_defense = going_in[opp_id]
+                off_adjust = opp_defense * own.plays  # a soft defense inflates offense
+                def_adjust = opp_offense * opp.plays  # a weak offense flatters defense
             t.offense.scale(team_decay)
             t.defense.scale(team_decay)
-            t.offense.total += own.epa_total
+            t.offense.total += own.epa_total - off_adjust
             t.offense.weight += own.plays
-            t.defense.total += opp.epa_total
+            t.defense.total += opp.epa_total - def_adjust
             t.defense.weight += opp.plays
             t.games += 1
             for pid in t.qb_mix:
                 t.qb_mix[pid] *= mix_decay
+        if league_season is not None and league_season != g.season:
+            league.scale(params.season_carryover)
+        league_season = g.season
+        for team_line in game_stats.values():
+            league.total += team_line.epa_total
+            league.weight += team_line.plays
         for q in qbs_by_game.get(g.game_id, []):
             state = qbs.setdefault(q.player_id, _Qb())
             if state.season is not None and state.season != g.season:

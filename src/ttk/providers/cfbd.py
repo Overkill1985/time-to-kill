@@ -234,3 +234,56 @@ class CfbdClient:
         if not isinstance(body, list):
             raise ProviderError(f"cfbd: unexpected payload for {path}")
         return body
+
+
+@dataclass(frozen=True)
+class GameTeamPpa:
+    """One team's offense in one game, from ``/stats/game/advanced?year=Y`` (one call
+    per season). ``event_id`` is CFBD's gameId, which is ESPN's event id (1,490 of
+    1,492 games, 2023). PPA is CFBD's expected points added. Pass and rush play
+    counts aren't given; they are totalPPA / ppa, rounded."""
+
+    event_id: str
+    team: str
+    plays: int
+    total_ppa: float
+    success_rate: float | None
+    pass_plays: int
+    pass_total_ppa: float
+    rush_plays: int
+    rush_total_ppa: float
+
+
+def _count(part: Mapping[str, Any] | None) -> tuple[int, float]:
+    part = part or {}
+    total, per = _float(part.get("totalPPA")), _float(part.get("ppa"))
+    if total is None:
+        return 0, 0.0
+    if not per:
+        return 0, total
+    return max(round(total / per), 0), total
+
+
+def parse_advanced(rows: Sequence[Mapping[str, Any]]) -> list[GameTeamPpa]:
+    out = []
+    for r in rows:
+        offense = r.get("offense") or {}
+        plays, total = offense.get("plays"), _float(offense.get("totalPPA"))
+        if not r.get("gameId") or not r.get("team") or not plays or total is None:
+            continue
+        pass_plays, pass_total = _count(offense.get("passingPlays"))
+        rush_plays, rush_total = _count(offense.get("rushingPlays"))
+        out.append(
+            GameTeamPpa(
+                str(r["gameId"]),
+                str(r["team"]),
+                int(plays),
+                total,
+                _float(offense.get("successRate")),
+                pass_plays,
+                pass_total,
+                rush_plays,
+                rush_total,
+            )
+        )
+    return out

@@ -772,6 +772,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     cfbd.add_argument("--from-season", type=int, required=True, help="Season year (start year)")
     cfbd.add_argument("--to-season", type=int, required=True)
+    cfbd_games = sub.add_parser(
+        "import-cfbd-games",
+        help="Import college football per-game team efficiency (PPA) from CollegeFootballData",
+    )
+    cfbd_games.add_argument("--from-season", type=int, required=True)
+    cfbd_games.add_argument("--to-season", type=int, required=True)
     box = sub.add_parser(
         "import-boxscores",
         help="Import player box scores (who played, minutes, stats) for final games, from ESPN",
@@ -938,10 +944,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "repair-merged-games":
         return _repair_merged_games(args, settings)
 
-    if args.command == "import-cfbd":
+    if args.command in ("import-cfbd", "import-cfbd-games"):
         from ttk.db.session import make_engine, make_session_factory
         from ttk.providers.cfbd import CfbdClient
-        from ttk.services.cfbd_import import import_cfbd
+        from ttk.services.cfbd_import import import_cfbd, import_cfbd_games
 
         if settings.cfbd_api_key is None:
             print(
@@ -950,11 +956,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         factory = make_session_factory(make_engine(settings.database_url))
         client = CfbdClient(settings.cfbd_api_key.get_secret_value())
-        runs = import_cfbd(factory, client, (args.from_season, args.to_season))
+        importer = import_cfbd if args.command == "import-cfbd" else import_cfbd_games
+        runs = importer(factory, client, (args.from_season, args.to_season))
         for run in runs:
             print(
                 f"{run.stats.get('season') if run.stats else '?'}: {run.status} "
-                f"{run.records_written} facts, stats={run.stats}"
+                f"{run.records_written} rows, stats={run.stats}"
                 + (f", error={run.error}" if run.error else "")
             )
         print(f"CFBD calls left this month: {client.calls_remaining}")
