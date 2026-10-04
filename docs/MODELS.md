@@ -310,6 +310,9 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
 - Opponent-adjusted efficiency is the right rating here and replaces Elo. The next tests are
   forward ones on the 2026-27 season (the market-anchored large-edge pattern, and betting the
   opener), not more historical tuning; the sealed seasons are scored once, at the end.
+- **Under forward test from 2026-10-04** (`ncaab-spread-key-eff`, `ncaab-spread-anchored-eff`).
+  The sealed 2024-25 and 2025-26 team box totals were imported as *state* (efficiency going
+  into 2026-27 is built from them), not scored.
 
 ## College football spread (2026-09-27)
 

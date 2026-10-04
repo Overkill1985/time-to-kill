@@ -26,7 +26,7 @@ from ttk.domain import Sport
 from ttk.providers.base import OddsProvider, ScheduleProvider
 from ttk.providers.espn_boxscore import EspnBoxscores
 from ttk.providers.espn_injuries import EspnInjuries
-from ttk.services.boxscore_import import import_boxscores
+from ttk.services.boxscore_import import import_boxscores, import_team_boxes
 from ttk.services.injury_ingest import ingest_injuries
 from ttk.services.odds_ingest import run_odds_ingestion
 from ttk.services.schedule_ingest import run_schedule_ingestion
@@ -149,6 +149,32 @@ def refresh_boxscores(
         # ESPN season year: NBA seasons end in the year after they start.
         runs.append(
             import_boxscores(session_factory, sport, (now.year, now.year + 1), boxscores=source)
+        )
+    return runs
+
+
+TEAM_BOX_SPORTS = (Sport.NCAAB,)
+
+
+def refresh_team_boxes(
+    session_factory: sessionmaker[Session],
+    source: EspnBoxscores,
+    *,
+    now: datetime | None = None,
+    every: timedelta = BOXSCORE_REFRESH,
+    sports: Sequence[Sport] = TEAM_BOX_SPORTS,
+) -> list[IngestionRun]:
+    """Team box totals of newly finished college basketball games, for the
+    possession-efficiency model under forward test. Resumable, like box scores."""
+    now = now or utcnow()
+    runs = []
+    for sport in sports:
+        with session_factory() as session:
+            last = _last_run(session, sport, "team-boxes")
+        if last is not None and now - last < every:
+            continue
+        runs.append(
+            import_team_boxes(session_factory, sport, (now.year, now.year + 1), boxscores=source)
         )
     return runs
 

@@ -535,6 +535,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         refresh_boxscores,
         refresh_injuries,
         refresh_schedules,
+        refresh_team_boxes,
     )
     from ttk.services.parlay_lab import settle_parlays
 
@@ -583,6 +584,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         for run in refresh_boxscores(factory, boxscores):
             emit(
                 f"{run.sport} box scores: {run.status} {run.records_written} player rows, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        for run in refresh_team_boxes(factory, boxscores):
+            emit(
+                f"{run.sport} team box totals: {run.status} {run.records_written} rows, "
                 f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
             )
         with factory() as session:

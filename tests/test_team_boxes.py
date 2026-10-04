@@ -96,3 +96,24 @@ def test_possession_efficiency_feeds_later_games(session_factory: sessionmaker[S
     assert feats[game_id]["eff_raw_diff"] == 0.0  # nothing known before the first game
     # A week later Kentucky (home) has the better per-possession history.
     assert feats[999]["eff_raw_diff"] > 0 and feats[999]["eff_diff"] > 0
+
+
+def test_collector_imports_team_boxes_on_its_cadence(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from sqlalchemy import func
+
+    from ttk.db.models import IngestionRun
+    from ttk.services.collector import refresh_team_boxes
+
+    source = EspnBoxscores(
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    )
+    now = datetime(2026, 11, 10, tzinfo=UTC)
+    first = refresh_team_boxes(session_factory, source, now=now)
+    assert [(r.sport, r.status) for r in first] == [("NCAAB", "SUCCESS")]
+    with session_factory() as session:
+        last = session.scalar(select(func.max(IngestionRun.finished_at)))
+    assert last is not None
+    assert refresh_team_boxes(session_factory, source, now=last + timedelta(hours=1)) == []
+    assert len(refresh_team_boxes(session_factory, source, now=last + timedelta(hours=7))) == 1

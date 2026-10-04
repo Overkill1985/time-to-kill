@@ -63,7 +63,7 @@ A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon
 - **Each pass:**
   1. Refreshes the ESPN schedules (free), at most every 6 hours.
   2. Stores changes to ESPN's injury lists: NBA every pass, NFL hourly. There is no historical injury source, so this is the only record of what was known when.
-  3. Imports box scores of newly finished NBA games, every 6 hours (player values, and who actually sat).
+  3. Imports box scores of newly finished NBA games (player values, and who actually sat) and team box totals of college basketball games (possession efficiency), every 6 hours.
   4. Polls PropLine only for sports with games coming up: within 90 days for the NBA, whose books post lines months ahead, and 7 days for the other sports.
 
 Manage it from PowerShell:
