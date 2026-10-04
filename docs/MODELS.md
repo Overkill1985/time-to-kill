@@ -251,6 +251,13 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
   2.58 × away back-to-back (rest capped at 7 days). Back-to-backs are mostly conference
   tournaments, where the team that played the day before is usually the lower seed, so the
   flags partly measure strength that Elo misses rather than fatigue alone.
+- **Efficiency** (added 2026-10-03): points per possession, offense minus defense, from
+  earlier games only (ESPN team box totals; possessions = FGA − OREB + TO + 0.475 × FTA, the
+  mean of both teams'), through the same walk-forward machinery as NFL EPA.
+  **Opponent-adjusted** (each game judged against the opponent's rating going in): +1.30
+  points per point of efficiency edge, and Elo's own coefficient falls to about zero, so
+  adjusted efficiency carries what Elo knew and more. Raw efficiency: +0.79, and less gain.
+  58,340 of 58,398 games 2014-15 to 2023-24 have totals.
 
 ### Validation, 2023–2024 (n=11,414 spread games with real prices on both sides)
 
@@ -259,11 +266,18 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
 | Market no-vig (close) | 0.6931 | — | — | 11.36 |
 | Elo, key numbers | 0.7249 | +0.0318 | +12.0 (worse) | 14.31 |
 | Rest, key numbers | 0.7296 | +0.0365 | +12.9 (worse) | 14.06 |
+| Efficiency, raw | 0.7315 | +0.0384 | +13.0 (worse) | 13.17 |
+| Efficiency, opponent-adjusted | 0.7174 | +0.0243 | +10.0 (worse) | **12.51** |
 | Market-anchored (Elo) | 0.6933 | +0.0002 | +1.2 | — |
 | Market-anchored (rest) | 0.6934 | +0.0003 | +1.2 | — |
+| Market-anchored (adjusted efficiency) | 0.6927 | −0.0003 | −1.0 | — |
 
 - **Elo is 3 points of margin error behind the close**, the widest gap of any sport here:
   with ~360 teams and few games between most of them, results alone rate teams poorly.
+- **Adjusted efficiency closes about 60% of that gap** (14.31 → 12.51; close 11.36), the
+  largest gain from any feature in this project. The opponent adjustment is most of it.
+  It still trails the close at predicting covers (z +10), and anchored to the market it is
+  better by a statistically insignificant margin (z −1.0).
 - **Moneyline:** Elo log loss 0.5648 against the market's 0.5401 (n=11,177).
 - **Pushes:** actual 0.99%, predicted 0.81%.
 - **Betting at the close loses** about the vig at every threshold (−4% to −6%).
@@ -272,6 +286,9 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
   threshold chosen among many, the same model loses 3.4% on its 693 bets at edge ≥ 2%, and
   its per-game score is worse than the market's. Its large edges come from lopsided prices at
   a spread; whether that is signal or a pricing quirk of the benchmark book is untested.
+  With adjusted efficiency the same thing recurs on more bets: +10.0% ROI on 295 at edge
+  ≥ 4% (about 1.8 standard errors, at a threshold chosen after the fact), −2.3% on 2,280 at
+  edge ≥ 2%.
 
 ### Betting the opener (2023-24, n=5,755 games with openers)
 
@@ -279,15 +296,18 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
   about the vig. Market-anchored −1.9% (n=123) and −2.7% (n=187): prices moved toward it
   somewhat, on small samples.
 - **Points versus the close**, where the line moved: Elo +0.07 (n=3,623), rest +0.06
-  (n=3,696), market-anchored −0.16 and −0.10 (n=263, 494). No consistent direction.
-- **ROI at the opener:** Elo −5.9%, rest −4.4%, market-anchored −2.8% (every game).
+  (n=3,696), adjusted efficiency **+0.11** (n=3,579), market-anchored −0.16 to +0.05. The
+  adjusted-efficiency model leans toward where the line goes, more than any other here.
+- **ROI at the opener:** Elo −5.9%, rest −4.4%, adjusted efficiency −3.6% (−0.5% on 3,170
+  bets at edge ≥ 6%), market-anchored with efficiency −1.6% (every game).
 
 ### Verdicts
 
 - No college basketball model beats the closing line. Every one stays DEVELOPMENT, and
   2025–2026 stay sealed.
-- The gap to the market is widest here; team ratings need information beyond scores (tempo
-  and efficiency, rosters, schedule strength across conferences).
+- Opponent-adjusted efficiency is the right rating here and replaces Elo. The next tests are
+  forward ones on the 2026-27 season (the market-anchored large-edge pattern, and betting the
+  opener), not more historical tuning; the sealed seasons are scored once, at the end.
 
 ## College football spread (2026-09-27)
 

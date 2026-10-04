@@ -40,7 +40,8 @@ ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseaso
 ttk import-cfbd-games --from-season 2013 --to-season 2026  # per-game team efficiency (1 call a season)
 ttk backtest-cfb                 # college football: Elo, rest, preseason, market-anchored, opener
 ttk import-espn-history --sport NCAAB --from-season 2015 --to-season 2026  # ~12 h
-ttk backtest-ncaab               # college basketball: Elo, rest, market-anchored, opener
+ttk import-team-boxes --sport NCAAB --from-season 2015 --to-season 2024  # team totals (~9 h; resumable)
+ttk backtest-ncaab               # college basketball: Elo, rest, efficiency, market-anchored, opener
 ```
 
 Model results live in [docs/MODELS.md](docs/MODELS.md).

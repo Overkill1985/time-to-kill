@@ -55,7 +55,7 @@ src/ttk/
     history_import.py  nflverse -> games + reported_lines + game_starters (idempotent)
     pbp_import.py      nflverse play-by-play -> team_game_stats, qb_game_stats (per season)
     espn_history_import.py  ESPN season schedule + per-book open/close lines (resumable)
-    boxscore_import.py ESPN box scores -> player_game_stats (resumable)
+    boxscore_import.py ESPN box scores -> player_game_stats, team_game_boxes (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
     cfbd_import.py     CollegeFootballData -> team_season_features (dated) and team_game_stats (PPA)
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
@@ -73,12 +73,13 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-cfbd | import-cfbd-games | injury-check | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0010: team_game_boxes (team box totals for possession efficiency).
                        - 0009: team_season_features (preseason facts with known_at).
                        - 0008: player box scores; injury change-log fields (added natively; triggers kept).
                        - 0005: change-only odds (a `withdrawn` flag and `book_observations`). Its column is added natively so the table's triggers survive.

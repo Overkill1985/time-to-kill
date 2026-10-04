@@ -1,0 +1,227 @@
+{
+ "boxscore": {
+  "teams": [
+   {
+    "team": {
+     "id": "96",
+     "abbreviation": "UK",
+     "displayName": "Kentucky Wildcats"
+    },
+    "statistics": [
+     {
+      "name": "fieldGoalsMade-fieldGoalsAttempted",
+      "displayValue": "30-67"
+     },
+     {
+      "name": "fieldGoalPct",
+      "displayValue": "45"
+     },
+     {
+      "name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+      "displayValue": "3-10"
+     },
+     {
+      "name": "threePointFieldGoalPct",
+      "displayValue": "30"
+     },
+     {
+      "name": "freeThrowsMade-freeThrowsAttempted",
+      "displayValue": "11-18"
+     },
+     {
+      "name": "freeThrowPct",
+      "displayValue": "61"
+     },
+     {
+      "name": "totalRebounds",
+      "displayValue": "39"
+     },
+     {
+      "name": "offensiveRebounds",
+      "displayValue": "17"
+     },
+     {
+      "name": "defensiveRebounds",
+      "displayValue": "22"
+     },
+     {
+      "name": "assists",
+      "displayValue": "15"
+     },
+     {
+      "name": "steals",
+      "displayValue": "9"
+     },
+     {
+      "name": "blocks",
+      "displayValue": "7"
+     },
+     {
+      "name": "turnovers",
+      "displayValue": "9"
+     },
+     {
+      "name": "teamTurnovers",
+      "displayValue": "1"
+     },
+     {
+      "name": "totalTurnovers",
+      "displayValue": "9"
+     },
+     {
+      "name": "technicalFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "totalTechnicalFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "flagrantFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "turnoverPoints",
+      "displayValue": "0"
+     },
+     {
+      "name": "fastBreakPoints",
+      "displayValue": "0"
+     },
+     {
+      "name": "pointsInPaint",
+      "displayValue": "0"
+     },
+     {
+      "name": "fouls",
+      "displayValue": "21"
+     },
+     {
+      "name": "largestLead",
+      "displayValue": "16"
+     }
+    ]
+   },
+   {
+    "team": {
+     "id": "150",
+     "abbreviation": "DUKE",
+     "displayName": "Duke Blue Devils"
+    },
+    "statistics": [
+     {
+      "name": "fieldGoalsMade-fieldGoalsAttempted",
+      "displayValue": "22-54"
+     },
+     {
+      "name": "fieldGoalPct",
+      "displayValue": "41"
+     },
+     {
+      "name": "threePointFieldGoalsMade-threePointFieldGoalsAttempted",
+      "displayValue": "5-13"
+     },
+     {
+      "name": "threePointFieldGoalPct",
+      "displayValue": "38"
+     },
+     {
+      "name": "freeThrowsMade-freeThrowsAttempted",
+      "displayValue": "14-23"
+     },
+     {
+      "name": "freeThrowPct",
+      "displayValue": "61"
+     },
+     {
+      "name": "totalRebounds",
+      "displayValue": "39"
+     },
+     {
+      "name": "offensiveRebounds",
+      "displayValue": "15"
+     },
+     {
+      "name": "defensiveRebounds",
+      "displayValue": "24"
+     },
+     {
+      "name": "assists",
+      "displayValue": "9"
+     },
+     {
+      "name": "steals",
+      "displayValue": "3"
+     },
+     {
+      "name": "blocks",
+      "displayValue": "8"
+     },
+     {
+      "name": "turnovers",
+      "displayValue": "16"
+     },
+     {
+      "name": "teamTurnovers",
+      "displayValue": "1"
+     },
+     {
+      "name": "totalTurnovers",
+      "displayValue": "16"
+     },
+     {
+      "name": "technicalFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "totalTechnicalFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "flagrantFouls",
+      "displayValue": "0"
+     },
+     {
+      "name": "turnoverPoints",
+      "displayValue": "0"
+     },
+     {
+      "name": "fastBreakPoints",
+      "displayValue": "0"
+     },
+     {
+      "name": "pointsInPaint",
+      "displayValue": "0"
+     },
+     {
+      "name": "fouls",
+      "displayValue": "20"
+     },
+     {
+      "name": "largestLead",
+      "displayValue": "2"
+     }
+    ]
+   }
+  ]
+ },
+ "header": {
+  "competitions": [
+   {
+    "competitors": [
+     {
+      "id": "150",
+      "homeAway": "home",
+      "score": "63"
+     },
+     {
+      "id": "96",
+      "homeAway": "away",
+      "score": "74"
+     }
+    ],
+    "date": "2015-11-18T00:30Z"
+   }
+  ]
+ }
+}

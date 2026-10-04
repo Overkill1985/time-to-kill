@@ -124,6 +124,11 @@ class EspnBoxscores:
         self._backoff = backoff
 
     def fetch(self, sport: Sport, event_id: str) -> list[PlayerLine]:
+        summary = self.fetch_summary(sport, event_id)
+        return parse_boxscore(summary) if summary else []
+
+    def fetch_summary(self, sport: Sport, event_id: str) -> dict[str, Any]:
+        """The raw summary, or {} for an unknown event."""
         response = get_with_retries(
             self._client,
             SUMMARY_URL.format(path=SUMMARY_PATHS[sport], event=event_id),
@@ -132,7 +137,53 @@ class EspnBoxscores:
             backoff=self._backoff,
         )
         if response.status_code == 404:
-            return []
+            return {}
         if response.status_code != 200:
             raise ProviderError(f"{self.name}: HTTP {response.status_code} for {event_id}")
-        return parse_boxscore(response.json())
+        body: dict[str, Any] = response.json()
+        return body
+
+
+@dataclass(frozen=True)
+class TeamBox:
+    """One team's totals in one game (``boxscore.teams[].statistics``)."""
+
+    team_espn_id: str
+    fgm: int
+    fga: int
+    fg3m: int
+    fg3a: int
+    ftm: int
+    fta: int
+    oreb: int
+    dreb: int
+    tov: int
+
+    @property
+    def points(self) -> int:
+        return 2 * self.fgm + self.fg3m + self.ftm
+
+    @property
+    def possessions(self) -> float:
+        """The standard estimate: FGA - OREB + TO + 0.475 x FTA."""
+        return self.fga - self.oreb + self.tov + 0.475 * self.fta
+
+
+def parse_team_totals(summary: Mapping[str, Any]) -> list[TeamBox]:
+    """Both teams' totals, or [] if either is missing a needed stat (never guessed)."""
+    out = []
+    for team in (summary.get("boxscore") or {}).get("teams") or []:
+        team_id = str((team.get("team") or {}).get("id") or "")
+        stats = {s.get("name"): s.get("displayValue") for s in team.get("statistics") or []}
+        fgm, fga = _made_attempted(stats.get("fieldGoalsMade-fieldGoalsAttempted"))
+        fg3m, fg3a = _made_attempted(
+            stats.get("threePointFieldGoalsMade-threePointFieldGoalsAttempted")
+        )
+        ftm, fta = _made_attempted(stats.get("freeThrowsMade-freeThrowsAttempted"))
+        oreb, dreb = _int(stats.get("offensiveRebounds")), _int(stats.get("defensiveRebounds"))
+        tov = _int(stats.get("totalTurnovers") or stats.get("turnovers"))
+        values = (fgm, fga, fg3m, fg3a, ftm, fta, oreb, dreb, tov)
+        if not team_id or any(v is None for v in values):
+            return []
+        out.append(TeamBox(team_id, *(int(v) for v in values if v is not None)))
+    return out if len(out) == 2 else []

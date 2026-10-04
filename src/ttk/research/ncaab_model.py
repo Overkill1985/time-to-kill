@@ -23,12 +23,20 @@ from ttk.research.nfl_elo import Splits
 NCAAB_SPLITS = Splits(
     burn_in=(2015, 2016), train=(2017, 2022), validate=(2023, 2024), test=(2025, 2026)
 )
+REST = ("elo_diff", "rest_diff", "home_b2b", "away_b2b")
 NCAAB = SportConfig(
     sport=Sport.NCAAB,
     splits=NCAAB_SPLITS,
     home_field_grid=(40.0, 60.0, 80.0, 100.0, 120.0),
     k_grid=(15.0, 20.0, 30.0, 40.0, 50.0),
-    feature_sets={"rest": ("elo_diff", "rest_diff", "home_b2b", "away_b2b")},
+    feature_sets={
+        "rest": REST,
+        # Points per possession from earlier games (team box totals): raw, and
+        # opponent-adjusted - schedules span power conferences to low-majors.
+        "eff_raw": (*REST, "eff_raw_diff"),
+        "eff": (*REST, "eff_diff"),
+    },
+    team_boxes=True,
     rest_cap=7,
     regression_targets=("mean", "recent"),
 )

@@ -809,6 +809,16 @@ def main(argv: list[str] | None = None) -> int:
     espn_history.add_argument(
         "--delay", type=float, default=0.25, help="Seconds between requests (be polite to ESPN)"
     )
+    team_boxes = sub.add_parser(
+        "import-team-boxes",
+        help="Import team box-score totals (for possession-based efficiency) from ESPN",
+    )
+    team_boxes.add_argument(
+        "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
+    )
+    team_boxes.add_argument("--from-season", type=int, required=True, help="ESPN season year")
+    team_boxes.add_argument("--to-season", type=int, required=True)
+    team_boxes.add_argument("--delay", type=float, default=0.25, help="Seconds between requests")
     cfbd = sub.add_parser(
         "import-cfbd",
         help="Import college football preseason facts from CollegeFootballData (TTK_CFBD_API_KEY)",
@@ -1016,6 +1026,24 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(f"CFBD calls left this month: {client.calls_remaining}")
         return 0 if all(r.status == "SUCCESS" for r in runs) else 1
+
+    if args.command == "import-team-boxes":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.providers.espn_boxscore import EspnBoxscores
+        from ttk.services.boxscore_import import import_team_boxes
+
+        factory = make_session_factory(make_engine(settings.database_url))
+        run = import_team_boxes(
+            factory,
+            args.sport,
+            (args.from_season, args.to_season),
+            boxscores=EspnBoxscores(),
+            delay=args.delay,
+        )
+        print(f"team boxes {run.status}: {run.records_written} rows, stats={run.stats}")
+        if run.error:
+            print(run.error, file=sys.stderr)
+        return 0 if run.status == "SUCCESS" else 1
 
     if args.command == "import-boxscores":
         from ttk.db.session import make_engine, make_session_factory

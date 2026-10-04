@@ -306,6 +306,29 @@ class GameStarter(Base):
     imported_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class TeamGameBox(Base):
+    """One team's box-score totals in one game (ESPN), for possession-based
+    efficiency. Points = 2 x FGM + 3PM + FTM; possessions are estimated from these."""
+
+    __tablename__ = "team_game_boxes"
+    __table_args__ = (UniqueConstraint("game_id", "team_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    provider: Mapped[str] = mapped_column(String(50))
+    fgm: Mapped[int] = mapped_column(Integer)
+    fga: Mapped[int] = mapped_column(Integer)
+    fg3m: Mapped[int] = mapped_column(Integer)
+    fg3a: Mapped[int] = mapped_column(Integer)
+    ftm: Mapped[int] = mapped_column(Integer)
+    fta: Mapped[int] = mapped_column(Integer)
+    oreb: Mapped[int] = mapped_column(Integer)
+    dreb: Mapped[int] = mapped_column(Integer)
+    tov: Mapped[int] = mapped_column(Integer)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class PlayerGameStat(Base):
     """One player's box-score line in one game (ESPN). Players who were injured or
     inactive are absent; healthy scratches appear with ``played`` False and a

@@ -37,6 +37,7 @@ from ttk.db.models import (
     InjuryReport,
     PlayerGameStat,
     ReportedLine,
+    TeamGameBox,
     TeamGameStat,
     TeamSeasonFeature,
 )
@@ -99,6 +100,9 @@ class SportConfig:
     home_field_per_point_grid: tuple[float, ...] = HOME_FIELD_PER_POINT_GRID
     injuries: bool = False
     """Injury features from our own injury-report history (research/nba_injuries.py)."""
+    team_boxes: bool = False
+    """Possession-based efficiency from team_game_boxes: ``eff_diff`` adjusted,
+    ``eff_raw_diff`` not (points per possession, offense minus defense)."""
     team_epa: bool = False
     """Walk-forward team efficiency from team_game_stats (models/nfl_features.py):
     ``epa_diff`` opponent-adjusted, ``epa_raw_diff`` not."""
@@ -264,7 +268,10 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         rest_features(games, cap=config.rest_cap),
         availability(games, box, snapshots=snapshots),
         preseason_features(games, facts) if facts else {},
-        _efficiency(session, config, games) if config.team_epa else {},
+        {
+            **(_efficiency(session, config, games) if config.team_epa else {}),
+            **(_possession_efficiency(session, config, games) if config.team_boxes else {}),
+        },
     )
     if config.injuries:
         timeline = InjuryTimeline.build(
@@ -303,6 +310,39 @@ def _efficiency(
     raw = compute_features(games, stats, [], {}, FeatureParams())
     return {
         gid: {"epa_diff": f.epa_net_diff_pts, "epa_raw_diff": raw[gid].epa_net_diff_pts}
+        for gid, f in adjusted.items()
+    }
+
+
+def _possession_efficiency(
+    session: Session, config: SportConfig, games: list[EloGame]
+) -> dict[int, dict[str, float]]:
+    """Points per possession from team box totals (team_game_boxes), through the same
+    walk-forward machinery as EPA: a game's possessions are the mean of both teams'
+    estimates; ``eff_diff`` is opponent-adjusted, ``eff_raw_diff`` is not."""
+    by_game: dict[int, list[TeamGameBox]] = defaultdict(list)
+    for b in session.scalars(
+        select(TeamGameBox)
+        .join(Game, Game.id == TeamGameBox.game_id)
+        .where(Game.sport == config.sport)
+    ):
+        by_game[b.game_id].append(b)
+    stats = []
+    for game_id, boxes in by_game.items():
+        if len(boxes) != 2:
+            continue
+        possessions = sum(b.fga - b.oreb + b.tov + 0.475 * b.fta for b in boxes) / 2
+        if possessions <= 0:
+            continue
+        for b in boxes:
+            points = 2 * b.fgm + b.fg3m + b.ftm
+            stats.append(TeamGameEpa(game_id, b.team_id, round(possessions), float(points), 0))
+    if not stats:
+        return {}
+    adjusted = compute_features(games, stats, [], {}, FeatureParams(opponent_adjust=True))
+    raw = compute_features(games, stats, [], {}, FeatureParams())
+    return {
+        gid: {"eff_diff": f.epa_net_diff_pts, "eff_raw_diff": raw[gid].epa_net_diff_pts}
         for gid, f in adjusted.items()
     }
 
@@ -347,6 +387,8 @@ def feature_values(p: EloPrediction, data: SportData) -> dict[str, float]:
         **data.preseason.get(p.game_id, {}),
         "epa_diff": 0.0,
         "epa_raw_diff": 0.0,
+        "eff_diff": 0.0,
+        "eff_raw_diff": 0.0,
         **data.efficiency.get(p.game_id, {}),
         **{f"injury_missing_diff_{h}h": 0.0 for h in HORIZONS_HOURS},
         **data.injuries.get(p.game_id, {}),
