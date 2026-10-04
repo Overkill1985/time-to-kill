@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
@@ -49,10 +49,14 @@ class ForwardModel:
 
     version: ModelVersion
     sport: Sport
-    view: Callable[[int, float, float], ModelView | None]
-    """(game_id, home line, market no-vig P(home covers)) -> the model's view."""
+    view: Callable[[int, float, float, datetime, int], ModelView | None]
+    """(game_id, home line, market no-vig P(home covers), snapshot time, horizon
+    hours) -> the model's view."""
     inputs_as_of: datetime
     """Newest finished game behind the model's state."""
+    refresh: Callable[[Session], None] | None = None
+    """Called at the start of each snapshot pass to reload fast-moving inputs
+    (NBA injury reports) that the 6-hourly model build would leave stale."""
 
 
 def register(
@@ -157,11 +161,15 @@ def snapshot(
     stats = SnapshotStats()
     longest = max(horizons)
     for model in models:
+        if model.refresh is not None:
+            model.refresh(session)
         games = session.scalars(
             select(Game).where(
                 Game.sport == model.sport,
                 Game.commence_time > now,
                 Game.commence_time <= now + timedelta(hours=longest),
+                # Preseason games aren't modelled (no competitive results to learn).
+                or_(Game.season_type.is_(None), Game.season_type != "PRE"),
             )
         ).all()
         for game in games:
@@ -187,7 +195,7 @@ def snapshot(
                 continue
             assert home.line is not None
             market = home.consensus.consensus_no_vig_probability
-            view = model.view(game.id, home.line, market)
+            view = model.view(game.id, home.line, market, now, h)
             if view is None:
                 stats.skipped["no model inputs"] += 1
                 continue

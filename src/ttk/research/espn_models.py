@@ -162,6 +162,9 @@ class SportData:
     """game_id -> injury features at each horizon (games after tracking began)."""
     sit_rates: SitRates | None = None
     """Sit rates per (horizon, status) learned from finished games."""
+    rotations: dict[tuple[int, int], dict[str, tuple[float, float]]] = field(default_factory=dict)
+    """(game_id, team_id) -> player -> (rotation weight, value) before the game
+    (research/nba_lineups.py), upcoming games included."""
 
     def line_check(self) -> tuple[int, int]:
         """(checked, disagreeing): closing lines of 2+ points whose favourite differs
@@ -289,7 +292,7 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         )
         played = {gid: {row.player_id for row in rows if row.played} for gid, rows in box.items()}
         features, rates = injury_features(games, snapshots, timeline, played)
-        data = replace(data, injuries=features, sit_rates=rates)
+        data = replace(data, injuries=features, sit_rates=rates, rotations=snapshots)
     return data
 
 

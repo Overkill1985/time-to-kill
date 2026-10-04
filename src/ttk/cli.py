@@ -271,6 +271,7 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.models import utcnow
     from ttk.db.session import make_engine, make_session_factory
     from ttk.services.forward_models import (
+        INJURY_SUBSTITUTION,
         build_forward_models,
         freeze_and_register,
         refresh_inputs,
@@ -280,7 +281,13 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
     factory = make_session_factory(make_engine(settings.database_url))
     if args.command == "forward-freeze":
         with factory() as session:
-            rows, checked, _ = freeze_and_register(session, args.sport, args.feature_set)
+            rows, checked, _ = freeze_and_register(
+                session,
+                args.sport,
+                args.feature_set,
+                label=args.label,
+                live_substitution=INJURY_SUBSTITUTION if args.injury_substitution else None,
+            )
             session.commit()
         for row in rows:
             print(
@@ -959,6 +966,13 @@ def main(argv: list[str] | None = None) -> int:
         "--sport", type=Sport, choices=[Sport.CFB, Sport.NBA, Sport.NCAAB], required=True
     )
     fwd_freeze.add_argument("--feature-set", required=True, help="e.g. inseason (CFB), eff (NCAAB)")
+    fwd_freeze.add_argument("--label", help="Name in the registry (default: the feature set)")
+    fwd_freeze.add_argument(
+        "--injury-substitution",
+        action="store_true",
+        help="NBA: replace who sits at tip (missing_diff) by the injury report's expected "
+        "missing value at the snapshot",
+    )
     fwd_snap = sub.add_parser(
         "forward-snapshot", help="One pass: snapshot forward-tested models for games due"
     )

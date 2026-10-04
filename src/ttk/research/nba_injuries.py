@@ -109,6 +109,25 @@ class SitRates:
         return int(sat), int(sat + played)
 
 
+def expected_missing(
+    rotation: Mapping[str, tuple[float, float]],
+    timeline: InjuryTimeline,
+    rates: SitRates,
+    *,
+    team_id: int,
+    at: datetime,
+    horizon: int,
+) -> float:
+    """One team's expected missing value at ``at``: sum over its rotation of
+    q(status) x rotation weight x value, for players listed then."""
+    total = 0.0
+    for player, (weight, value) in rotation.items():
+        status = timeline.status_at(player, at, team_id)
+        if status is not None:
+            total += rates.q(horizon, status) * weight * value
+    return total
+
+
 def injury_features(
     games: Sequence[EloGame],
     snapshots: Mapping[tuple[int, int], Mapping[str, tuple[float, float]]],

@@ -127,11 +127,21 @@ class FrozenSpreadModel:
             int(a["n_train"]),
         )
 
-    def view(self, game_id: int, home_line: float, market_home_cover: float) -> FrozenView | None:
+    def view(
+        self,
+        game_id: int,
+        home_line: float,
+        market_home_cover: float,
+        *,
+        overrides: dict[str, float] | None = None,
+    ) -> FrozenView | None:
+        """``overrides`` replaces feature values known only at a later time with
+        what is known now (e.g. ``missing_diff``, who sits at tip, by the injury
+        report's expected missing value at the snapshot)."""
         pred = self.elo.get(game_id)
         if pred is None:
             return None
-        values = feature_values(pred, self.data)
+        values = {**feature_values(pred, self.data), **(overrides or {})}
         mu = self.margin.expected_margin(values)
         probs = self.margin.key.spread_at_mean(home_line, mu)
         anchored = self.anchored.home_cover_probability(market_home_cover, mu + home_line)

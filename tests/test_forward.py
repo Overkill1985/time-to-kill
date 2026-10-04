@@ -66,8 +66,10 @@ def model(session: Session, p_home: float = 0.60) -> ForwardModel:
         brier=0.25,
     )
 
-    def view(game_id: int, home_line: float, market: float) -> ModelView:
-        return ModelView(p_home, 0.01, 6.0, {"x": 1.0, "line_seen": home_line})
+    def view(
+        game_id: int, home_line: float, market: float, at: datetime, horizon: int
+    ) -> ModelView:
+        return ModelView(p_home, 0.01, 6.0, {"x": 1.0, "line_seen": home_line, "h": horizon})
 
     return ForwardModel(row, Sport.CFB, view, KICK - timedelta(days=7))
 

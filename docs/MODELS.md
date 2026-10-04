@@ -225,10 +225,12 @@ feature is home minus away. Only our own injury history exists (the collector, f
 - `ttk injury-check` shows the learned sit rates with sample sizes.
 
 **Nothing is validated yet.** The first regular-season games are on 2026-10-20; every game
-with injury data is in the 2026-27 season, after all the backtest's splits. Testing needs a
-walk-forward evaluation on that season with our own timestamped odds (bet at the line we saw
-at the horizon, scored against results and the close). Planned once a few hundred games are
-played.
+with injury data is in the 2026-27 season, after all the backtest's splits. It is tested
+forward (docs/MODEL-GOVERNANCE.md, "Forward tests"): `nba-spread-*-injury` is the validated
+at-tip lineup model with who-sits replaced by the injury report's expected missing value at
+each snapshot (24 h, 1 h), scored beside the no-injury baseline `nba-spread-*-lineup-prev`.
+If injury news at the snapshot is worth something the market hasn't priced, the injury
+models will beat the baseline against the market at the same snapshots.
 
 ## Men's college basketball spread (2026-09-28)
 
