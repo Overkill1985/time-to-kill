@@ -19,6 +19,62 @@ from ttk.services.runs import RunResult, audited_run
 
 _FLIP = {Selection.HOME: Selection.AWAY, Selection.AWAY: Selection.HOME}
 
+ALT_LINE_WINDOW = 3.0
+"""Spread and total lines are stored only within this many points of each book's
+main line in the same poll (chosen 2026-10-04: alternates were 93% of rows, ~1M a
+day in football season, and nothing but line shopping uses far ones). A line that
+leaves the window is recorded as withdrawn (no longer offered *or* stored)."""
+
+
+def _home_equivalent(market: str, selection: str, line: float) -> float:
+    """Spread lines in home terms (AWAY +3 is HOME -3); totals as they are."""
+    return -line if market == "SPREAD" and selection == "AWAY" else line
+
+
+def main_line(quotes: dict[QuoteKey, NormalizedOddsQuote], market: str) -> float | None:
+    """The book's main line for ``market`` in this poll: of its lines priced on
+    both sides, the one whose no-vig probability is closest to 50/50."""
+    sides = ("HOME", "AWAY") if market == "SPREAD" else ("OVER", "UNDER")
+    best: tuple[float, float] | None = None
+    for (m, selection, line), q in quotes.items():
+        if m != market or selection != sides[0] or line is None:
+            continue
+        other_line = -line if market == "SPREAD" else line
+        other = quotes.get((m, sides[1], other_line))
+        if other is None:
+            continue
+        p = bm.no_vig_probabilities(
+            [bm.american_to_decimal(q.american_odds), bm.american_to_decimal(other.american_odds)]
+        ).probabilities[0]
+        if best is None or abs(p - 0.5) < best[0]:
+            best = (abs(p - 0.5), line)
+    return None if best is None else best[1]
+
+
+def within_window(
+    quotes: dict[QuoteKey, NormalizedOddsQuote],
+    stats: Counter[str],
+    window: float = ALT_LINE_WINDOW,
+) -> dict[QuoteKey, NormalizedOddsQuote]:
+    """Drop spread/total lines more than ``window`` points from the book's main line.
+    Moneylines are kept; a market with no two-sided line is kept whole (counted)."""
+    mains = {m: main_line(quotes, m) for m in ("SPREAD", "TOTAL")}
+    kept: dict[QuoteKey, NormalizedOddsQuote] = {}
+    for key, q in quotes.items():
+        market, selection, line = key
+        if market not in mains or line is None:
+            kept[key] = q
+            continue
+        main = mains[market]
+        if main is None:
+            stats["no_main_line"] += 1
+            kept[key] = q
+        elif abs(_home_equivalent(market, selection, line) - main) <= window:
+            kept[key] = q
+        else:
+            stats["outside_line_window"] += 1
+    return kept
+
 
 def _sportsbook(session: Session, cache: dict[str, Sportsbook], key: str, name: str) -> Sportsbook:
     if key not in cache:
@@ -64,6 +120,9 @@ def store_odds(
         if key in polled[(resolved.game.id, book.id)]:
             stats["duplicate_quote"] += 1
         polled[(resolved.game.id, book.id)][key] = replace(q, selection=selection)
+
+    for book_key, quotes in polled.items():
+        polled[book_key] = within_window(quotes, stats)
 
     game_ids = {r.game.id for r in games.values()}
     on_file = {

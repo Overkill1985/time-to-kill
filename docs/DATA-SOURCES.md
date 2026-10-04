@@ -37,6 +37,7 @@ Timestamped odds history (verified 2026-09-26):
   - NFL feeds were clean.
 - **Quota:** one request per sport per poll. Four sports every 15 minutes is 384 requests a day, within PropLine's free 1,000. The collector stops when fewer than 20 requests remain.
 - **Storage is change-only** (see ARCHITECTURE.md). A book that no longer lists a game has all its quotes for that game withdrawn. A book that pulled its line before kickoff has no closing price.
+- **Alternate-line window (from 2026-10-04):** spread and total lines are stored only within 3 points of each book's main line in that poll (its two-sided line priced closest to 50/50). On 2026-10-03/04 alternates were 93% of spread/total rows, and the table was growing by 0.5 to 1.8 million rows a day in football season (1.9 GB after 8 days). The window keeps about 28% of them; new and changed prices per pass fell by about 80%. A line that leaves the window is recorded as withdrawn (not offered *or* no longer stored). Moneylines and a market with no two-sided line are kept whole. Far alternates collected before this date stay in history.
 - **Live check, 2026-09-26:** PropLine's NFL feed has about 36,000 quotes per poll across 34 games and about 25 books, roughly 35 alternate spread lines per book per game.
   - Before the `side` fix, 3,669 outcomes were unparseable, including every DraftKings spread. After it, 2.
   - A poll repeated after one minute wrote 629 changes. The rate at 15-minute polls still needs measuring.
@@ -115,5 +116,5 @@ Normalization rules (`src/ttk/providers/odds_api_format.py`):
 
 - DFS pick'em books (Underdog, PrizePicks, Sleeper, Dabble, Betr, ReBet) are excluded: they are not prices.
 - Suspended markets, boosted/discounted prices, period (quarter/half) markets and team totals are skipped and **counted** in `ingestion_runs.skipped`.
-- Alternate lines are kept. The "main" line is chosen at read time (most books, then closest to 50/50).
+- Alternate lines within 3 points of each book's main line are kept (`ALT_LINE_WINDOW` in `services/odds_ingest.py`); farther ones are dropped at ingest and counted as `outside_line_window`. The consensus "main" line is still chosen at read time (most books, then closest to 50/50). The Parlay Lab can price only lines inside the window.
 - A book's lines that are missing from its latest poll are treated as withdrawn.
