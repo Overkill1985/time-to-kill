@@ -45,6 +45,7 @@ src/ttk/
     cfb_preseason.py   Per-game preseason features known at kickoff (fading early-season changes)
     nba_lineups.py     Walk-forward player value and availability (missing at tip / last game)
     nba_injuries.py    Injury features at a horizon before tip-off; walk-forward sit rates
+    frozen.py          Freeze a validated model's fitted parameters; rebuild and verify it
   db/
     models.py          ORM schema (changed only via migrations)
     session.py         Engine/session setup (SQLite pragmas)
@@ -58,6 +59,8 @@ src/ttk/
     boxscore_import.py ESPN box scores -> player_game_stats, team_game_boxes (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
     cfbd_import.py     CollegeFootballData -> team_season_features (dated) and team_game_stats (PPA)
+    forward_test.py    Forward tests: snapshots at 24 h / 1 h before kickoff, scoring
+    forward_models.py  The models under forward test (NFL predictor, frozen ESPN-sport models)
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
@@ -73,12 +76,13 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0011: forward_predictions (append-only) and model_versions.artifact.
                        - 0010: team_game_boxes (team box totals for possession efficiency).
                        - 0009: team_season_features (preseason facts with known_at).
                        - 0008: player box scores; injury change-log fields (added natively; triggers kept).

@@ -8,6 +8,7 @@ updated or deleted. A changed price or prediction is a new row.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -449,6 +450,40 @@ class ModelVersion(Base):
     health: Mapped[str] = mapped_column(String(20), default="HEALTHY")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     deployed_at: Mapped[datetime | None]
+    artifact: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    """Frozen fitted parameters (forward tests use exactly these; see
+    services/forward_test.py). A changed model is a new version."""
+
+
+class ForwardPrediction(Base):
+    """A forward-test snapshot: one model's view of one game at a stated horizon
+    before kickoff, with the market we saw at that moment. Append-only."""
+
+    __tablename__ = "forward_predictions"
+    __table_args__ = (UniqueConstraint("model_version_id", "game_id", "horizon_hours"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_version_id: Mapped[int] = mapped_column(ForeignKey("model_versions.id"))
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    horizon_hours: Mapped[int] = mapped_column(Integer)
+    snapshot_at: Mapped[datetime]
+    home_line: Mapped[float] = mapped_column(Float)
+    """The main home spread at the snapshot (bookmaker sign: -3.5 = home favoured)."""
+    home_cover_probability: Mapped[float] = mapped_column(Float)
+    """The model's P(home covers | no push) at ``home_line``."""
+    push_probability: Mapped[float] = mapped_column(Float)
+    market_home_cover: Mapped[float] = mapped_column(Float)
+    """All-book consensus no-vig P(home covers) at ``home_line``, at the snapshot."""
+    books: Mapped[int] = mapped_column(Integer)
+    best_home_odds: Mapped[float | None] = mapped_column(Float)
+    best_home_book: Mapped[str | None] = mapped_column(String(50))
+    best_away_odds: Mapped[float | None] = mapped_column(Float)
+    best_away_book: Mapped[str | None] = mapped_column(String(50))
+    """Best bettable American prices at the snapshot (bettable books only)."""
+    expected_margin: Mapped[float | None] = mapped_column(Float)
+    features: Mapped[dict[str, float] | None] = mapped_column(JSON)
+    inputs_as_of: Mapped[datetime]
+    """Latest input used: the newest finished game, odds or injury observation."""
 
 
 class Prediction(Base):

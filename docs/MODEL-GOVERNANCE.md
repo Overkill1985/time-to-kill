@@ -71,6 +71,15 @@ composite "confidence" score is ever presented as a probability.
 - **Injury reports:** there is no free source of past injury status as of a given time. ESPN's game summaries show each player's *current* status even for old games (a 2017 game shows 2026 dates), so they are never used. Injury status comes only from our own polling (`injury_reports`, append-only, stamped with `observed_at`), queried with `injuries_at(t)`.
 - **Significance:** every model comparison against the market reports the paired per-game log-loss difference, with its standard error. A difference within about 2 standard errors is not an edge.
 
+## Forward tests
+
+A forward test scores a model on games that had not been played when it was frozen.
+
+- **Frozen artifact.** The model's fitted parameters (fitted on TRAIN, exactly as validated) are stored on its `model_versions` row (`artifact`) when it is frozen, and checked: the thawed model must reproduce the backtest's probabilities on validation games. Only *state* moves forward afterwards (Elo ratings, efficiency, injuries) through the latest finished game. A changed model is a new version.
+- **Snapshots** (`forward_predictions`, append-only) are taken once per model, game and horizon: 24 hours before kickoff (when the game first comes inside that window) and 1 hour before. Each records the main spread, the all-book consensus no-vig probability and the best bettable prices **as we saw them**, and is refused if those odds are more than 2 hours old.
+- **Scoring** uses finished games only: paired log loss against the market at the snapshot, price CLV against our own close at the same number, points versus the closing main line, and results at the snapshot's best price, each with its sample size.
+- **Status.** Forward-tested models stay DEVELOPMENT while they are being tested: their snapshots are records, never bets. Promotion to PAPER needs a forward record that beats the market at the snapshot by the significance standard above.
+
 ## Validation protocol
 
 - Splits:

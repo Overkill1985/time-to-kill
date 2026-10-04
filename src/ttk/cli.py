@@ -265,6 +265,112 @@ def _injury_check(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _forward(args: argparse.Namespace, settings: Settings) -> int:
+    import time
+
+    from ttk.db.models import utcnow
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.forward_models import (
+        build_forward_models,
+        freeze_and_register,
+        refresh_inputs,
+    )
+    from ttk.services.forward_test import forward_counts, forward_report, snapshot
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    if args.command == "forward-freeze":
+        with factory() as session:
+            rows, checked, _ = freeze_and_register(session, args.sport, args.feature_set)
+            session.commit()
+        for row in rows:
+            print(
+                f"registered {row.name} {row.version} "
+                f"(DEVELOPMENT, validation log loss {row.log_loss or 0:.4f})"
+            )
+        print(f"verified: the frozen model reproduces the backtest on {checked} validation games")
+        return 0
+    if args.command == "forward-report":
+        with factory() as session:
+            for name, total, finished in forward_counts(session):
+                print(f"{name}: {total} snapshots, {finished} on finished games")
+            scores = forward_report(session, args.sport)
+        for sc in scores:
+            if not sc.decided:
+                continue
+            z = f"{sc.z:+.1f}" if sc.z is not None else "n/a"
+            print(
+                f"\n{sc.model}, {sc.horizon_hours} h before kickoff: {sc.decided} decided games\n"
+                f"  log loss model {sc.model_log_loss:.4f} vs market {sc.market_log_loss:.4f} "
+                f"(diff {sc.paired_diff:+.4f}, z {z})"
+            )
+            if sc.price_clv:
+                avg = sum(sc.price_clv) / len(sc.price_clv)
+                print(f"  price CLV at the same number {avg:+.2%} (n={len(sc.price_clv)})")
+            if sc.points_vs_close:
+                avg = sum(sc.points_vs_close) / len(sc.points_vs_close)
+                print(f"  points vs the closing main line {avg:+.2f} (n={len(sc.points_vs_close)})")
+            for b in sc.bets:
+                roi = "n/a" if b.roi is None else f"{b.roi:+.1%}"
+                print(
+                    f"    edge >= {b.min_edge:.0%}: bets={b.bets} "
+                    f"W-L-P={b.wins}-{b.losses}-{b.pushes} units={b.units:+.1f} ROI={roi}"
+                )
+        if not any(sc.decided for sc in scores):
+            print("No finished games with forward snapshots yet.")
+        return 0
+
+    books = settings.bettable_book_keys()
+    loop = args.command == "forward-run"
+    rebuild_every = 6 * 3600
+    log_file = None
+    if getattr(args, "log", None) is not None:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        log_file = args.log.open("a", encoding="utf-8")
+
+    def emit(message: str) -> None:
+        line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {message}"
+        if log_file is not None:
+            log_file.write(line + "\n")
+            log_file.flush()
+        if sys.stdout is not None:  # None under pythonw (the scheduled task)
+            print(line, flush=True)
+
+    models, built_at = None, 0.0
+    try:
+        while True:
+            started = time.monotonic()
+            try:
+                with factory() as session:
+                    if models is None or time.monotonic() - built_at > rebuild_every:
+                        if args.refresh_inputs:
+                            key = settings.cfbd_api_key
+                            for step in refresh_inputs(
+                                factory,
+                                now=utcnow(),
+                                cfbd_api_key=key.get_secret_value() if key else None,
+                            ):
+                                emit(step)
+                        models = build_forward_models(session)
+                        built_at = time.monotonic()
+                        session.commit()
+                        emit("models: " + ", ".join(m.version.name for m in models))
+                    stats = snapshot(session, models, bettable_books=books)
+                    session.commit()
+                emit(f"forward snapshots: {stats.written} written, skipped {dict(stats.skipped)}")
+            except Exception:
+                if not loop:
+                    raise
+                import traceback
+
+                emit("forward pass failed; retrying next pass:\n" + traceback.format_exc())
+            if not loop:
+                return 0
+            time.sleep(max(args.loop_minutes * 60 - (time.monotonic() - started), 0))
+    finally:
+        if log_file is not None:
+            log_file.close()
+
+
 def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
     import json
 
@@ -845,6 +951,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    fwd_freeze = sub.add_parser(
+        "forward-freeze",
+        help="Freeze a validated model (fitted on TRAIN) for forward testing; registers it",
+    )
+    fwd_freeze.add_argument(
+        "--sport", type=Sport, choices=[Sport.CFB, Sport.NBA, Sport.NCAAB], required=True
+    )
+    fwd_freeze.add_argument("--feature-set", required=True, help="e.g. inseason (CFB), eff (NCAAB)")
+    fwd_snap = sub.add_parser(
+        "forward-snapshot", help="One pass: snapshot forward-tested models for games due"
+    )
+    fwd_run = sub.add_parser("forward-run", help="Snapshot forward-tested models on a loop")
+    fwd_run.add_argument("--loop-minutes", type=float, default=30)
+    fwd_run.add_argument("--log", type=Path, help="Append output here (e.g. data/logs/forward.log)")
+    for p_ in (fwd_snap, fwd_run):
+        p_.add_argument(
+            "--refresh-inputs",
+            action="store_true",
+            help="Before each model build: nflverse NFL games and play-by-play (~15 MB), "
+            "CollegeFootballData efficiency (1 call)",
+        )
+    fwd_report = sub.add_parser("forward-report", help="Score forward snapshots on finished games")
+    fwd_report.add_argument("--sport", type=Sport, choices=list(Sport))
     sub.add_parser(
         "injury-check",
         help="NBA: how often players listed on the injury report actually sat, by status",
@@ -997,6 +1126,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "repair-espn-lines":
         return _repair_espn_lines(args, settings)
+
+    if args.command in ("forward-freeze", "forward-snapshot", "forward-run", "forward-report"):
+        return _forward(args, settings)
 
     if args.command == "injury-check":
         return _injury_check(args, settings)

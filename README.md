@@ -35,6 +35,9 @@ ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN 
 ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
 ttk injury-check                 # NBA: how often players on the injury report actually sat
+ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
+ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
+ttk forward-report               # score forward snapshots on finished games
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
 ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseason facts (TTK_CFBD_API_KEY)
 ttk import-cfbd-games --from-season 2013 --to-season 2026  # per-game team efficiency (1 call a season)
@@ -74,6 +77,10 @@ Unregister-ScheduledTask -TaskName "Time-to-Kill odds collector"        # remove
 ```
 
 After pulling new code, restart the task so it loads the update.
+
+### Forward tests (Windows)
+
+A second task, **"Time-to-Kill forward tests"**, runs `ttk forward-run --loop-minutes 30 --refresh-inputs --log data\logs\forward.log` with the same settings and triggers (logon, plus a 15-minute watchdog). Every 30 minutes it snapshots each forward-tested model for games 24 hours and 1 hour from kickoff (docs/MODEL-GOVERNANCE.md, "Forward tests"). Every 6 hours it rebuilds the models after refreshing their slow inputs: this season's nflverse NFL games and play-by-play (~15 MB) and one CollegeFootballData call. Manage it like the collector (`Get-Content data\logs\forward.log -Tail 20 -Wait`, `Stop-ScheduledTask` / `Start-ScheduledTask -TaskName "Time-to-Kill forward tests"`), and see the scores with `ttk forward-report`.
 
 Run `ingest-schedule` before `ingest-odds` so odds attach to ESPN's games. The
 reverse order also works: an ESPN game adopts odds already stored for it.
