@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
@@ -265,6 +267,33 @@ def _injury_check(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _db_paths(settings: Settings) -> tuple[Path, Path]:
+    """(database file, data directory) for a SQLite URL."""
+    db_path = Path(settings.database_url.removeprefix("sqlite:///"))
+    return db_path, db_path.parent
+
+
+def _weekly_summary(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
+    """Write this week's health summary once, after 8 AM local on Monday (or the
+    first pass after that, if the computer was off)."""
+    from ttk.db.models import utcnow
+    from ttk.services.health import summary, weekly_path
+
+    db_path, data_dir = _db_paths(settings)
+    now_local = datetime.now()
+    path = weekly_path(data_dir, now_local)
+    monday_8am = datetime.combine(
+        (now_local - timedelta(days=now_local.weekday())).date(), datetime.min.time()
+    ) + timedelta(hours=8)
+    if path.exists() or now_local < monday_8am:
+        return
+    with factory() as session:
+        text = summary(session, now=utcnow(), db_path=db_path, data_dir=data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    emit(f"weekly summary written: {path}")
+
+
 def _forward(args: argparse.Namespace, settings: Settings) -> int:
     import time
 
@@ -364,6 +393,8 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                     stats = snapshot(session, models, bettable_books=books)
                     session.commit()
                 emit(f"forward snapshots: {stats.written} written, skipped {dict(stats.skipped)}")
+                if loop:
+                    _weekly_summary(settings, factory, emit)
             except Exception:
                 if not loop:
                     raise
@@ -964,6 +995,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    summ = sub.add_parser(
+        "summary", help="Health summary: storage, collection gaps, quotas, forward tests"
+    )
+    summ.add_argument("--days", type=int, default=7)
+    summ.add_argument("--write", type=Path, help="Also write it to this file")
     fwd_freeze = sub.add_parser(
         "forward-freeze",
         help="Freeze a validated model (fitted on TRAIN) for forward testing; registers it",
@@ -1149,6 +1185,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("forward-freeze", "forward-snapshot", "forward-run", "forward-report"):
         return _forward(args, settings)
+
+    if args.command == "summary":
+        from ttk.db.models import utcnow
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.services.health import summary as health_summary
+
+        db_path, data_dir = _db_paths(settings)
+        factory = make_session_factory(make_engine(settings.database_url))
+        with factory() as session:
+            text = health_summary(
+                session, now=utcnow(), db_path=db_path, data_dir=data_dir, days=args.days
+            )
+        print(text, end="")
+        if args.write is not None:
+            args.write.parent.mkdir(parents=True, exist_ok=True)
+            args.write.write_text(text, encoding="utf-8")
+        return 0
 
     if args.command == "injury-check":
         return _injury_check(args, settings)

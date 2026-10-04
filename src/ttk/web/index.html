@@ -15,6 +15,7 @@
       <button role="tab" data-tab="sim" aria-selected="false">Simulator</button>
       <button role="tab" data-tab="bets" aria-selected="false">Bet Tracker</button>
       <button role="tab" data-tab="performance" aria-selected="false">Performance</button>
+      <button role="tab" data-tab="forward" aria-selected="false">Forward tests</button>
     </nav>
   </header>
 
@@ -189,6 +190,38 @@
       <div id="perf-parlay-tiles" class="tiles"></div>
       <p class="muted">Closing-line value (CLV) is the long-run diagnostic: a positive average CLV over
         a large sample is the best evidence of an edge. Every figure shows its sample size.</p>
+    </section>
+
+    <section id="tab-forward" class="tab" role="tabpanel" hidden>
+      <div class="toolbar">
+        <label>Sport
+          <select id="fwd-sport"><option value="">All</option><option>NFL</option>
+            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
+        </label>
+        <button id="fwd-refresh" type="button">Refresh</button>
+      </div>
+      <p id="fwd-note" class="muted"></p>
+      <div class="table-wrap">
+        <table id="fwd-scores">
+          <thead><tr>
+            <th>Model</th><th>Horizon</th><th>Decided</th><th>Log loss vs market</th><th>z</th>
+            <th>Price CLV</th><th>Points vs close</th><th>Edge ≥ 2%: record</th><th>ROI</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h2 class="section">Snapshots so far</h2>
+      <div id="fwd-models" class="tiles"></div>
+      <h2 class="section">Latest snapshots</h2>
+      <div class="table-wrap">
+        <table id="fwd-recent">
+          <thead><tr>
+            <th>Taken</th><th>Model</th><th>Game</th><th>Horizon</th><th>Home line</th>
+            <th>Model</th><th>Market</th><th>Edge</th><th>Result</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
   </main>
 

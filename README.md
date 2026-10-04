@@ -38,6 +38,7 @@ ttk injury-check                 # NBA: how often players on the injury report a
 ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
+ttk summary [--days 7] [--write FILE]  # health: storage, collection gaps, quotas, forward tests
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
 ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseason facts (TTK_CFBD_API_KEY)
 ttk import-cfbd-games --from-season 2013 --to-season 2026  # per-game team efficiency (1 call a season)
@@ -80,7 +81,7 @@ After pulling new code, restart the task so it loads the update.
 
 ### Forward tests (Windows)
 
-A second task, **"Time-to-Kill forward tests"**, runs `ttk forward-run --loop-minutes 30 --refresh-inputs --log data\logs\forward.log` with the same settings and triggers (logon, plus a 15-minute watchdog). Every 30 minutes it snapshots each forward-tested model for games 24 hours and 1 hour from kickoff (docs/MODEL-GOVERNANCE.md, "Forward tests"). Every 6 hours it rebuilds the models after refreshing their slow inputs: this season's nflverse NFL games and play-by-play (~15 MB) and one CollegeFootballData call. Manage it like the collector (`Get-Content data\logs\forward.log -Tail 20 -Wait`, `Stop-ScheduledTask` / `Start-ScheduledTask -TaskName "Time-to-Kill forward tests"`), and see the scores with `ttk forward-report`.
+A second task, **"Time-to-Kill forward tests"**, runs `ttk forward-run --loop-minutes 30 --refresh-inputs --log data\logs\forward.log` with the same settings and triggers (logon, plus a 15-minute watchdog). Every 30 minutes it snapshots each forward-tested model for games 24 hours and 1 hour from kickoff (docs/MODEL-GOVERNANCE.md, "Forward tests"). Every 6 hours it rebuilds the models after refreshing their slow inputs: this season's nflverse NFL games and play-by-play (~15 MB) and one CollegeFootballData call. Manage it like the collector (`Get-Content data\logs\forward.log -Tail 20 -Wait`, `Stop-ScheduledTask` / `Start-ScheduledTask -TaskName "Time-to-Kill forward tests"`), and see the scores with `ttk forward-report` or the **Forward tests** tab of the UI. The same task writes a weekly health summary (`ttk summary`) to `data/reports/weekly/<Monday>.md`, the first time it runs after 8 AM on Monday.
 
 Run `ingest-schedule` before `ingest-odds` so odds attach to ESPN's games. The
 reverse order also works: an ESPN game adopts odds already stored for it.

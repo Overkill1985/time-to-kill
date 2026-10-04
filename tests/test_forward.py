@@ -143,3 +143,52 @@ def test_report_scores_finished_games(session_factory: sessionmaker[Session]) ->
     bet = score.bets[0]
     assert (bet.bets, bet.wins, bet.losses) == (1, 1, 0)
     assert bet.units == pytest.approx(bm.american_to_decimal(-105) - 1.0)  # best price, fanduel
+
+
+def test_forward_api(database_url: str, session_factory: sessionmaker[Session]) -> None:
+    from fastapi.testclient import TestClient
+
+    from ttk.api.app import create_app
+    from ttk.config import Settings
+
+    now = KICK - timedelta(hours=20)
+    game_id = odds(session_factory, now - timedelta(minutes=5))
+    with session_factory() as s:
+        snapshot(s, [model(s)], now=now)
+        game = s.get_one(Game, game_id)
+        game.status, game.home_score, game.away_score = GameStatus.FINAL, 30, 20
+        s.commit()
+    app = create_app(Settings(database_url=database_url))
+    app.state.predictor = (now, None)  # skip model fitting in tests
+    client = TestClient(app, base_url="http://localhost")
+    body = client.get("/api/forward").json()
+    assert body["models"] == [{"model": "cfb-spread-test 1", "snapshots": 1, "finished": 1}]
+    (score,) = body["scores"]
+    assert (score["horizon_hours"], score["decided"]) == (24, 1)
+    assert score["bets"][1]["wins"] == 1  # edge 0.10 clears the 2% threshold
+    (row,) = body["recent"]
+    assert row["matchup"] == "Auburn @ Alabama" and row["result"] == "home"
+    assert row["edge"] == pytest.approx(0.60 - row["market_home_cover"])
+    assert "DEVELOPMENT" in body["note"]
+    assert client.get("/api/forward", params={"sport": "NBA"}).json()["recent"] == []
+
+
+def test_closing_snapshot_matches_closing_line_value(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.line_history import closing_line_value, closing_snapshot
+
+    game_id = odds(session_factory, KICK - timedelta(hours=20))
+    odds(session_factory, KICK - timedelta(minutes=30), home_line=-4.5)  # the close moved
+    with session_factory() as s:
+        snap = closing_snapshot(s, game_id, Market.SPREAD)
+        for side, line, price in (
+            (Selection.HOME, -3.5, -105),  # bet line no longer at the close: no price CLV
+            (Selection.HOME, -4.5, -110),
+            (Selection.AWAY, 4.5, -115),
+        ):
+            old = closing_line_value(s, game_id, Market.SPREAD, side, line, price)
+            assert snap.price_clv(side, line, price) == old.price_clv
+            assert snap.points_gained(side, line) == old.points_gained
+        assert snap.price_clv(Selection.HOME, -3.5, -105) is None
+        assert snap.points_gained(Selection.HOME, -3.5) == pytest.approx(1.0)

@@ -243,3 +243,56 @@ def closing_line_value(
             (game.commence_time - latest_close).total_seconds() / 60 if latest_close else None
         ),
     )
+
+
+@dataclass(frozen=True)
+class ClosingSnapshot:
+    """Every book's state at kickoff for one game and market, built once. Answers
+    the same questions as ``closing_line_value`` (identical rules) without
+    rebuilding the line history at every change - for scoring many bets."""
+
+    market: Market
+    states: list[tuple[str, BookTimeline, dict[QuoteKey, OddsSnapshot]]]
+    """(sportsbook key, timeline, state at kickoff) for books seen before kickoff."""
+    kickoff: datetime
+
+    def consensus_at_line(self, selection: Selection, line: float | None) -> MarketConsensus | None:
+        quotes = [
+            TwoSidedQuote(book, side.decimal_odds, other.decimal_odds)
+            for book, _, state in self.states
+            for side, other in _entries(state, self.market, selection)
+            if side.line == line and other is not None
+        ]
+        return market_consensus(quotes) if quotes else None
+
+    def main_close(self, selection: Selection) -> float | None:
+        lines = sorted(
+            p.line
+            for _, timeline, state in self.states
+            if (p := _main_at(timeline, self.kickoff, self.market, selection, state=state))
+            is not None
+            and p.line is not None
+        )
+        return lines[len(lines) // 2] if lines else None
+
+    def price_clv(self, selection: Selection, line: float | None, american: float) -> float | None:
+        at_line = self.consensus_at_line(selection, line)
+        if at_line is None:
+            return None
+        return bm.closing_line_value(
+            bm.american_to_decimal(american), at_line.consensus_no_vig_probability
+        )
+
+    def points_gained(self, selection: Selection, line: float | None) -> float | None:
+        return _points_gained(self.market, selection, line, self.main_close(selection))
+
+
+def closing_snapshot(session: Session, game_id: int, market: Market) -> ClosingSnapshot:
+    game = session.get_one(Game, game_id)
+    books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
+    states = [
+        (books[book_id], timeline, timeline.state_at(game.commence_time))
+        for book_id, timeline in book_timelines(session, game_id, market).items()
+        if timeline.last_seen(game.commence_time) is not None
+    ]
+    return ClosingSnapshot(market, states, game.commence_time)

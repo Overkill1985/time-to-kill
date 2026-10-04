@@ -61,6 +61,7 @@ src/ttk/
     cfbd_import.py     CollegeFootballData -> team_season_features (dated) and team_game_stats (PPA)
     forward_test.py    Forward tests: snapshots at 24 h / 1 h before kickoff, scoring
     forward_models.py  The models under forward test (NFL predictor, frozen ESPN-sport models)
+    health.py          Health summary: storage growth, collection gaps, dead runs, quotas, forward tests
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
@@ -76,7 +77,7 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | summary | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
@@ -142,13 +143,14 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | POST | `/api/parlays/evaluate` | Analyze a slip. Read-only (it's a POST only because it takes a body) |
 | POST | `/api/parlays` | Record a placed parlay, with its legs' beliefs as of bet time |
 | GET | `/api/parlays` | Recorded parlays with their legs |
+| GET | `/api/forward?sport=` | Forward-test scores per model and horizon, snapshot counts, latest snapshots |
 | POST | `/api/simulations/run` | Monte Carlo for one NFL game (read-only; preset or iterations, and a seed) |
 
 `POST /api/bets/settle` settles both single bets and parlays.
 
 ## UI
 
-Open `ttk serve`, then http://127.0.0.1:8800. It has three tabs:
+Open `ttk serve`, then http://127.0.0.1:8800. It has six tabs:
 
 - **Today:** the card, with model and market bars, stats, and a Why list per bet. *Track* prefills a bet from any entry, and *Add to parlay* puts it on the slip.
 - **Parlay Lab:**
@@ -159,6 +161,7 @@ Open `ttk serve`, then http://127.0.0.1:8800. It has three tabs:
 - **Simulator:** pick an NFL game, a preset and an optional seed. It shows score, margin and total distributions, spread and total sensitivity with the market line highlighted, the maximum acceptable lines, and the same-game joint table. *Simulate* on a card entry opens it.
 - **Bet Tracker:** record a bet, list pending and settled bets (and parlays), settle finished games, and void a bet.
 - **Performance:** summary tiles, filterable by sport and market.
+- **Forward tests:** per model and horizon, decided games, log loss against the market at the snapshot (z shown only from 30 decided games), price CLV and points against our close, and results at edge >= 2%; plus snapshot counts and the latest snapshots with their results.
 
 Plain HTML, CSS and ES modules, with no build step and no external requests. Every value is inserted with `textContent`, never raw HTML.
 

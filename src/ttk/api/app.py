@@ -24,6 +24,7 @@ from ttk.domain import BetResult, Market, Selection, Sport
 from ttk.models.simulation import PRESETS
 from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
 from ttk.services.daily_card import build_card, card_window
+from ttk.services.forward_test import forward_dashboard
 from ttk.services.line_history import PricePoint, line_history
 from ttk.services.market import SideMarket, main_lines, side_markets
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
@@ -518,6 +519,11 @@ def _register_routes(app: FastAPI) -> None:
             session, sport=sport, market=market, unit_size=request.app.state.settings.unit_size
         )
         return {**asdict(perf), "parlays": asdict(parlay_performance(session))}
+
+    @app.get("/api/forward")
+    def get_forward(session: SessionDep, sport: Sport | None = None) -> dict[str, object]:
+        """Forward-test scores per model and horizon, and the latest snapshots."""
+        return forward_dashboard(session, sport)
 
     @app.get("/api/games/{game_id}/offers")
     def game_offers(game_id: int, book: str, session: SessionDep) -> list[dict[str, object]]:

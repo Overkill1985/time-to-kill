@@ -148,9 +148,9 @@ h2.section { margin-top: 1.5rem; }
 .err-msg { color: var(--nobet); }
 
 .table-wrap { overflow-x: auto; }
-table#bets-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
-#bets-table th, #bets-table td { padding: .5rem .55rem; border-bottom: 1px solid var(--border); text-align: left; }
-#bets-table th { color: var(--muted); font-weight: 600; font-size: .75rem; text-transform: uppercase; }
+table#bets-table, table#fwd-scores, table#fwd-recent { width: 100%; border-collapse: collapse; font-size: .88rem; }
+#bets-table th, #bets-table td, #fwd-scores th, #fwd-scores td, #fwd-recent th, #fwd-recent td { padding: .5rem .55rem; border-bottom: 1px solid var(--border); text-align: left; }
+#bets-table th, #fwd-scores th, #fwd-recent th { color: var(--muted); font-weight: 600; font-size: .75rem; text-transform: uppercase; }
 .num { text-align: right !important; font-variant-numeric: tabular-nums; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .75rem; }

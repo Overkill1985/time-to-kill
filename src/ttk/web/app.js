@@ -59,6 +59,7 @@ function showTab(name) {
   }
   if (name === "bets") { loadBets(); loadParlays(); }
   if (name === "performance") loadPerformance();
+  if (name === "forward") loadForward();
   if (name === "parlay") { renderSlip(); loadPickGames(); }
   if (name === "sim") loadSimGames();
 }
@@ -339,6 +340,53 @@ async function loadPerformance() {
 
 $("#perf-sport").addEventListener("change", loadPerformance);
 $("#perf-market").addEventListener("change", loadPerformance);
+
+// ------------------------------------------------------------------ forward tests
+
+function cell(text, cls = "") {
+  return el("td", { class: cls, text });
+}
+
+async function loadForward() {
+  const sport = $("#fwd-sport").value;
+  const f = await api(`/api/forward${sport ? `?sport=${encodeURIComponent(sport)}` : ""}`);
+  $("#fwd-note").textContent = f.note;
+  const scoreRows = f.scores.map((s) => {
+    const two = s.bets.find((b) => Math.abs(b.min_edge - 0.02) < 1e-9);
+    const diff = s.paired_diff == null ? "n/a"
+      : `${s.model_log_loss.toFixed(4)} vs ${s.market_log_loss.toFixed(4)} (${s.paired_diff >= 0 ? "+" : ""}${s.paired_diff.toFixed(4)})`;
+    return el("tr", {},
+      cell(s.model),
+      cell(`${s.horizon_hours} h`),
+      cell(`${s.decided} of ${s.games}`),
+      cell(diff, signClass(s.paired_diff == null ? null : -s.paired_diff)),
+      cell(s.z == null ? (s.decided < s.min_decided_for_z ? `needs ${s.min_decided_for_z}` : "n/a")
+        : `${s.z >= 0 ? "+" : ""}${s.z.toFixed(1)}`),
+      cell(`${signedPct(s.price_clv)} (n=${s.price_clv_n})`, signClass(s.price_clv)),
+      cell(s.points_vs_close == null ? `n/a (n=0)`
+        : `${s.points_vs_close >= 0 ? "+" : ""}${s.points_vs_close.toFixed(2)} (n=${s.points_n})`,
+        signClass(s.points_vs_close)),
+      cell(two ? `${two.wins}-${two.losses}-${two.pushes}` : "n/a"),
+      cell(two ? `${signedPct(two.roi)} (n=${two.bets})` : "n/a", signClass(two ? two.roi : null)));
+  });
+  $("#fwd-scores tbody").replaceChildren(...(scoreRows.length ? scoreRows
+    : [el("tr", {}, el("td", { colspan: "9", class: "muted", text: "No finished games with forward snapshots yet." }))]));
+  $("#fwd-models").replaceChildren(...f.models.map((m) =>
+    tile(m.model, String(m.snapshots), `${m.finished} on finished games`)));
+  $("#fwd-recent tbody").replaceChildren(...f.recent.map((r) => el("tr", {},
+    cell(new Date(r.snapshot_at).toLocaleString()),
+    cell(r.model),
+    cell(`${r.sport} · ${r.matchup}`),
+    cell(`${r.horizon_hours} h`),
+    cell(`${r.home_line >= 0 ? "+" : ""}${r.home_line}`),
+    cell(pct(r.model_home_cover)),
+    cell(pct(r.market_home_cover)),
+    cell(pts(r.edge), signClass(r.edge)),
+    cell(r.result == null ? "pending" : r.result === "push" ? "push" : `${r.result} covered`))));
+}
+
+$("#fwd-sport").addEventListener("change", loadForward);
+$("#fwd-refresh").addEventListener("click", loadForward);
 
 // ------------------------------------------------------------------ parlay lab
 
