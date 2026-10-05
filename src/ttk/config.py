@@ -6,7 +6,7 @@ from functools import lru_cache
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ttk.domain import DataQuality
+from ttk.domain import DataQuality, Sport
 from ttk.qualification import QualificationRules
 
 
@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     """CollegeFootballData.com (college football preseason data); bearer token."""
     alerts_notify: bool = True
     """Show health alerts as Windows notifications (they are always logged)."""
+    alerts_steam_sports: str = "NFL,NBA"
+    """Comma-separated sports watched for steam moves (empty: none)."""
     unit_size: float = 1.0
     """Currency per unit for performance reports (1.0 = units are currency)."""
     bettable_books: str | None = None
@@ -34,6 +36,10 @@ class Settings(BaseSettings):
     min_edge: float = 0.02
     min_ev: float = 0.0
     min_data_quality: DataQuality = DataQuality.ACCEPTABLE
+
+    def steam_sports(self) -> list[Sport]:
+        names = [s.strip().upper() for s in self.alerts_steam_sports.split(",") if s.strip()]
+        return [Sport(n) for n in names]
 
     def bettable_book_keys(self) -> frozenset[str] | None:
         if not self.bettable_books:

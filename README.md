@@ -88,6 +88,16 @@ After pulling new code, restart the task so it loads the update.
 
 Both tasks run the alert checks on every pass, so each watches the other: no successful odds poll for 45 minutes, the last 3 odds polls failed, a run left RUNNING for 6 hours (its process died), PropLine requests below 100, or the forward-test runner silent for an hour. Each problem is shown once as a Windows notification and written to `data/logs/alerts.log`, re-sent every 6 hours while it lasts, and reported once when it clears. Set `TTK_ALERTS_NOTIFY=false` to keep only the log. After the computer wakes from sleep, a short "no odds poll" alert and its resolution are expected.
 
+### Bet and line-movement alerts
+
+The odds collector also sends one-time events on every pass (same notification and log, remembered in `data/alerts/events.json`):
+
+- **Your bet moved:** a pending spread or total bet's consensus main line is 1.5 points or more from your number before kickoff, your way or against you.
+- **Settled:** a bet or parlay settled in the last 24 hours, with result, P/L and CLV.
+- **Steam:** a game in `TTK_ALERTS_STEAM_SPORTS` (default `NFL,NBA`; empty for none) kicking off within 24 hours whose consensus main spread moved 1 point or more, or total 1.5 or more, in 60 minutes across at least 3 books. On the 2026 NFL weeks so far no game moved more than half a point on the spread in any hour, so this is rare by design.
+
+These describe the market and your own bets; none is a bet signal. `ttk alerts` lists the events current right now without sending them.
+
 ### Forward tests (Windows)
 
 A second task, **"Time-to-Kill forward tests"**, runs `ttk forward-run --loop-minutes 30 --refresh-inputs --log data\logs\forward.log` with the same settings and triggers (logon, plus a 15-minute watchdog). Every 30 minutes it snapshots each forward-tested model for games 24 hours and 1 hour from kickoff (docs/MODEL-GOVERNANCE.md, "Forward tests"). Every 6 hours it rebuilds the models after refreshing their slow inputs: this season's nflverse NFL games and play-by-play (~15 MB) and one CollegeFootballData call. Manage it like the collector (`Get-Content data\logs\forward.log -Tail 20 -Wait`, `Stop-ScheduledTask` / `Start-ScheduledTask -TaskName "Time-to-Kill forward tests"`), and see the scores with `ttk forward-report` or the **Forward tests** tab of the UI. The same task writes a weekly health summary (`ttk summary`) to `data/reports/weekly/<Monday>.md`, the first time it runs after 8 AM on Monday.

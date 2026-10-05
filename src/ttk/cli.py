@@ -366,6 +366,26 @@ def _alerts(settings: Settings, factory: Any, emit: Callable[[str], None]) -> No
         emit(f"alert check failed: {type(exc).__name__}: {exc}")
 
 
+def _bet_alerts(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
+    """Bet, settlement and steam alerts on every collector pass. Never raises."""
+    from ttk.services.alerts import windows_notify
+    from ttk.services.bet_alerts import run_bet_alerts
+
+    try:
+        _, data_dir = _db_paths(settings)
+        with factory() as session:
+            sent = run_bet_alerts(
+                session,
+                data_dir=data_dir,
+                steam_sports=settings.steam_sports(),
+                notify=windows_notify if settings.alerts_notify else None,
+            )
+        for line in sent:
+            emit(line)
+    except Exception as exc:  # alerting must not take the collector down
+        emit(f"bet alert check failed: {type(exc).__name__}: {exc}")
+
+
 def _weekly_summary(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
     """Write this week's health summary once, after 8 AM local on Monday (or the
     first pass after that, if the computer was off)."""
@@ -751,6 +771,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             emit(f"{sport}: skipped ({why})")
         emit(f"quota remaining: {remaining}")
         _alerts(settings, factory, emit)
+        _bet_alerts(settings, factory, emit)
         return [r.status for r in result.runs]
 
     try:
@@ -1461,6 +1482,7 @@ def main(argv: list[str] | None = None) -> int:
         from ttk.db.models import utcnow
         from ttk.db.session import make_engine, make_session_factory
         from ttk.services.alerts import check_health, windows_notify
+        from ttk.services.bet_alerts import bet_moves, settlements, steam
 
         _, data_dir = _db_paths(settings)
         factory = make_session_factory(make_engine(settings.database_url))
@@ -1470,6 +1492,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ALERT [{alert.key}] {alert.message}")
         if not found:
             print("No alerts: collection and forward tests look healthy.")
+        with factory() as session:
+            now = utcnow()
+            events = [
+                *bet_moves(session, now=now),
+                *settlements(session, now=now),
+                *steam(session, now=now, sports=settings.steam_sports()),
+            ]
+        for alert in events:
+            print(f"EVENT [{alert.key}] {alert.message}")
+        print(f"{len(events)} bet/steam event(s) now (the collector sends each once).")
         if args.test_notify:
             windows_notify("Time-to-Kill", "Test notification: alerts will look like this.")
             print("Test notification sent.")

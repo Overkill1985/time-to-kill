@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -202,7 +204,7 @@ class ClosingLineValue:
     close_minutes_before_kickoff: float | None
 
 
-def _points_gained(
+def line_points_gained(
     market: Market, selection: Selection, bet_line: float | None, close_line: float | None
 ) -> float | None:
     if bet_line is None or close_line is None or market is Market.MONEYLINE:
@@ -237,7 +239,7 @@ def closing_line_value(
         closing_no_vig_at_bet_line=at_line.consensus_no_vig_probability if at_line else None,
         price_clv=price_clv,
         closing_main_line=main_close,
-        points_gained=_points_gained(market, selection, bet_line, main_close),
+        points_gained=line_points_gained(market, selection, bet_line, main_close),
         books_at_close=len(closes),
         close_minutes_before_kickoff=(
             (game.commence_time - latest_close).total_seconds() / 60 if latest_close else None
@@ -284,7 +286,7 @@ class ClosingSnapshot:
         )
 
     def points_gained(self, selection: Selection, line: float | None) -> float | None:
-        return _points_gained(self.market, selection, line, self.main_close(selection))
+        return line_points_gained(self.market, selection, line, self.main_close(selection))
 
 
 def closing_snapshot(session: Session, game_id: int, market: Market) -> ClosingSnapshot:
@@ -296,3 +298,31 @@ def closing_snapshot(session: Session, game_id: int, market: Market) -> ClosingS
         if timeline.last_seen(game.commence_time) is not None
     ]
     return ClosingSnapshot(market, states, game.commence_time)
+
+
+def consensus_main_line(
+    session: Session,
+    game_id: int,
+    market: Market,
+    selection: Selection,
+    times: Sequence[datetime],
+    *,
+    max_age: timedelta = timedelta(hours=2),
+    timelines: dict[int, BookTimeline] | None = None,
+) -> list[tuple[float | None, int]]:
+    """At each of ``times``: the median of the books' main lines for this side,
+    and how many books it is from. A book counts only if it was seen within
+    ``max_age`` before that time (a stale book's last line isn't the market).
+    ``timelines`` (from ``book_timelines``) saves reloading a game's history."""
+    if timelines is None:
+        timelines = book_timelines(session, game_id, market)
+    out: list[tuple[float | None, int]] = []
+    for t in times:
+        lines = sorted(
+            p.line
+            for timeline in timelines.values()
+            if (seen := timeline.last_seen(t)) is not None and t - seen <= max_age
+            if (p := _main_at(timeline, t, market, selection)) is not None and p.line is not None
+        )
+        out.append((statistics.median(lines) if lines else None, len(lines)))
+    return out

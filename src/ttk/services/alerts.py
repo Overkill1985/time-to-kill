@@ -169,13 +169,19 @@ def run_alerts(
     if sent:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(json.dumps(state, indent=1), "utf-8")
-        log = data_dir / "logs" / "alerts.log"
-        log.parent.mkdir(parents=True, exist_ok=True)
-        with log.open("a", encoding="utf-8") as f:
-            for line in sent:
-                f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}\n")
-        if notify is not None:
-            for line in sent:
-                with contextlib.suppress(Exception):  # a notification must never break a pass
-                    notify("Time-to-Kill", line)
+        deliver(sent, data_dir=data_dir, notify=notify)
     return sent
+
+
+def deliver(lines: list[str], *, data_dir: Path, notify: Callable[[str, str], None] | None) -> None:
+    """Append to data/logs/alerts.log, then notify each line (a failed
+    notification never raises)."""
+    log = data_dir / "logs" / "alerts.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as f:
+        for line in lines:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}\n")
+    if notify is not None:
+        for line in lines:
+            with contextlib.suppress(Exception):  # a notification must never break a pass
+                notify("Time-to-Kill", line)

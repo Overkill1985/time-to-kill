@@ -64,6 +64,7 @@ src/ttk/
     forward_models.py  The models under forward test (NFL predictor, frozen ESPN-sport models)
     health.py          Health summary: storage growth, collection gaps, dead runs, quotas, forward tests
     alerts.py          Health alerts each pass: Windows notification + log, once per problem
+    bet_alerts.py      One-time events from the collector: your bet's line moved, settlements, steam
     repair.py          One-off data repairs, dry run first (merged ESPN games, malformed ESPN lines)
     odds_ingest.py     Provider -> immutable odds_snapshots (flips swapped HOME/AWAY)
     odds_state.py      Replays the odds change log: state at any time, last seen
