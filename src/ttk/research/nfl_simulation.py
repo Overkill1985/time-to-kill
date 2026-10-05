@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -28,7 +28,64 @@ from numpy.typing import NDArray
 from ttk.db.models import ReportedLine
 from ttk.models.elo import EloGame, EloPrediction
 from ttk.models.simulation import Leg, randomized_pit, simulate_game
-from ttk.research.nfl_elo import FittedModels, PairedComparison, _in, _margin
+from ttk.research.nfl_elo import FittedModels, PairedComparison, _in
+
+
+@dataclass(frozen=True)
+class SimRow:
+    """One finished game for fitting or validating the simulation: the model's
+    expected home margin and the game's result and closing lines."""
+
+    game_id: int
+    mu: float
+    home_score: int
+    away_score: int
+    home_spread: float | None
+    total: float | None
+
+
+Pmf = Callable[[float], Mapping[int, float]]
+
+
+def pairs_from_rows(rows: Iterable[SimRow], pmf: Pmf, *, seed: int = 7) -> NDArray[np.float64]:
+    """(u_favorite, total residual) for every row with a total, the residual
+    centered on its median (see the module docstring)."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for r in rows:
+        if r.total is None:
+            continue
+        u_home = randomized_pit(pmf(r.mu), r.home_score - r.away_score, rng)
+        u_fav = u_home if r.mu >= 0 else 1.0 - u_home
+        out.append((u_fav, r.home_score + r.away_score - r.total))
+    pairs = np.asarray(out, dtype=float)
+    if pairs.size:
+        pairs[:, 1] -= np.median(pairs[:, 1])
+    return pairs
+
+
+def _nfl_rows(
+    predictions: Sequence[EloPrediction],
+    games: dict[int, EloGame],
+    lines: dict[int, ReportedLine],
+    models: FittedModels,
+    window: tuple[int, int],
+) -> list[SimRow]:
+    rows = []
+    for p in predictions:
+        g = games[p.game_id]
+        line = lines.get(g.game_id)
+        if not (_in(p.season, window) and g.played and line):
+            continue
+        mu = models.feature_margin(p)
+        if mu is None:
+            continue
+        rows.append(
+            SimRow(
+                g.game_id, mu, g.home_score or 0, g.away_score or 0, line.home_spread, line.total
+            )
+        )
+    return rows
 
 
 def fit_pairs(
@@ -42,25 +99,8 @@ def fit_pairs(
 ) -> NDArray[np.float64]:
     if models.features is None:
         raise ValueError("Simulation pairs need the feature margin model")
-    rng = np.random.default_rng(seed)
-    rows = []
-    for p in predictions:
-        g = games[p.game_id]
-        line = lines.get(g.game_id)
-        if not (_in(p.season, window) and g.played and line and line.total is not None):
-            continue
-        mu = models.feature_margin(p)
-        if mu is None:
-            continue
-        pmf = models.features.key.pmf_at_mean(mu)
-        u_home = randomized_pit(pmf, _margin(g), rng)
-        u_fav = u_home if mu >= 0 else 1.0 - u_home
-        total = (g.home_score or 0) + (g.away_score or 0)
-        rows.append((u_fav, total - line.total))
-    pairs = np.asarray(rows, dtype=float)
-    if pairs.size:
-        pairs[:, 1] -= np.median(pairs[:, 1])
-    return pairs
+    rows = _nfl_rows(predictions, games, lines, models, window)
+    return pairs_from_rows(rows, models.features.key.pmf_at_mean, seed=seed)
 
 
 @dataclass(frozen=True)
@@ -89,33 +129,40 @@ def validate_joint(
     seed: int = 11,
 ) -> JointValidation:
     assert models.features is not None
+    rows = _nfl_rows(predictions, games, lines, models, window)
+    return validate_rows(
+        rows, models.features.key.pmf_at_mean, pairs, iterations=iterations, seed=seed
+    )
+
+
+def validate_rows(
+    rows: Iterable[SimRow],
+    pmf: Pmf,
+    pairs: NDArray[np.float64],
+    *,
+    iterations: int = 10_000,
+    seed: int = 11,
+) -> JointValidation:
     sim_losses, ind_losses = [], []
     observed = sim_both = ind_both = 0.0
-    for p in predictions:
-        g = games[p.game_id]
-        line = lines.get(g.game_id)
-        if not (_in(p.season, window) and g.played and line):
+    for r in rows:
+        if r.home_spread is None or r.total is None:
             continue
-        if line.home_spread is None or line.total is None:
-            continue
-        mu = models.feature_margin(p)
-        if mu is None:
-            continue
-        home, away = g.home_score or 0, g.away_score or 0
-        cover_margin = home - away + line.home_spread
-        over_margin = home + away - line.total
+        home, away = r.home_score, r.away_score
+        cover_margin = home - away + r.home_spread
+        over_margin = home + away - r.total
         if cover_margin == 0 or over_margin == 0:
             continue
         sim = simulate_game(
-            models.features.key.pmf_at_mean(mu),
-            line.total,
+            pmf(r.mu),
+            r.total,
             pairs,
-            home_favored=mu >= 0,
+            home_favored=r.mu >= 0,
             iterations=iterations,
-            seed=seed + p.game_id,
+            seed=seed + r.game_id,
         )
-        cover_win, cover_push = sim.outcome(Leg("SPREAD", "HOME", line.home_spread))
-        over_win, over_push = sim.outcome(Leg("TOTAL", "OVER", line.total))
+        cover_win, cover_push = sim.outcome(Leg("SPREAD", "HOME", r.home_spread))
+        over_win, over_push = sim.outcome(Leg("TOTAL", "OVER", r.total))
         decided = ~cover_push & ~over_push
         c, o = cover_win[decided], over_win[decided]
         n = max(int(decided.sum()), 1)

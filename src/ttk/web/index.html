@@ -93,6 +93,10 @@
     <!-- SIMULATOR -->
     <section id="tab-sim" class="tab" role="tabpanel" hidden>
       <div class="toolbar">
+        <label>Sport
+          <select id="sim-sport"><option>NFL</option><option>CFB</option>
+            <option>NBA</option><option>NCAAB</option></select>
+        </label>
         <label>Date <input type="date" id="sim-date"></label>
         <label>Game <select id="sim-game"></select></label>
         <label>Runs
@@ -106,8 +110,10 @@
         <button id="sim-run">Simulate</button>
         <span id="sim-status" class="muted" aria-live="polite"></span>
       </div>
-      <p class="muted">NFL only for now. The margin is centered where the validated market-anchored
-        model's cover probability holds at the main spread; the total is centered on the market total.
+      <p class="muted">The margin is centered where the sport's market-anchored model's cover
+        probability holds at the main spread; the total is centered on the market total. College
+        football, NBA and college basketball games never end tied, so the simulation gives ties no weight.
+        Those models load in the background after the app starts.
         More runs shrink sampling error only - the model's own error does not shrink.</p>
       <div id="sim-result"></div>
     </section>

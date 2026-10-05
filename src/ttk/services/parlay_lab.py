@@ -11,12 +11,13 @@ probability -> fair odds -> EV -> strongest/weakest/costliest legs.
   the market's own no-vig probability, labeled "market" - so a market-only
   parlay shows the compounded book margin as negative EV, never an edge.
 - Joint probability is the product of leg probabilities across games. Legs from
-  the same NFL game are joined by Monte Carlo: the simulation's lift,
+  the same game are joined by Monte Carlo (NFL, and college football, NBA and
+  college basketball once their models are loaded): the simulation's lift,
   P(all legs) / product of P(each leg) in the same simulated games, multiplies
   the product of the displayed leg probabilities, so each leg keeps its own
   probability and only the dependence is simulated. Same-game groups that
-  cannot be simulated (other sports for now) stay an independence assumption,
-  flagged. A book's same-game-parlay price will differ from the product of legs.
+  cannot be simulated stay an independence assumption, flagged. A book's
+  same-game-parlay price will differ from the product of legs.
 - Pushes: joint probability uses each leg's P(win) = p x (1 - P(push)); the
   upside of a push (the parlay shrinks rather than loses) is ignored, so EV is
   slightly understated when push chances are material.
@@ -25,10 +26,10 @@ probability -> fair odds -> EV -> strongest/weakest/costliest legs.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import Protocol, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -254,8 +255,11 @@ def evaluate_parlay(
     *,
     at: datetime | None = None,
     predictor: SpreadModel | None = None,
+    simulators: Mapping[Sport, GameSimulator] | None = None,
     max_odds_age: timedelta = timedelta(minutes=30),
 ) -> ParlayAnalysis:
+    """``simulators``: Monte Carlo per sport for same-game groups; the NFL
+    falls back to ``predictor`` when it can simulate."""
     at = at or utcnow()
     if not 2 <= len(inputs) <= 12:
         raise ParlayError("A parlay needs 2 to 12 legs")
@@ -387,15 +391,18 @@ def evaluate_parlay(
     legs = [replace(la, correlation_risk=leg_risk[la.index]) for la in legs]
     overall = max(leg_risk.values(), key=lambda r: _RISK_ORDER[r])
 
-    # Same-game NFL groups: simulate the dependence.
+    # Same-game groups: simulate the dependence.
     sims: dict[int, tuple[GameSimulation, float]] = {}
-    simulate = getattr(predictor, "simulate", None)
+    by_sport: dict[Sport, GameSimulator] = dict(simulators or {})
+    if Sport.NFL not in by_sport and hasattr(predictor, "simulate"):
+        by_sport[Sport.NFL] = cast("GameSimulator", predictor)
     groups: dict[int, list[LegAnalysis]] = {}
     for la in legs:
         groups.setdefault(la.game_id, []).append(la)
     same_game = {gid: g for gid, g in groups.items() if len(g) >= 2}
     for gid, group in same_game.items():
-        if simulate is None or group[0].sport is not Sport.NFL:
+        simulator = by_sport.get(group[0].sport)
+        if simulator is None:
             continue
         mains = {(m.market, m.selection): m for m in main_lines(side_markets(session, gid))}
         main_total = mains.get((Market.TOTAL, Selection.OVER))
@@ -409,7 +416,9 @@ def evaluate_parlay(
             if main_spread and main_spread.line is not None
             else None
         )
-        sim = simulate(gid, total_line, iterations=SIMULATION_ITERATIONS, seed=gid, anchor=anchor)
+        sim = simulator.simulate(
+            gid, total_line, iterations=SIMULATION_ITERATIONS, seed=gid, anchor=anchor
+        )
         if sim is not None:
             sims[gid] = (sim, total_line)
     simulated = [
@@ -557,13 +566,16 @@ def save_parlay(
     notes: str | None = None,
     predictor: SpreadModel | None = None,
     limit_override: str | None = None,
+    simulators: Mapping[Sport, GameSimulator] | None = None,
 ) -> Parlay:
     """Record a placed parlay with its legs' beliefs as of ``placed_at``.
     ``american_odds`` is the price actually taken (default: product of legs)."""
     if stake <= 0:
         raise ParlayError("Stake must be positive")
     placed_at = placed_at or utcnow()
-    analysis = evaluate_parlay(session, inputs, sportsbook, at=placed_at, predictor=predictor)
+    analysis = evaluate_parlay(
+        session, inputs, sportsbook, at=placed_at, predictor=predictor, simulators=simulators
+    )
     taken = american_odds if american_odds is not None else analysis.american_odds
     try:
         taken_decimal = bm.american_to_decimal(taken)

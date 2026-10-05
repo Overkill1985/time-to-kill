@@ -124,8 +124,7 @@ function renderEntry(entry) {
 
   $(".track", node).addEventListener("click", () => prefillBet(entry));
   const simulate = $(".simulate", node);
-  simulate.hidden = entry.sport !== "NFL";
-  simulate.addEventListener("click", () => openSimulation(entry.game_id, entry.commence_time));
+  simulate.addEventListener("click", () => openSimulation(entry.game_id, entry.commence_time, entry.sport));
   $(".add-leg", node).addEventListener("click", () => {
     // A new slip takes the entry's best book; later legs are priced at the slip's book.
     if (!slip.legs.length) setSlipBook(entry.sportsbook);
@@ -743,17 +742,19 @@ async function loadParlays() {
 let simSeq = 0;
 async function loadSimGames(selectId = null) {
   const seq = ++simSeq;
-  const params = new URLSearchParams({ date: $("#sim-date").value || todayEastern(), sport: "NFL" });
+  const sport = $("#sim-sport").value;
+  const params = new URLSearchParams({ date: $("#sim-date").value || todayEastern(), sport });
   const games = await api(`/api/games?${params}`);
   if (seq !== simSeq) return;
   $("#sim-game").replaceChildren(
     ...games.map((g) => el("option", { value: g.id, text: `${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })),
   );
-  if (!games.length) $("#sim-game").append(el("option", { value: "", text: "No upcoming NFL games" }));
+  if (!games.length) $("#sim-game").append(el("option", { value: "", text: `No upcoming ${sport} games` }));
   if (selectId != null) $("#sim-game").value = String(selectId);
 }
 
-async function openSimulation(gameId, commenceIso) {
+async function openSimulation(gameId, commenceIso, sport) {
+  $("#sim-sport").value = sport;
   $("#sim-date").value = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
     .format(new Date(new Date(commenceIso).getTime() - 6 * 3600 * 1000));
   showTab("sim");
@@ -832,6 +833,7 @@ async function runSimulation() {
 
 $("#sim-date").value = todayEastern();
 $("#sim-date").addEventListener("change", () => loadSimGames());
+$("#sim-sport").addEventListener("change", () => loadSimGames());
 $("#sim-run").addEventListener("click", runSimulation);
 
 // ------------------------------------------------------------------ start

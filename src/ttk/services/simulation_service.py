@@ -119,8 +119,11 @@ def run_simulation(
     game = session.get(Game, game_id)
     if game is None:
         raise SimulationError(f"Game {game_id} not found")
-    if game.sport != Sport.NFL or simulator is None:
-        raise SimulationError("Simulation needs a validated margin model (NFL only for now)")
+    if simulator is None:
+        raise SimulationError(
+            f"No simulation model for {game.sport} is available (NFL, college football, "
+            "NBA and college basketball have one; they may still be loading)"
+        )
     if not 1_000 <= iterations <= 200_000:
         raise SimulationError("Iterations must be between 1,000 and 200,000")
     markets = side_markets(session, game.id)
@@ -128,11 +131,12 @@ def run_simulation(
     away_spread = _main(markets, Market.SPREAD, Selection.AWAY)
     over = _main(markets, Market.TOTAL, Selection.OVER)
     under = _main(markets, Market.TOTAL, Selection.UNDER)
-    total_line, source = (
-        (over.line, "market main total")
-        if over and over.line is not None
-        else (44.0, "default (no total market)")
-    )
+    if over and over.line is not None:
+        total_line, source = over.line, "market main total"
+    elif game.sport == Sport.NFL:
+        total_line, source = 44.0, "default (no total market)"
+    else:
+        raise SimulationError("No total market for this game yet")
     anchor = (
         (home_spread.line, home_spread.consensus.consensus_no_vig_probability)
         if home_spread and home_spread.line is not None
@@ -140,6 +144,8 @@ def run_simulation(
     )
     sim = simulator.simulate(game.id, total_line, iterations=iterations, seed=seed, anchor=anchor)
     if sim is None:
+        if getattr(game, "season_type", None) == "PRE":
+            raise SimulationError("Preseason games are not modeled")
         raise SimulationError("No model inputs for this game")
 
     spread_center = home_spread.line if home_spread and home_spread.line is not None else 0.0

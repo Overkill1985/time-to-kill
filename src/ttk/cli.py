@@ -1102,18 +1102,31 @@ def _bets(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _simulate(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.models import Game
     from ttk.db.session import make_engine, make_session_factory
+    from ttk.domain import Sport
     from ttk.models.simulation import PRESETS
+    from ttk.services.forward_models import build_card_models
     from ttk.services.nfl_spread_predictor import NflSpreadPredictor
     from ttk.services.simulation_service import SimulationError, run_simulation
 
     factory = make_session_factory(make_engine(settings.database_url))
     with factory() as session:
+        game = session.get(Game, args.game_id)
+        if game is None:
+            print(f"Game {args.game_id} not found", file=sys.stderr)
+            return 2
+        sport = Sport(game.sport)
+        if sport is Sport.NFL:
+            simulator: Any = NflSpreadPredictor.build(session)
+        else:
+            card = build_card_models(session, {sport}).get(sport)
+            simulator = card.simulator if card else None
         try:
             s = run_simulation(
                 session,
                 args.game_id,
-                NflSpreadPredictor.build(session),
+                simulator,
                 iterations=PRESETS[args.preset],
                 seed=args.seed,
                 bettable_books=settings.bettable_book_keys(),

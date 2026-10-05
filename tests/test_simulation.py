@@ -223,7 +223,12 @@ def test_simulation_service(session_factory: sessionmaker[Session]) -> None:
         run_simulation(s, gid, FakeSimPredictor(), iterations=10)
 
 
-def test_simulation_service_rejects_other_sports(session_factory: sessionmaker[Session]) -> None:
+def test_simulation_service_runs_any_sport_with_a_simulator(
+    session_factory: sessionmaker[Session],
+) -> None:
     gid = seed_game(session_factory, sport=Sport.CFB)
-    with session_factory() as s, pytest.raises(SimulationError, match="NFL"):
-        run_simulation(s, gid, FakeSimPredictor())
+    with session_factory() as s:
+        with pytest.raises(SimulationError, match="No simulation model for CFB"):
+            run_simulation(s, gid, None)
+        summary = run_simulation(s, gid, FakeSimPredictor(), seed=1)
+    assert summary.total_line == 44.5 and summary.total_line_source == "market main total"

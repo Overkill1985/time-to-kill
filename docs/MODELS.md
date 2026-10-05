@@ -161,6 +161,23 @@ Margin error, RMSE in points, on validation games with a reported line:
 - **In the Parlay Lab:** a same-game NFL group gets the simulation's lift, P(all legs) ÷ the product of each leg's probability in the same simulated games. The lift multiplies the displayed leg probabilities, and the result is capped at the weakest leg's probability.
 
 
+### Monte Carlo for college football, NBA and college basketball (2026-10-05)
+
+- **Code:** `src/ttk/research/espn_simulation.py` (fitting and validation, sharing the NFL's core), `src/ttk/services/frozen_simulator.py`. Same commands and tab as the NFL; the non-NFL models load in the background (about a minute).
+- **Margin:** each sport's daily-card model (the market-anchored one; for the NBA, the injury model with the live report). With a spread market, the margin is centered where that model's cover probability holds at the main line, as for the NFL.
+- **No ties:** these sports always go to overtime (FBS since 1996), but the frozen key-number weights still give a 0 margin some mass: weight 0.09 (CFB), 0.13 (NBA), 0.02 (NCAAB) of the normal density. The simulation removes it and renormalizes. **The frozen forward-tested models keep it** (they are frozen): their push probability at a pick'em line is small but impossible. It only matters at a line of exactly 0.
+- **Pairs and validation** (TRAIN pairs with ESPN's closing total; scored on VALIDATE seasons, 20,000 runs a game, against the product of the simulation's own marginals):
+
+  | Sport | Games | With TRAIN pairing | Pairing shuffled | Adopted |
+  |---|---|---|---|---|
+  | College football | 3,008 | −0.0063 (z −3.6) | −0.0061 (z −5.8) | pairing kept |
+  | NBA | 2,575 | +0.0001 (z +0.4) | +0.0007 (z +1.3) | pairing kept (as the NFL: no difference) |
+  | College basketball | 11,333 | +0.0003 (z +1.5) | +0.00003 (z +0.3) | shuffled (spread and total independent) |
+
+  - College football beats independence either way, so its gain comes from the engine's structure (whole scores keep margin and total consistent), not from the pairing itself.
+  - A run with 4,000 simulations a game showed college basketball at z +2.8. That was mostly Monte Carlo noise: noisy joint-cell frequencies carry a log-loss penalty of about 0.0004 per game at that size. Validation needs 20,000+ runs a game.
+- **Verdict:** adopted as the distribution and joint-probability engine for these sports, on the same terms as the NFL. It adds no spread-versus-total edge; its value is in legs that share a margin (spread and moneyline on one team) and in line sensitivity.
+
 ## NBA spread (2026-09-27)
 
 Data: ESPN's core API, one line per game per sportsbook, and ESPN box scores

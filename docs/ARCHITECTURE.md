@@ -37,7 +37,8 @@ src/ttk/
     simulation.py      Monte Carlo: key-number margin x market total, rank copula, seeded
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
-    nfl_simulation.py  Copula pairs (train) and joint validation vs independence
+    nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
+    espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
     espn_models.py     ESPN-history pipeline per SportConfig: feature-set margin models, market-anchored, opener test
     nba_model.py       NBA config: splits, grids, rest and lineup feature sets
     cfb_model.py       College football config: splits, grids, regression toward recent level
@@ -75,8 +76,9 @@ src/ttk/
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     bankroll.py        Balance from append-only deposits + settled P/L, staking limits, Kelly guidance
-    parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game NFL), EV, save, settle
+    parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game, all four sports), EV, save, settle
     simulation_service.py  One-game simulation summary: distributions, sensitivity, max acceptable line
+    frozen_simulator.py    Monte Carlo from a frozen card model (CFB, NBA, NCAAB), anchored to the market
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
@@ -155,7 +157,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | GET | `/api/parlays` | Recorded parlays with their legs |
 | GET | `/api/forward?sport=` | Forward-test scores per model and horizon, snapshot counts, latest snapshots |
 | GET | `/api/lab?sport=&model=&horizon_hours=` | Performance Lab for one model and horizon (default: most finished games) |
-| POST | `/api/simulations/run` | Monte Carlo for one NFL game (read-only; preset or iterations, and a seed) |
+| POST | `/api/simulations/run` | Monte Carlo for one game, any of the four sports (read-only; preset or iterations, and a seed; 503 while a non-NFL model loads) |
 
 `POST /api/bets/settle` settles both single bets and parlays.
 

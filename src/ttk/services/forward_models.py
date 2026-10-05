@@ -29,6 +29,7 @@ from ttk.research.nba_model import NBA
 from ttk.research.ncaab_model import NCAAB
 from ttk.services.daily_card import CardView
 from ttk.services.forward_test import ForwardModel, ModelView, register
+from ttk.services.frozen_simulator import FrozenSimulator
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
 
 CONFIGS: dict[Sport, SportConfig] = {Sport.CFB: CFB, Sport.NBA: NBA, Sport.NCAAB: NCAAB}
@@ -200,10 +201,14 @@ def _nfl_model(session: Session) -> ForwardModel | None:
 
 
 def _frozen_model(
-    row: ModelVersion, data: SportData, as_of: datetime, injuries: InjuryState | None
+    row: ModelVersion,
+    data: SportData,
+    as_of: datetime,
+    injuries: InjuryState | None,
+    model: FrozenSpreadModel | None = None,
 ) -> ForwardModel:
     assert row.artifact is not None
-    model = FrozenSpreadModel(row.artifact, data)
+    model = model or FrozenSpreadModel(row.artifact, data)
     anchored = row.artifact.get("variant") == "anchored"
     substitute = row.artifact.get("live_substitution") == INJURY_SUBSTITUTION
     teams = {g.game_id: (g.game_id, g.home_id, g.away_id) for g in data.games}
@@ -278,6 +283,8 @@ class FrozenCardModel:
     model: ForwardModel
     season_games: dict[tuple[int, int], int]
     """(game_id, team_id) -> the team's finished games earlier that season."""
+    simulator: FrozenSimulator | None = None
+    """Monte Carlo for this sport (services/frozen_simulator)."""
 
     @property
     def version(self) -> ModelVersion:
@@ -314,10 +321,15 @@ def _season_games(data: SportData) -> dict[tuple[int, int], int]:
     return out
 
 
-def build_card_models(session: Session) -> dict[Sport, FrozenCardModel]:
-    """The non-NFL card models (heavy: loads each sport's history)."""
+def build_card_models(
+    session: Session, sports: set[Sport] | None = None
+) -> dict[Sport, FrozenCardModel]:
+    """The non-NFL card models, each with its simulator (heavy: loads each
+    sport's history)."""
     out: dict[Sport, FrozenCardModel] = {}
     for sport, name in CARD_MODEL_NAMES.items():
+        if sports is not None and sport not in sports:
+            continue
         row = session.scalar(
             select(ModelVersion)
             .where(ModelVersion.name == name, ModelVersion.artifact.is_not(None))
@@ -330,6 +342,7 @@ def build_card_models(session: Session) -> dict[Sport, FrozenCardModel]:
         if data.sit_rates is not None:
             injuries = InjuryState(sport, data.sit_rates, data.rotations)
             injuries.refresh(session)
-        model = _frozen_model(row, data, _latest_final(session, sport), injuries)
-        out[sport] = FrozenCardModel(model, _season_games(data))
+        frozen = FrozenSpreadModel(row.artifact or {}, data)
+        model = _frozen_model(row, data, _latest_final(session, sport), injuries, frozen)
+        out[sport] = FrozenCardModel(model, _season_games(data), FrozenSimulator(model, frozen))
     return out

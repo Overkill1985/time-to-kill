@@ -116,6 +116,12 @@ CARD_MODELS_TTL = timedelta(hours=6)
 _card_lock = threading.Lock()
 
 
+def _simulators(app: FastAPI) -> dict[Sport, Any]:
+    """Monte Carlo per non-NFL sport, from the card models (none until they load)."""
+    models, _ = _card_models(app)
+    return {s: m.simulator for s, m in models.items() if getattr(m, "simulator", None)}
+
+
 def _card_models(app: FastAPI) -> tuple[dict[Sport, Any], frozenset[Sport]]:
     """The non-NFL card models and the sports still loading. Building them loads
     each sport's history (minutes), so it runs in a background thread, started by
@@ -729,6 +735,7 @@ def _register_routes(app: FastAPI) -> None:
                 _legs(body),
                 body.sportsbook,
                 predictor=_cached_predictor(request.app, session),
+                simulators=_simulators(request.app),
                 max_odds_age=settings.qualification_rules().max_odds_age,
             )
         except ParlayError as exc:
@@ -750,6 +757,7 @@ def _register_routes(app: FastAPI) -> None:
                 notes=body.notes,
                 predictor=_cached_predictor(request.app, session),
                 limit_override=body.limit_override,
+                simulators=_simulators(request.app),
             )
         except ParlayError as exc:
             session.rollback()
@@ -769,11 +777,23 @@ def _register_routes(app: FastAPI) -> None:
         """Monte Carlo for one game. Read-only: nothing is stored."""
         settings: Settings = request.app.state.settings
         iterations = body.iterations or PRESETS[body.preset or "quick"]
+        game = session.get(Game, body.game_id)
+        if game is None:
+            raise HTTPException(404, "Game not found")
+        if game.sport == Sport.NFL:
+            simulator: Any = _cached_predictor(request.app, session)
+        else:
+            _, loading = _card_models(request.app)
+            if Sport(game.sport) in loading:
+                raise HTTPException(
+                    503, f"The {game.sport} model is still loading; try again shortly"
+                )
+            simulator = _simulators(request.app).get(Sport(game.sport))
         try:
             summary = run_simulation(
                 session,
                 body.game_id,
-                _cached_predictor(request.app, session),
+                simulator,
                 iterations=iterations,
                 seed=body.seed,
                 bettable_books=settings.bettable_book_keys(),
