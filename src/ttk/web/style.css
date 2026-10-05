@@ -114,6 +114,7 @@ button:disabled { opacity: .5; cursor: progress; }
 .count { background: var(--accent); color: #051423; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 800; }
 .count:empty { display: none; }
 h2.section { margin-top: 1.5rem; }
+h3 { font-size: .95rem; margin: 1rem 0 .4rem; color: var(--muted); }
 .lab { display: grid; grid-template-columns: minmax(300px, 2fr) 3fr; gap: 1rem; align-items: start; }
 .slip { margin: .5rem 0; padding-left: 1.25rem; }
 .slip li { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .35rem 0; border-bottom: 1px solid var(--border); }

@@ -59,7 +59,7 @@ function showTab(name) {
   }
   if (name === "bets") { loadBankroll(); loadBets(); loadParlays(); }
   if (name === "performance") loadPerformance();
-  if (name === "forward") loadForward();
+  if (name === "forward") { loadForward(); loadLab(); }
   if (name === "parlay") { renderSlip(); loadPickGames(); }
   if (name === "sim") loadSimGames();
 }
@@ -449,8 +449,63 @@ async function loadForward() {
     cell(r.result == null ? "pending" : r.result === "push" ? "push" : `${r.result} covered`))));
 }
 
-$("#fwd-sport").addEventListener("change", loadForward);
-$("#fwd-refresh").addEventListener("click", loadForward);
+$("#fwd-sport").addEventListener("change", () => { loadForward(); loadLab(""); });
+$("#fwd-refresh").addEventListener("click", () => { loadForward(); loadLab(); });
+
+// ------------------------------------------------------------------ performance lab
+
+const signedNum = (x, digits) => (x == null ? "n/a" : `${x >= 0 ? "+" : ""}${x.toFixed(digits)}`);
+const fixed = (x, digits) => (x == null ? "n/a" : x.toFixed(digits));
+
+async function loadLab(pick = $("#lab-pick").value) {
+  const params = new URLSearchParams();
+  if ($("#fwd-sport").value) params.set("sport", $("#fwd-sport").value);
+  if (pick) {
+    const [model, horizon] = JSON.parse(pick);
+    params.set("model", model);
+    params.set("horizon_hours", horizon);
+  }
+  const { choices, lab } = await api(`/api/lab?${params}`);
+  const select = $("#lab-pick");
+  select.replaceChildren(...choices.map((c) => el("option", {
+    value: JSON.stringify([c.model, c.horizon_hours]),
+    text: `${c.model} · ${c.horizon_hours} h · ${c.games} games`,
+  })));
+  for (const tbody of ["#lab-thresholds", "#lab-calibration", "#lab-weeks"]) $(`${tbody} tbody`).replaceChildren();
+  if (!lab) {
+    $("#lab-note").textContent = "No finished games with forward snapshots yet.";
+    return;
+  }
+  select.value = JSON.stringify([lab.model, lab.horizon_hours]);
+  $("#lab-note").textContent = lab.note;
+  $("#lab-thresholds tbody").replaceChildren(...lab.thresholds.map((t) => el("tr", {},
+    cell(`${(t.min_probability * 100).toFixed(0)}%`),
+    cell(String(t.bets), "num"),
+    cell(`${t.wins}-${t.losses}-${t.pushes}`),
+    cell(t.roi == null ? "n/a" : `${signedPct(t.roi)} ± ${pct(t.roi_se)}`, `num ${signClass(t.roi)}`),
+    cell(pct(t.hit_rate), "num"),
+    cell(pct(t.break_even), "num"),
+    cell(`${signedPct(t.avg_clv, 2)} (n=${t.clv_n})`, `num ${signClass(t.avg_clv)}`),
+    cell(t.enough ? "" : `too few (< ${lab.min_sample})`, "muted"))));
+  const market = lab.calibration.market;
+  $("#lab-calibration tbody").replaceChildren(...lab.calibration.model.map((b, i) => el("tr", {},
+    cell(`${b.low.toFixed(2)}–${b.high.toFixed(2)}`),
+    cell(String(b.n), "num"),
+    cell(fixed(b.mean_predicted, 3), "num"),
+    cell(fixed(b.observed, 3), "num"),
+    cell(String(market[i].n), "num"),
+    cell(fixed(market[i].mean_predicted, 3), "num"),
+    cell(fixed(market[i].observed, 3), "num"))));
+  $("#lab-weeks tbody").replaceChildren(...lab.weeks.map((w) => el("tr", {},
+    cell(w.week),
+    cell(String(w.games), "num"),
+    cell(signedNum(w.diff, 4), `num ${signClass(w.diff == null ? null : -w.diff)}`),
+    cell(signedNum(w.cumulative_diff, 4), `num ${signClass(w.cumulative_diff == null ? null : -w.cumulative_diff)}`),
+    cell(`${signedPct(w.avg_clv, 2)} (n=${w.clv_n})`, `num ${signClass(w.avg_clv)}`),
+    cell(signedPct(w.cumulative_clv, 2), `num ${signClass(w.cumulative_clv)}`))));
+}
+
+$("#lab-pick").addEventListener("change", (event) => loadLab(event.currentTarget.value));
 
 // ------------------------------------------------------------------ parlay lab
 

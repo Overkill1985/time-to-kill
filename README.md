@@ -40,6 +40,7 @@ ttk injury-check                 # NBA: how often players on the injury report a
 ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
+ttk lab --horizon 1              # Performance Lab: results by model probability, calibration, weekly drift
 ttk score-test --sport NBA       # frozen models on their sealed test seasons (once; done 2026-10-05)
 ttk summary [--days 7] [--write FILE]  # health: storage, collection gaps, quotas, forward tests
 ttk alerts [--test-notify]       # run the health alert checks once (and send a test notification)

@@ -59,7 +59,8 @@ src/ttk/
     boxscore_import.py ESPN box scores -> player_game_stats, team_game_boxes (resumable)
     injury_ingest.py   Injury lists -> injury_reports change log; injuries_at(t)
     cfbd_import.py     CollegeFootballData -> team_season_features (dated) and team_game_stats (PPA)
-    forward_test.py    Forward tests: snapshots at 24 h / 1 h before kickoff, scoring
+    forward_test.py    Forward tests: snapshots at 24 h / 1 h before kickoff, scoring (CLV stored once final)
+    performance_lab.py Forward-test threshold lab, calibration bins, weekly drift and CLV
     forward_models.py  The models under forward test (NFL predictor, frozen ESPN-sport models)
     health.py          Health summary: storage growth, collection gaps, dead runs, quotas, forward tests
     alerts.py          Health alerts each pass: Windows notification + log, once per problem
@@ -79,12 +80,14 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | injury-check | summary | alerts | score-test | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0013: forward_scores (append-only CLV of finished forward snapshots).
+                       - 0012: bankroll_entries and bankroll_policies (append-only); bankroll columns on bets and parlays.
                        - 0011: forward_predictions (append-only) and model_versions.artifact.
                        - 0010: team_game_boxes (team box totals for possession efficiency).
                        - 0009: team_season_features (preseason facts with known_at).
@@ -150,6 +153,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | POST | `/api/parlays` | Record a placed parlay, with its legs' beliefs as of bet time |
 | GET | `/api/parlays` | Recorded parlays with their legs |
 | GET | `/api/forward?sport=` | Forward-test scores per model and horizon, snapshot counts, latest snapshots |
+| GET | `/api/lab?sport=&model=&horizon_hours=` | Performance Lab for one model and horizon (default: most finished games) |
 | POST | `/api/simulations/run` | Monte Carlo for one NFL game (read-only; preset or iterations, and a seed) |
 
 `POST /api/bets/settle` settles both single bets and parlays.

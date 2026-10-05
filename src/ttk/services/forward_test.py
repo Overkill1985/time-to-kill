@@ -25,7 +25,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from ttk import betting_math as bm
-from ttk.db.models import ForwardPrediction, Game, ModelVersion, Team, utcnow
+from ttk.db.models import ForwardPrediction, ForwardScore, Game, ModelVersion, Team, utcnow
 from ttk.domain import GameStatus, Market, Selection, Sport
 from ttk.services.line_history import ClosingSnapshot, closing_snapshot
 from ttk.services.market import SideMarket, main_lines, side_markets
@@ -276,65 +276,175 @@ _CLV_CACHE: dict[tuple[int, str, float, float], tuple[float | None, float | None
 scored, and a finished game's closing state (as of kickoff) never changes."""
 
 
-def forward_report(session: Session, sport: Sport | None = None) -> list[HorizonScore]:
+@dataclass(frozen=True)
+class ScoredRow:
+    """One forward snapshot on a finished game, scored. The side is the one the
+    model favors against the market (edge >= 0: home)."""
+
+    model: str
+    horizon_hours: int
+    game_id: int
+    sport: str
+    commence_time: datetime
+    home_line: float
+    model_home_cover: float
+    market_home_cover: float
+    cover_margin: float
+    """Home margin plus the home line: > 0 home covered, 0 push."""
+    side: Selection
+    side_odds: float | None
+    """Best bettable price for the side at the snapshot (None: no bettable book)."""
+    price_clv: float | None
+    points_vs_close: float | None
+
+    @property
+    def edge(self) -> float:
+        return self.model_home_cover - self.market_home_cover
+
+    @property
+    def side_probability(self) -> float:
+        """The model's P(side covers | no push)."""
+        p = self.model_home_cover
+        return p if self.side is Selection.HOME else 1 - p
+
+    @property
+    def side_market_probability(self) -> float:
+        q = self.market_home_cover
+        return q if self.side is Selection.HOME else 1 - q
+
+    @property
+    def won(self) -> bool | None:
+        """None for a push."""
+        if self.cover_margin == 0:
+            return None
+        return (self.cover_margin > 0) == (self.side is Selection.HOME)
+
+
+def _side(fp: ForwardPrediction) -> tuple[Selection, float | None]:
+    """The side the model favors against the market, and its best bettable price."""
+    side = Selection.HOME if fp.home_cover_probability >= fp.market_home_cover else Selection.AWAY
+    return side, fp.best_home_odds if side is Selection.HOME else fp.best_away_odds
+
+
+def _clv(
+    session: Session, fp: ForwardPrediction, closes: dict[int, ClosingSnapshot]
+) -> tuple[float | None, float | None]:
+    """(price CLV, points vs close) of the snapshot's side, replayed from the odds
+    history (about a second per game; ``closes`` shares one replay per game)."""
+    side, odds = _side(fp)
+    if odds is None:
+        return None, None
+    line = fp.home_line if side is Selection.HOME else -fp.home_line
+    key = (fp.game_id, str(side), line, odds)
+    if key not in _CLV_CACHE:
+        close = closes.get(fp.game_id)
+        if close is None:
+            close = closes[fp.game_id] = closing_snapshot(session, fp.game_id, Market.SPREAD)
+        _CLV_CACHE[key] = (close.price_clv(side, line, odds), close.points_gained(side, line))
+    return _CLV_CACHE[key]
+
+
+def score_finished(session: Session) -> int:
+    """Store the closing-line value of every forward snapshot whose game is final
+    and not yet scored. Returns the number stored."""
+    pending = session.scalars(
+        select(ForwardPrediction)
+        .join(Game, Game.id == ForwardPrediction.game_id)
+        .outerjoin(ForwardScore, ForwardScore.forward_prediction_id == ForwardPrediction.id)
+        .where(Game.status == GameStatus.FINAL, ForwardScore.forward_prediction_id.is_(None))
+        .order_by(ForwardPrediction.game_id)
+    ).all()
+    closes: dict[int, ClosingSnapshot] = {}
+    for fp in pending:
+        price_clv, points = _clv(session, fp, closes)
+        session.add(
+            ForwardScore(forward_prediction_id=fp.id, price_clv=price_clv, points_vs_close=points)
+        )
+    session.flush()
+    return len(pending)
+
+
+def scored_rows(
+    session: Session, sport: Sport | None = None, *, model: str | None = None
+) -> list[ScoredRow]:
+    """Every forward snapshot on a finished game, oldest kickoff first, with its
+    result and closing-line value (stored by ``score_finished``; replayed, without
+    writing, for any snapshot not stored yet). ``model`` is "name version"."""
     query = (
-        select(ForwardPrediction, Game, ModelVersion)
+        select(ForwardPrediction, Game, ModelVersion, ForwardScore)
         .join(Game, Game.id == ForwardPrediction.game_id)
         .join(ModelVersion, ModelVersion.id == ForwardPrediction.model_version_id)
+        .outerjoin(ForwardScore, ForwardScore.forward_prediction_id == ForwardPrediction.id)
         .where(Game.status == GameStatus.FINAL)
         .order_by(ModelVersion.name, ForwardPrediction.horizon_hours, Game.commence_time)
     )
     if sport is not None:
         query = query.where(Game.sport == sport)
-    groups: dict[tuple[str, int], list[tuple[ForwardPrediction, Game]]] = defaultdict(list)
-    for fp, game, mv in session.execute(query).all():
-        groups[(f"{mv.name} {mv.version}", fp.horizon_hours)].append((fp, game))
+    closes: dict[int, ClosingSnapshot] = {}
     out = []
-    closes: dict[int, ClosingSnapshot] = {}  # one replay per game, shared by every row
+    for fp, game, mv, stored in session.execute(query).all():
+        name = f"{mv.name} {mv.version}"
+        if model is not None and name != model:
+            continue
+        assert game.home_score is not None and game.away_score is not None
+        side, odds = _side(fp)
+        if stored is not None:
+            price_clv, points = stored.price_clv, stored.points_vs_close
+        else:
+            price_clv, points = _clv(session, fp, closes)
+        out.append(
+            ScoredRow(
+                model=name,
+                horizon_hours=fp.horizon_hours,
+                game_id=game.id,
+                sport=game.sport,
+                commence_time=game.commence_time,
+                home_line=fp.home_line,
+                model_home_cover=fp.home_cover_probability,
+                market_home_cover=fp.market_home_cover,
+                cover_margin=game.home_score - game.away_score + fp.home_line,
+                side=side,
+                side_odds=odds,
+                price_clv=price_clv,
+                points_vs_close=points,
+            )
+        )
+    return out
+
+
+def forward_report(session: Session, sport: Sport | None = None) -> list[HorizonScore]:
+    groups: dict[tuple[str, int], list[ScoredRow]] = defaultdict(list)
+    for row in scored_rows(session, sport):
+        groups[(row.model, row.horizon_hours)].append(row)
+    out = []
     for (name, h), rows in groups.items():
         score = HorizonScore(name, h, games=len(rows), bets=[Bets(e) for e in EDGE_THRESHOLDS])
         diffs, model_ll, market_ll = [], [], []
-        for fp, game in rows:
-            assert game.home_score is not None and game.away_score is not None
-            cover_margin = game.home_score - game.away_score + fp.home_line
-            edge = fp.home_cover_probability - fp.market_home_cover
-            side = Selection.HOME if edge >= 0 else Selection.AWAY
-            odds = fp.best_home_odds if side is Selection.HOME else fp.best_away_odds
-            if cover_margin != 0:
-                y = int(cover_margin > 0)
-                a, b = _ll(fp.home_cover_probability, y), _ll(fp.market_home_cover, y)
+        for r in rows:
+            if r.cover_margin != 0:
+                y = int(r.cover_margin > 0)
+                a, b = _ll(r.model_home_cover, y), _ll(r.market_home_cover, y)
                 model_ll.append(a)
                 market_ll.append(b)
                 diffs.append(a - b)
-            if odds is not None:
-                line = fp.home_line if side is Selection.HOME else -fp.home_line
-                key = (game.id, str(side), line, odds)
-                if key not in _CLV_CACHE:
-                    close = closes.get(game.id)
-                    if close is None:
-                        close = closes[game.id] = closing_snapshot(session, game.id, Market.SPREAD)
-                    _CLV_CACHE[key] = (
-                        close.price_clv(side, line, odds),
-                        close.points_gained(side, line),
-                    )
-                price_clv, points = _CLV_CACHE[key]
-                if price_clv is not None:
-                    score.price_clv.append(price_clv)
-                if points is not None:
-                    score.points_vs_close.append(points)
-                won = (cover_margin > 0) == (side is Selection.HOME)
-                for bet in score.bets:
-                    if abs(edge) < bet.min_edge:
-                        continue
-                    bet.bets += 1
-                    if cover_margin == 0:
-                        bet.pushes += 1
-                    elif won:
-                        bet.wins += 1
-                        bet.units += bm.american_to_decimal(odds) - 1.0
-                    else:
-                        bet.losses += 1
-                        bet.units -= 1.0
+            if r.side_odds is None:
+                continue
+            if r.price_clv is not None:
+                score.price_clv.append(r.price_clv)
+            if r.points_vs_close is not None:
+                score.points_vs_close.append(r.points_vs_close)
+            for bet in score.bets:
+                if abs(r.edge) < bet.min_edge:
+                    continue
+                bet.bets += 1
+                if r.won is None:
+                    bet.pushes += 1
+                elif r.won:
+                    bet.wins += 1
+                    bet.units += bm.american_to_decimal(r.side_odds) - 1.0
+                else:
+                    bet.losses += 1
+                    bet.units -= 1.0
         score.decided = len(diffs)
         if diffs:
             n = len(diffs)

@@ -255,6 +255,42 @@
           <tbody></tbody>
         </table>
       </div>
+
+      <h2 class="section">Performance Lab</h2>
+      <div class="toolbar">
+        <label>Model and horizon <select id="lab-pick"></select></label>
+      </div>
+      <p id="lab-note" class="muted"></p>
+      <h3>Betting the model's side, by its probability</h3>
+      <div class="table-wrap">
+        <table id="lab-thresholds">
+          <thead><tr>
+            <th>Model P(side) ≥</th><th class="num">Bets</th><th>Record</th><th class="num">ROI ± SE</th>
+            <th class="num">Hit rate</th><th class="num">Break-even</th><th class="num">CLV</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3>Calibration: P(home covers), pushes left out</h3>
+      <div class="table-wrap">
+        <table id="lab-calibration">
+          <thead><tr>
+            <th>Bin</th><th class="num">Model n</th><th class="num">Model predicted</th><th class="num">Observed</th>
+            <th class="num">Market n</th><th class="num">Market predicted</th><th class="num">Observed</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3>By week: drift against the market</h3>
+      <div class="table-wrap">
+        <table id="lab-weeks">
+          <thead><tr>
+            <th>Week of</th><th class="num">Games</th><th class="num">Log loss vs market</th>
+            <th class="num">Running</th><th class="num">CLV</th><th class="num">Running</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
   </main>
 

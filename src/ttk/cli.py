@@ -398,7 +398,12 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
         freeze_and_register,
         refresh_inputs,
     )
-    from ttk.services.forward_test import forward_counts, forward_report, snapshot
+    from ttk.services.forward_test import (
+        forward_counts,
+        forward_report,
+        score_finished,
+        snapshot,
+    )
 
     factory = make_session_factory(make_engine(settings.database_url))
     if args.command == "forward-freeze":
@@ -420,6 +425,8 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
         return 0
     if args.command == "forward-report":
         with factory() as session:
+            score_finished(session)
+            session.commit()
             for name, total, finished in forward_counts(session):
                 print(f"{name}: {total} snapshots, {finished} on finished games")
             scores = forward_report(session, args.sport)
@@ -485,7 +492,12 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                         emit("models: " + ", ".join(m.version.name for m in models))
                     stats = snapshot(session, models, bettable_books=books)
                     session.commit()
-                emit(f"forward snapshots: {stats.written} written, skipped {dict(stats.skipped)}")
+                    scored = score_finished(session)
+                    session.commit()
+                emit(
+                    f"forward snapshots: {stats.written} written, skipped {dict(stats.skipped)}; "
+                    f"{scored} finished scored"
+                )
                 if loop:
                     _weekly_summary(settings, factory, emit)
                     _alerts(settings, factory, emit)
@@ -851,6 +863,57 @@ def _fmt_pct(value: float | None, n: int | None = None) -> str:
     return f"{value * 100:+.1f}%" + (f" (n={n})" if n is not None else "")
 
 
+def _lab(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.performance_lab import lab_choices, performance_lab
+
+    def num(x: float | None, fmt: str) -> str:
+        return "n/a" if x is None else format(x, fmt)
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        choices = [
+            c
+            for c in lab_choices(session)
+            if (args.model is None or c["model"] == args.model)
+            and (args.horizon is None or c["horizon_hours"] == args.horizon)
+        ]
+        if not choices:
+            print("No finished games with forward snapshots for that model/horizon yet.")
+            return 0
+        for c in choices:
+            lab = performance_lab(session, c["model"], c["horizon_hours"])
+            print(
+                f"\n{lab['model']}, {lab['horizon_hours']} h before kickoff: {lab['games']} games"
+            )
+            print("  model P(side) >=   bets  record     ROI (+/- SE)      hit / break-even  CLV")
+            for t in lab["thresholds"]:
+                flag = "" if t["enough"] else "  (too few)"
+                print(
+                    f"  {t['min_probability']:>16.0%}  {t['bets']:>5}  "
+                    f"{t['wins']}-{t['losses']}-{t['pushes']:<5}  "
+                    f"{num(t['roi'], '+.1%'):>7} (+/- {num(t['roi_se'], '.1%')})  "
+                    f"{num(t['hit_rate'], '.1%')} / {num(t['break_even'], '.1%')}  "
+                    f"{num(t['avg_clv'], '+.2%')}{flag}"
+                )
+            print("  calibration (home cover, pushes out): bin  n  model predicted -> observed")
+            for b in lab["calibration"]["model"]:
+                if b["n"]:
+                    print(
+                        f"    {b['low']:.2f}-{b['high']:.2f}  {b['n']:>4}  "
+                        f"{b['mean_predicted']:.3f} -> {b['observed']:.3f}"
+                    )
+            print("  week of     games  log loss diff (running)   CLV (running)")
+            for w in lab["weeks"]:
+                print(
+                    f"    {w['week']}  {w['games']:>5}  {num(w['diff'], '+.4f')} "
+                    f"({num(w['cumulative_diff'], '+.4f')})   {num(w['avg_clv'], '+.2%')} "
+                    f"({num(w['cumulative_clv'], '+.2%')})"
+                )
+        print(f"\n{lab['note']}")
+        return 0
+
+
 def _bankroll(args: argparse.Namespace, settings: Settings) -> int:
     from dataclasses import replace
 
@@ -1210,6 +1273,11 @@ def main(argv: list[str] | None = None) -> int:
         )
     fwd_report = sub.add_parser("forward-report", help="Score forward snapshots on finished games")
     fwd_report.add_argument("--sport", type=Sport, choices=list(Sport))
+    lab = sub.add_parser(
+        "lab", help="Performance Lab: thresholds, calibration and weekly drift (forward tests)"
+    )
+    lab.add_argument("--model", help='"name version", as `ttk forward-report` prints it')
+    lab.add_argument("--horizon", type=int, choices=[24, 1])
     sub.add_parser(
         "injury-check",
         help="NBA: how often players listed on the injury report actually sat, by status",
@@ -1525,6 +1593,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "bets":
         return _bets(args, settings)
+
+    if args.command == "lab":
+        return _lab(args, settings)
 
     if args.command == "bankroll":
         return _bankroll(args, settings)

@@ -486,6 +486,21 @@ class ForwardPrediction(Base):
     """Latest input used: the newest finished game, odds or injury observation."""
 
 
+class ForwardScore(Base):
+    """Closing-line value of a forward snapshot's side, computed once its game is
+    final: the closing state as of kickoff never changes, so it is stored rather
+    than replayed from the odds history on every report. Append-only."""
+
+    __tablename__ = "forward_scores"
+
+    forward_prediction_id: Mapped[int] = mapped_column(
+        ForeignKey("forward_predictions.id"), primary_key=True
+    )
+    price_clv: Mapped[float | None] = mapped_column(Float)
+    points_vs_close: Mapped[float | None] = mapped_column(Float)
+    scored_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Prediction(Base):
     """Immutable prediction snapshot. A re-run writes a new row."""
 
