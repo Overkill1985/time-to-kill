@@ -26,7 +26,7 @@ ttk collect-odds --loop-minutes 15  # keep polling sports with games this week (
 ttk serve                        # UI at http://127.0.0.1:8800, API docs at /docs
 ttk import-nfl-history           # nflverse games 1999+, results, reported lines (~20 s)
 ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per season)
-ttk card [--date YYYY-MM-DD] [--why]  # the daily card; saves prediction snapshots
+ttk card [--date YYYY-MM-DD] [--why]  # the daily card, all sports; saves prediction snapshots
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game

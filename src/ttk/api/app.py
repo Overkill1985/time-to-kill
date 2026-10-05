@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -89,6 +90,43 @@ def _cached_predictor(app: FastAPI, session: Session) -> NflSpreadPredictor | No
     predictor = NflSpreadPredictor.build(session)
     app.state.predictor = (utcnow(), predictor)
     return predictor
+
+
+CARD_MODELS_TTL = timedelta(hours=6)
+_card_lock = threading.Lock()
+
+
+def _card_models(app: FastAPI) -> tuple[dict[Sport, Any], frozenset[Sport]]:
+    """The non-NFL card models and the sports still loading. Building them loads
+    each sport's history (minutes), so it runs in a background thread, started by
+    the first card request and again every CARD_MODELS_TTL; until a build
+    finishes, those sports are reported as loading. Tests may preset
+    ``app.state.card_models`` to skip the build."""
+    from ttk.services.forward_models import CARD_MODEL_NAMES, build_card_models
+
+    state = app.state
+    cached = getattr(state, "card_models", None)
+    if cached is not None and (cached[0] is None or utcnow() - cached[0] < CARD_MODELS_TTL):
+        return cached[1], frozenset()
+
+    def build() -> None:
+        try:
+            with state.session_factory() as session:
+                models = build_card_models(session)
+            state.card_models = (utcnow(), models)
+        except Exception:  # keep serving the NFL card; retry on a later request
+            import logging
+
+            logging.getLogger(__name__).exception("card model build failed")
+        finally:
+            state.card_models_building = False
+
+    with _card_lock:
+        if not getattr(state, "card_models_building", False):
+            state.card_models_building = True
+            threading.Thread(target=build, name="card-models", daemon=True).start()
+    previous = cached[1] if cached is not None else {}
+    return previous, frozenset() if previous else frozenset(CARD_MODEL_NAMES)
 
 
 def get_session(request: Request) -> Iterator[Session]:
@@ -433,6 +471,9 @@ def _register_routes(app: FastAPI) -> None:
     ) -> dict[str, object]:
         """The daily card. Read-only: predictions are only persisted by `ttk card`."""
         settings: Settings = request.app.state.settings
+        models, loading = _card_models(request.app)
+        for model in models.values():
+            model.refresh(session)  # the injury report as of now
         card = build_card(
             session,
             day or datetime.now(EASTERN).date(),
@@ -440,6 +481,8 @@ def _register_routes(app: FastAPI) -> None:
             predictor=_cached_predictor(request.app, session),
             persist=False,
             bettable_books=settings.bettable_book_keys(),
+            models=models,
+            loading=loading,
         )
         session.rollback()  # nothing from a GET is kept (e.g. a first registry row)
         return {

@@ -214,6 +214,7 @@ def test_card_api_is_read_only(database_url: str, session_factory: sessionmaker[
         g = s.scalars(select(Game)).one()
         fake.starters = {(g.id, g.home_team_id): "H", (g.id, g.away_team_id): "A"}
     app.state.predictor = (datetime.now(UTC), fake)
+    app.state.card_models = (None, {})  # no background model build in tests
     client = TestClient(app, base_url="http://localhost")
     body = client.get("/api/card", params={"date": "2026-09-27"}).json()
     assert body["headline"] == "NO QUALIFIED BETS TODAY"
@@ -221,3 +222,74 @@ def test_card_api_is_read_only(database_url: str, session_factory: sessionmaker[
     with session_factory() as s:
         assert s.scalar(select(func.count()).select_from(Prediction)) == 0
         assert s.scalar(select(func.count()).select_from(ModelVersion)) == 0
+
+
+class FakeCardModel:
+    """A non-NFL card model (the frozen forward-tested ones implement this)."""
+
+    def __init__(self, home_cover: float, sport: str = "CFB", status: str = "DEVELOPMENT"):
+        self.home_cover = home_cover
+        self.sport = sport
+        self.status = status
+        self.row: ModelVersion | None = None
+
+    @property
+    def version(self) -> ModelVersion:
+        assert self.row is not None
+        return self.row
+
+    def view(self, game, home_line, market, now):  # type: ignore[no-untyped-def]
+        from ttk.services.daily_card import CardView
+
+        return CardView(self.home_cover, 0.0, -home_line + 2.0, {"x": 1.0}, 6, 6)
+
+
+def register_fake(sf: sessionmaker[Session], model: FakeCardModel) -> None:
+    with sf() as s:
+        row = ModelVersion(
+            name="fake-cfb",
+            version="1",
+            sport=model.sport,
+            market="SPREAD",
+            algorithm="fake",
+            status=model.status,
+        )
+        s.add(row)
+        s.commit()
+        model.row = row
+
+
+def test_card_prices_other_sports_with_card_models(
+    session_factory: sessionmaker[Session],
+) -> None:
+    seed(session_factory, sport=Sport.CFB, sid="c1")
+    seed(session_factory, sport=Sport.NBA, sid="n1")
+    model = FakeCardModel(0.62)
+    register_fake(session_factory, model)
+    with session_factory() as s:
+        card = build_card(
+            s,
+            DAY,
+            RULES,
+            predictor=None,
+            now=NOW,
+            models={Sport.CFB: model},
+            loading=frozenset({Sport.NBA}),
+        )
+        cfb = [e for e in card.entries if e.sport is Sport.CFB]
+        assert len(cfb) == 2  # both sides of the spread
+        home = next(e for e in cfb if e.selection is Selection.HOME)
+        assert home.model_probability == pytest.approx(0.62)
+        assert "DEVELOPMENT" in home.model_version
+        assert all(e.classification is not BetClassification.QUALIFIED for e in cfb)
+        assert [u.reason for u in card.unmodeled] == ["model still loading"]  # the NBA game
+        stored = s.scalars(select(Prediction)).all()
+        assert len(stored) == 2 and stored[0].features is not None
+        assert stored[0].features["x"] == 1.0 and "market_no_vig" in stored[0].features
+
+
+def test_card_without_a_model_says_so(session_factory: sessionmaker[Session]) -> None:
+    seed(session_factory, sport=Sport.NCAAB, sid="b1")
+    with session_factory() as s:
+        card = build_card(s, DAY, RULES, predictor=None, now=NOW, persist=False)
+    assert [u.reason for u in card.unmodeled] == ["no validated model for this sport yet"]

@@ -682,6 +682,8 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
     eastern = ZoneInfo("America/New_York")
     day = args.date or datetime.now(eastern).date()
     factory = make_session_factory(make_engine(settings.database_url))
+    from ttk.services.forward_models import build_card_models
+
     with factory() as session:
         predictor = NflSpreadPredictor.build(session)
         card = build_card(
@@ -691,6 +693,7 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
             predictor=predictor,
             persist=not args.no_persist,
             bettable_books=settings.bettable_book_keys(),
+            models=build_card_models(session),  # other sports' frozen models (slow)
         )
 
     print(f"TIME-TO-KILL  {day:%A %B %d, %Y}".upper())

@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -27,6 +27,7 @@ from ttk.research.frozen import FrozenSpreadModel, freeze, verify
 from ttk.research.nba_injuries import InjuryTimeline, Report, SitRates, expected_missing
 from ttk.research.nba_model import NBA
 from ttk.research.ncaab_model import NCAAB
+from ttk.services.daily_card import CardView
 from ttk.services.forward_test import ForwardModel, ModelView, register
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
 
@@ -260,3 +261,75 @@ def build_forward_models(session: Session, sports: set[Sport] | None = None) -> 
             injuries.refresh(session)
         models.extend(_frozen_model(row, data, as_of, injuries) for row in rows)
     return models
+
+
+CARD_MODEL_NAMES: dict[Sport, str] = {
+    # One market-anchored model per sport on the daily card (as for the NFL).
+    Sport.CFB: "cfb-spread-anchored-inseason",
+    Sport.NBA: "nba-spread-anchored-injury",
+    Sport.NCAAB: "ncaab-spread-anchored-eff",
+}
+
+
+@dataclass
+class FrozenCardModel:
+    """A frozen forward-tested model as a daily-card model (services/daily_card)."""
+
+    model: ForwardModel
+    season_games: dict[tuple[int, int], int]
+    """(game_id, team_id) -> the team's finished games earlier that season."""
+
+    @property
+    def version(self) -> ModelVersion:
+        return self.model.version
+
+    def refresh(self, session: Session) -> None:
+        if self.model.refresh is not None:
+            self.model.refresh(session)
+
+    def view(self, game: Game, home_line: float, market: float, now: datetime) -> CardView | None:
+        horizon = 1 if game.commence_time - now <= timedelta(hours=1) else 24
+        v = self.model.view(game.id, home_line, market, now, horizon)
+        if v is None or v.expected_margin is None:
+            return None
+        return CardView(
+            v.home_cover,
+            v.push,
+            v.expected_margin,
+            v.features,
+            self.season_games.get((game.id, game.home_team_id), 0),
+            self.season_games.get((game.id, game.away_team_id), 0),
+        )
+
+
+def _season_games(data: SportData) -> dict[tuple[int, int], int]:
+    played: dict[tuple[int, int], int] = {}
+    out: dict[tuple[int, int], int] = {}
+    for g in sorted(data.games, key=lambda g: (g.commence_time, g.game_id)):
+        for team in (g.home_id, g.away_id):
+            out[(g.game_id, team)] = played.get((g.season, team), 0)
+        if g.played:
+            for team in (g.home_id, g.away_id):
+                played[(g.season, team)] = played.get((g.season, team), 0) + 1
+    return out
+
+
+def build_card_models(session: Session) -> dict[Sport, FrozenCardModel]:
+    """The non-NFL card models (heavy: loads each sport's history)."""
+    out: dict[Sport, FrozenCardModel] = {}
+    for sport, name in CARD_MODEL_NAMES.items():
+        row = session.scalar(
+            select(ModelVersion)
+            .where(ModelVersion.name == name, ModelVersion.artifact.is_not(None))
+            .order_by(ModelVersion.id.desc())
+        )
+        if row is None:
+            continue
+        data = load_sport(session, CONFIGS[sport])
+        injuries = None
+        if data.sit_rates is not None:
+            injuries = InjuryState(sport, data.sit_rates, data.rotations)
+            injuries.refresh(session)
+        model = _frozen_model(row, data, _latest_final(session, sport), injuries)
+        out[sport] = FrozenCardModel(model, _season_games(data))
+    return out

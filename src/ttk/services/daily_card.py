@@ -5,8 +5,10 @@ believe, and whether anything qualifies - with the Why-Not for everything else.
   to the day they are played.
 - Only games that have not started are evaluated; a started game's pregame
   prices are gone.
-- Where no validated model exists (every market except NFL spreads today), the
-  game is listed as unmodeled rather than given an invented probability.
+- Spreads are priced by the NFL model and, for the other sports, by the frozen
+  forward-tested models (``CardModel``); all are DEVELOPMENT, so nothing qualifies
+  until a model earns it. A game with no model (or whose model is still loading)
+  is listed as unmodeled rather than given an invented probability.
 - Every evaluated side is written as an immutable prediction snapshot.
 - Sorting uses classification then EV. No composite score is shown.
 """
@@ -14,15 +16,17 @@ believe, and whether anything qualifies - with the Why-Not for everything else.
 from __future__ import annotations
 
 import statistics
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
-from ttk.db.models import Game, GameSourceId, Prediction, Team, utcnow
+from ttk.db.models import Game, GameSourceId, ModelVersion, Prediction, Team, utcnow
 from ttk.domain import (
     BetClassification,
     Market,
@@ -44,6 +48,59 @@ _RANK = {
     BetClassification.PASS: 2,
     BetClassification.NO_BET: 3,
 }
+
+
+@dataclass(frozen=True)
+class CardView:
+    """A model's view of one game's main spread, plus what data quality needs."""
+
+    home_cover: float
+    """P(home covers | no push) at the line."""
+    push: float
+    expected_margin: float
+    features: dict[str, float]
+    home_team_games: int
+    away_team_games: int
+    """Games of history behind each side's rating this season."""
+    home_starter_known: bool = True
+    away_starter_known: bool = True
+    home_starter_seen: bool = True
+    away_starter_seen: bool = True
+    """Starting-QB checks (NFL); True where they don't apply."""
+
+
+class CardModel(Protocol):
+    @property
+    def version(self) -> ModelVersion: ...
+
+    def view(
+        self, game: Game, home_line: float, market_home_cover: float, now: datetime
+    ) -> CardView | None: ...
+
+
+def _nfl_view(
+    predictor: NflSpreadPredictor, game: Game, home_line: float, market: float
+) -> CardView | None:
+    v = predictor.spread(game.id, home_line, market)
+    if v is None:
+        return None
+    f = v.features
+    return CardView(
+        v.home_cover,
+        v.push,
+        v.expected_margin,
+        {
+            "elo_diff": v.elo_diff,
+            "epa_net_diff_pts": f.epa_net_diff_pts,
+            "qb_change_diff_pts": f.qb_change_diff_pts,
+        },
+        f.home_team_games,
+        f.away_team_games,
+        (game.id, game.home_team_id) in predictor.starters,
+        (game.id, game.away_team_id) in predictor.starters,
+        f.home_qb_history > 0,
+        f.away_qb_history > 0,
+    )
 
 
 def card_window(day: date) -> tuple[datetime, datetime]:
@@ -157,9 +214,14 @@ def build_card(
     now: datetime | None = None,
     persist: bool = True,
     bettable_books: frozenset[str] | None = None,
+    models: Mapping[Sport, CardModel] | None = None,
+    loading: frozenset[Sport] = frozenset(),
 ) -> DailyCard:
     """``bettable_books``: book keys whose prices can be bet (None = all). The
-    market probability is the all-book consensus either way."""
+    market probability is the all-book consensus either way. ``predictor`` prices
+    NFL spreads; ``models`` the other sports; ``loading``: sports whose models are
+    still being built (listed as such)."""
+    models = models or {}
     now = now or utcnow()
     start, end = card_window(day)
     card = DailyCard(day=day, generated_at=now, bettable_books=bettable_books)
@@ -168,7 +230,7 @@ def build_card(
         .where(Game.commence_time >= start, Game.commence_time < end)
         .order_by(Game.commence_time)
     ).all()
-    model_version = predictor.ensure_registered(session) if predictor else None
+    nfl_version = predictor.ensure_registered(session) if predictor else None
 
     for game in games:
         sport = Sport(game.sport)
@@ -187,14 +249,21 @@ def build_card(
             (m for m in mains if m.market is Market.SPREAD and m.selection is Selection.HOME),
             None,
         )
-        if sport is not Sport.NFL or predictor is None or model_version is None:
+        has_model = (
+            predictor is not None and nfl_version is not None
+            if sport is Sport.NFL
+            else sport in models
+        )
+        if not has_model:
             card.unmodeled.append(
                 UnmodeledGame(
                     sport,
                     game.id,
                     matchup,
                     game.commence_time,
-                    "no validated model for this sport yet",
+                    "model still loading"
+                    if sport in loading
+                    else "no validated model for this sport yet",
                 )
             )
             continue
@@ -206,9 +275,14 @@ def build_card(
             )
             continue
         home_line = home_main.line
-        view = predictor.spread(
-            game.id, home_line, home_main.consensus.consensus_no_vig_probability
-        )
+        market_home = home_main.consensus.consensus_no_vig_probability
+        if sport is Sport.NFL:
+            assert predictor is not None and nfl_version is not None
+            view = _nfl_view(predictor, game, home_line, market_home)
+            model_version = nfl_version
+        else:
+            view = models[sport].view(game, home_line, market_home, now)
+            model_version = models[sport].version
         if view is None:
             card.unmodeled.append(
                 UnmodeledGame(
@@ -226,7 +300,6 @@ def build_card(
             is not None
         )
         opening, current = _median_lines(session, game.id)
-        f = view.features
         disagreement = view.expected_margin + home_line
 
         sides = (
@@ -256,12 +329,12 @@ def build_card(
                     odds_age=odds_age,
                     books=c.books_reporting,
                     schedule_linked=linked,
-                    home_team_games=f.home_team_games,
-                    away_team_games=f.away_team_games,
-                    home_starter_known=(game.id, game.home_team_id) in predictor.starters,
-                    away_starter_known=(game.id, game.away_team_id) in predictor.starters,
-                    home_starter_seen=f.home_qb_history > 0,
-                    away_starter_seen=f.away_qb_history > 0,
+                    home_team_games=view.home_team_games,
+                    away_team_games=view.away_team_games,
+                    home_starter_known=view.home_starter_known,
+                    away_starter_known=view.away_starter_known,
+                    home_starter_seen=view.home_starter_seen,
+                    away_starter_seen=view.away_starter_seen,
                     disagreement_points=disagreement,
                 ),
                 max_odds_age=rules.max_odds_age,
@@ -294,9 +367,7 @@ def build_card(
                         uncertainty=assessment.uncertainty,
                         data_quality=assessment.data_quality,
                         features={
-                            "elo_diff": view.elo_diff,
-                            "epa_net_diff_pts": f.epa_net_diff_pts,
-                            "qb_change_diff_pts": f.qb_change_diff_pts,
+                            **view.features,
                             "expected_margin": view.expected_margin,
                             "market_no_vig": c.consensus_no_vig_probability,
                         },

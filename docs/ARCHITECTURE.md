@@ -69,7 +69,7 @@ src/ttk/
     line_history.py    Opening/previous/current/closing per book; CLV at the bet's own line
     data_quality.py    Rule-based data quality and uncertainty, each with reasons
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
-    daily_card.py      The daily card: evaluate, qualify, explain, snapshot predictions
+    daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game NFL), EV, save, settle
     simulation_service.py  One-game simulation summary: distributions, sensitivity, max acceptable line
