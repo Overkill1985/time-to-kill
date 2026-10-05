@@ -273,6 +273,24 @@ def _db_paths(settings: Settings) -> tuple[Path, Path]:
     return db_path, db_path.parent
 
 
+def _alerts(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
+    """Health alerts on every pass of the long-running loops. Never raises."""
+    from ttk.services.alerts import run_alerts, windows_notify
+
+    try:
+        _, data_dir = _db_paths(settings)
+        with factory() as session:
+            sent = run_alerts(
+                session,
+                data_dir=data_dir,
+                notify=windows_notify if settings.alerts_notify else None,
+            )
+        for line in sent:
+            emit(line)
+    except Exception as exc:  # alerting must not take the collector down
+        emit(f"alert check failed: {type(exc).__name__}: {exc}")
+
+
 def _weekly_summary(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
     """Write this week's health summary once, after 8 AM local on Monday (or the
     first pass after that, if the computer was off)."""
@@ -395,6 +413,7 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                 emit(f"forward snapshots: {stats.written} written, skipped {dict(stats.skipped)}")
                 if loop:
                     _weekly_summary(settings, factory, emit)
+                    _alerts(settings, factory, emit)
             except Exception:
                 if not loop:
                     raise
@@ -644,6 +663,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         for sport, why in result.skipped.items():
             emit(f"{sport}: skipped ({why})")
         emit(f"quota remaining: {remaining}")
+        _alerts(settings, factory, emit)
         return [r.status for r in result.runs]
 
     try:
@@ -998,6 +1018,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    alerts_p = sub.add_parser("alerts", help="Run the health alert checks once and print them")
+    alerts_p.add_argument(
+        "--test-notify", action="store_true", help="Also send a test Windows notification"
+    )
     summ = sub.add_parser(
         "summary", help="Health summary: storage, collection gaps, quotas, forward tests"
     )
@@ -1188,6 +1212,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("forward-freeze", "forward-snapshot", "forward-run", "forward-report"):
         return _forward(args, settings)
+
+    if args.command == "alerts":
+        from ttk.db.models import utcnow
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.services.alerts import check_health, windows_notify
+
+        _, data_dir = _db_paths(settings)
+        factory = make_session_factory(make_engine(settings.database_url))
+        with factory() as session:
+            found = check_health(session, now=utcnow(), data_dir=data_dir)
+        for alert in found:
+            print(f"ALERT [{alert.key}] {alert.message}")
+        if not found:
+            print("No alerts: collection and forward tests look healthy.")
+        if args.test_notify:
+            windows_notify("Time-to-Kill", "Test notification: alerts will look like this.")
+            print("Test notification sent.")
+        return 0
 
     if args.command == "summary":
         from ttk.db.models import utcnow

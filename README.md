@@ -39,6 +39,7 @@ ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated mode
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
 ttk summary [--days 7] [--write FILE]  # health: storage, collection gaps, quotas, forward tests
+ttk alerts [--test-notify]       # run the health alert checks once (and send a test notification)
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)
 ttk import-cfbd --from-season 2013 --to-season 2026  # college football preseason facts (TTK_CFBD_API_KEY)
 ttk import-cfbd-games --from-season 2013 --to-season 2026  # per-game team efficiency (1 call a season)
@@ -78,6 +79,10 @@ Unregister-ScheduledTask -TaskName "Time-to-Kill odds collector"        # remove
 ```
 
 After pulling new code, restart the task so it loads the update.
+
+### Health alerts
+
+Both tasks run the alert checks on every pass, so each watches the other: no successful odds poll for 45 minutes, the last 3 odds polls failed, a run left RUNNING for 6 hours (its process died), PropLine requests below 100, or the forward-test runner silent for an hour. Each problem is shown once as a Windows notification and written to `data/logs/alerts.log`, re-sent every 6 hours while it lasts, and reported once when it clears. Set `TTK_ALERTS_NOTIFY=false` to keep only the log. After the computer wakes from sleep, a short "no odds poll" alert and its resolution are expected.
 
 ### Forward tests (Windows)
 

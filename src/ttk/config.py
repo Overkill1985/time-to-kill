@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     propline_api_key: SecretStr | None = None
     cfbd_api_key: SecretStr | None = None
     """CollegeFootballData.com (college football preseason data); bearer token."""
+    alerts_notify: bool = True
+    """Show health alerts as Windows notifications (they are always logged)."""
     unit_size: float = 1.0
     """Currency per unit for performance reports (1.0 = units are currency)."""
     bettable_books: str | None = None
