@@ -29,6 +29,8 @@ Classification:
 
 Every result carries the full check list (actual vs required), which is the Why-Not output.
 
+**Stake sizing:** the app recommends a stake (fractional Kelly, capped by the bankroll limits) only for a QUALIFIED bet. For anything else the recommended stake is 0, however large the model's edge looks. Bankroll limits apply to every recorded wager; breaking one needs a stated reason, which is stored with the wager.
+
 **Pushes:** the model probability is P(win | no push), which is on the same footing as a no-vig market price. The probability and edge thresholds compare those two. EV uses win = p × (1 − P(push)), and a push returns the stake.
 
 **Daily card:**

@@ -38,6 +38,7 @@ from ttk.db.models import Bet, Game, Parlay, Sportsbook, Team, utcnow
 from ttk.domain import BetResult, CorrelationRisk, GameStatus, Market, Selection, Sport
 from ttk.models.simulation import PRESETS, GameSimulation
 from ttk.models.simulation import Leg as SimLeg
+from ttk.services.bankroll import LimitError, enforce_limits
 from ttk.services.bets import VALID_SIDES, grade
 from ttk.services.line_history import (
     OPPOSITE,
@@ -555,6 +556,7 @@ def save_parlay(
     placed_at: datetime | None = None,
     notes: str | None = None,
     predictor: SpreadModel | None = None,
+    limit_override: str | None = None,
 ) -> Parlay:
     """Record a placed parlay with its legs' beliefs as of ``placed_at``.
     ``american_odds`` is the price actually taken (default: product of legs)."""
@@ -569,6 +571,10 @@ def save_parlay(
         raise ParlayError(str(exc)) from None
     book = session.scalar(select(Sportsbook).where(Sportsbook.key == analysis.sportsbook))
     assert book is not None
+    try:
+        bankroll_at_bet, override = enforce_limits(session, stake, placed_at, limit_override)
+    except LimitError as exc:
+        raise ParlayError(str(exc)) from None
     parlay = Parlay(
         placed_at=placed_at,
         sportsbook_id=book.id,
@@ -580,6 +586,8 @@ def save_parlay(
         correlation_risk=analysis.correlation_risk,
         result=BetResult.PENDING,
         notes=notes,
+        bankroll_at_bet=bankroll_at_bet,
+        limit_override=override,
     )
     session.add(parlay)
     session.flush()

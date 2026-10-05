@@ -9,7 +9,8 @@ Recording captures beliefs as of ``placed_at``:
   priced that number - never interpolated);
 - edge and EV at the bet's own price.
 A bet placed at or after kickoff is rejected: live betting is not modeled, and
-QB-starter features assume a pregame bet (docs/MODEL-GOVERNANCE.md).
+QB-starter features assume a pregame bet (docs/MODEL-GOVERNANCE.md). A bet over
+a bankroll limit is rejected unless it carries a reason (services/bankroll).
 
 Settlement grades from final scores (status FINAL), voids canceled games,
 leaves postponed ones pending, and records CLV against the close
@@ -28,6 +29,7 @@ from sqlalchemy.orm import Session
 from ttk import betting_math as bm
 from ttk.db.models import Bet, Game, Prediction, Sportsbook, Team, utcnow
 from ttk.domain import BetResult, GameStatus, Market, Selection, Sport
+from ttk.services.bankroll import LimitError, enforce_limits
 from ttk.services.line_history import closing_line_value, consensus_at_line
 
 VALID_SIDES = {
@@ -52,6 +54,8 @@ class NewBet:
     stake: float
     placed_at: datetime | None = None
     notes: str | None = None
+    limit_override: str | None = None
+    """Reason to record the bet although it breaks a bankroll limit."""
 
 
 def _describe(
@@ -91,6 +95,12 @@ def record_bet(session: Session, new: NewBet, *, now: datetime | None = None) ->
     book = session.scalar(select(Sportsbook).where(Sportsbook.key == new.sportsbook.lower()))
     if book is None:
         raise BetError(f"Unknown sportsbook {new.sportsbook!r}")
+    try:
+        bankroll_at_bet, override = enforce_limits(
+            session, new.stake, placed_at, new.limit_override
+        )
+    except LimitError as exc:
+        raise BetError(str(exc)) from None
 
     market_view = consensus_at_line(session, game.id, new.market, new.selection, line, placed_at)
     prediction = session.scalar(
@@ -135,6 +145,8 @@ def record_bet(session: Session, new: NewBet, *, now: datetime | None = None) ->
         stake=new.stake,
         result=BetResult.PENDING,
         notes=new.notes,
+        bankroll_at_bet=bankroll_at_bet,
+        limit_override=override,
     )
     session.add(bet)
     session.flush()

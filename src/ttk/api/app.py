@@ -19,10 +19,29 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
-from ttk.db.models import Bet, Game, IngestionRun, Parlay, Sportsbook, Team, utcnow
+from ttk.db.models import (
+    BankrollEntry,
+    Bet,
+    Game,
+    IngestionRun,
+    Parlay,
+    Sportsbook,
+    Team,
+    utcnow,
+)
 from ttk.db.session import make_engine, make_session_factory
-from ttk.domain import BetResult, Market, Selection, Sport
+from ttk.domain import BetClassification, BetResult, Market, Selection, Sport
 from ttk.models.simulation import PRESETS
+from ttk.services.bankroll import (
+    BankrollState,
+    EntryKind,
+    Policy,
+    add_entry,
+    bankroll_state,
+    max_allowed,
+    save_policy,
+    stake_guidance,
+)
 from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
 from ttk.services.daily_card import build_card, card_window
 from ttk.services.forward_test import forward_dashboard
@@ -177,6 +196,8 @@ class BetIn(BaseModel):
     stake: float = Field(gt=0)
     placed_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    limit_override: str | None = Field(default=None, max_length=500)
+    """Reason to record the bet although it breaks a bankroll limit."""
 
 
 class BetPatch(BaseModel):
@@ -210,6 +231,8 @@ class BetOut(BaseModel):
     closing_points_gained: float | None
     settled_at: datetime | None
     notes: str | None
+    bankroll_at_bet: float | None
+    limit_override: str | None
 
 
 def _bet_out(session: Session, bet: Bet) -> BetOut:
@@ -240,6 +263,8 @@ def _bet_out(session: Session, bet: Bet) -> BetOut:
         closing_points_gained=bet.closing_points_gained,
         settled_at=bet.settled_at,
         notes=bet.notes,
+        bankroll_at_bet=bet.bankroll_at_bet,
+        limit_override=bet.limit_override,
     )
 
 
@@ -262,6 +287,37 @@ class ParlaySave(ParlayIn):
     """The price actually taken; default is the product of the legs."""
     placed_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    limit_override: str | None = Field(default=None, max_length=500)
+
+
+class BankrollEntryIn(BaseModel):
+    kind: EntryKind
+    amount: float
+    """Positive for deposits and withdrawals; signed for an adjustment."""
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PolicyIn(BaseModel):
+    kelly_multiplier: float = Field(gt=0, le=1)
+    max_stake_fraction: float = Field(gt=0, le=1)
+    max_daily_fraction: float = Field(gt=0, le=1)
+    max_open_fraction: float = Field(gt=0, le=1)
+    stop_drawdown_fraction: float = Field(gt=0, lt=1)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class GuidanceIn(BaseModel):
+    model_probability: float = Field(ge=0, le=1)
+    """P(win | no push)."""
+    american_odds: float
+    push_probability: float = Field(default=0.0, ge=0, lt=1)
+    qualified: bool = False
+
+
+def _bankroll_out(state: BankrollState) -> dict[str, object]:
+    out = asdict(state)
+    out["max_allowed"] = max_allowed(state)
+    return out
 
 
 def _legs(body: ParlayIn) -> list[LegInput]:
@@ -485,13 +541,29 @@ def _register_routes(app: FastAPI) -> None:
             loading=loading,
         )
         session.rollback()  # nothing from a GET is kept (e.g. a first registry row)
+        bankroll = bankroll_state(session)
         return {
             "date": card.day,
             "generated_at": card.generated_at,
             "headline": card.headline,
             "bettable_books": sorted(card.bettable_books) if card.bettable_books else None,
             "by_sport": {s: asdict(v) for s, v in card.by_sport.items()},
-            "entries": [asdict(e) for e in card.entries],
+            "bankroll_configured": bankroll.configured,
+            "entries": [
+                {
+                    **asdict(e),
+                    "stake": asdict(
+                        stake_guidance(
+                            bankroll,
+                            e.model_probability,
+                            bm.american_to_decimal(e.american_odds),
+                            push_probability=e.push_probability,
+                            qualified=e.classification is BetClassification.QUALIFIED,
+                        )
+                    ),
+                }
+                for e in card.entries
+            ],
             "unmodeled": [asdict(u) for u in card.unmodeled],
             "unbettable": card.unbettable,
         }
@@ -551,6 +623,52 @@ def _register_routes(app: FastAPI) -> None:
             "parlays": [_parlay_out(session, p) for p in parlays],
         }
 
+    @app.get("/api/bankroll")
+    def get_bankroll(session: SessionDep) -> dict[str, object]:
+        entries = session.scalars(select(BankrollEntry).order_by(BankrollEntry.at.desc())).all()
+        return {
+            **_bankroll_out(bankroll_state(session)),
+            "entries": [
+                {"id": e.id, "at": e.at, "kind": e.kind, "amount": e.amount, "note": e.note}
+                for e in entries
+            ],
+        }
+
+    @app.post("/api/bankroll/entries", status_code=201)
+    def create_entry(body: BankrollEntryIn, session: SessionDep) -> dict[str, object]:
+        try:
+            add_entry(session, body.kind, body.amount, note=body.note)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        session.commit()
+        return _bankroll_out(bankroll_state(session))
+
+    @app.put("/api/bankroll/policy")
+    def put_policy(body: PolicyIn, session: SessionDep) -> dict[str, object]:
+        policy = Policy(**body.model_dump(exclude={"note"}))
+        try:
+            save_policy(session, policy, note=body.note)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        session.commit()
+        return _bankroll_out(bankroll_state(session))
+
+    @app.post("/api/bankroll/guidance")
+    def guidance(body: GuidanceIn, session: SessionDep) -> dict[str, object]:
+        """Kelly stake within the limits; 0 unless the opportunity is QUALIFIED."""
+        try:
+            decimal_odds = bm.american_to_decimal(body.american_odds)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        g = stake_guidance(
+            bankroll_state(session),
+            body.model_probability,
+            decimal_odds,
+            push_probability=body.push_probability,
+            qualified=body.qualified,
+        )
+        return asdict(g)
+
     @app.get("/api/performance")
     def get_performance(
         session: SessionDep,
@@ -608,6 +726,7 @@ def _register_routes(app: FastAPI) -> None:
                 placed_at=body.placed_at,
                 notes=body.notes,
                 predictor=_cached_predictor(request.app, session),
+                limit_override=body.limit_override,
             )
         except ParlayError as exc:
             session.rollback()

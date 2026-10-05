@@ -72,13 +72,14 @@ src/ttk/
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
+    bankroll.py        Balance from append-only deposits + settled P/L, staking limits, Kelly guidance
     parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game NFL), EV, save, settle
     simulation_service.py  One-game simulation summary: distributions, sensitivity, max acceptable line
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | injury-check | summary | alerts | score-test | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | injury-check | summary | alerts | score-test | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
@@ -138,6 +139,10 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | POST | `/api/bets` | Record a bet (rejected at or after kickoff) |
 | PATCH | `/api/bets/{id}` | Notes, or void a pending bet |
 | POST | `/api/bets/settle` | Grade bets on finished games and record CLV |
+| GET | `/api/bankroll` | Balance, peak, drawdown, open and today's stakes, limits, largest stake allowed now, entries |
+| POST | `/api/bankroll/entries` | Deposit, withdrawal or signed adjustment (append-only) |
+| PUT | `/api/bankroll/policy` | Save new staking limits (a new row; older rows are history) |
+| POST | `/api/bankroll/guidance` | Kelly stake within the limits; 0 unless QUALIFIED |
 | GET | `/api/performance?sport=&market=` | Record, ROI, units, CLV, edge, EV and drawdown, each with its sample size, plus a parlay summary |
 | GET | `/api/games?date=&sport=` | Upcoming games (the date uses the card's US Eastern day) |
 | GET | `/api/games/{id}/offers?book=` | Every line a book quotes for a game, with its main line flagged |
@@ -148,6 +153,11 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | POST | `/api/simulations/run` | Monte Carlo for one NFL game (read-only; preset or iterations, and a seed) |
 
 `POST /api/bets/settle` settles both single bets and parlays.
+
+Once a deposit is recorded, `POST /api/bets` and `POST /api/parlays` refuse a stake over a bankroll
+limit (per wager, per Eastern day, open exposure, uncommitted balance, or the stop below the peak)
+with 422 unless `limit_override` gives a reason; the broken limits and the reason are kept on the
+wager with `bankroll_at_bet`. Card entries carry `stake` guidance, which is 0 unless QUALIFIED.
 
 ## UI
 

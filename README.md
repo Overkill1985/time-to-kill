@@ -29,6 +29,8 @@ ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per seaso
 ttk card [--date YYYY-MM-DD] [--why]  # the daily card, all sports; saves prediction snapshots
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
+ttk bankroll deposit 1000        # turns on staking limits; also withdraw, adjust (signed)
+ttk bankroll policy --max-stake 0.02 --stop 0.2   # limits as fractions; `ttk bankroll` shows them
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game
 ttk backtest-nfl-elo             # tune on train, report validation (--final-test: the test seasons, once)
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)

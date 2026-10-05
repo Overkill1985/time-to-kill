@@ -536,6 +536,8 @@ class Parlay(Base):
     profit_loss: Mapped[float | None] = mapped_column(Float)
     settled_at: Mapped[datetime | None]
     notes: Mapped[str | None] = mapped_column(Text)
+    bankroll_at_bet: Mapped[float | None] = mapped_column(Float)
+    limit_override: Mapped[str | None] = mapped_column(Text)
 
 
 class Bet(Base):
@@ -575,3 +577,37 @@ class Bet(Base):
     model_push_probability: Mapped[float | None] = mapped_column(Float)
     settled_at: Mapped[datetime | None]
     notes: Mapped[str | None] = mapped_column(Text)
+    bankroll_at_bet: Mapped[float | None] = mapped_column(Float)
+    """Bankroll when the bet was placed (None if no bankroll was set up)."""
+    limit_override: Mapped[str | None] = mapped_column(Text)
+    """The breached bankroll limits and the user's reason, when placed over a limit."""
+
+
+class BankrollEntry(Base):
+    """A deposit to or withdrawal from the betting bankroll. Append-only: a mistake
+    is corrected by an ADJUSTMENT entry, never by editing history."""
+
+    __tablename__ = "bankroll_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(default=utcnow)
+    kind: Mapped[str] = mapped_column(String(12))
+    amount: Mapped[float] = mapped_column(Float)
+    """Signed: deposits positive, withdrawals negative."""
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class BankrollPolicy(Base):
+    """Staking limits. Append-only: the newest row is in force, older rows are the
+    history of what the limits were when each bet was placed."""
+
+    __tablename__ = "bankroll_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    kelly_multiplier: Mapped[float] = mapped_column(Float)
+    max_stake_fraction: Mapped[float] = mapped_column(Float)
+    max_daily_fraction: Mapped[float] = mapped_column(Float)
+    max_open_fraction: Mapped[float] = mapped_column(Float)
+    stop_drawdown_fraction: Mapped[float] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(Text)

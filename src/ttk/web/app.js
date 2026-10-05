@@ -57,7 +57,7 @@ function showTab(name) {
   for (const panel of document.querySelectorAll(".tab")) {
     panel.hidden = panel.id !== `tab-${name}`;
   }
-  if (name === "bets") { loadBets(); loadParlays(); }
+  if (name === "bets") { loadBankroll(); loadBets(); loadParlays(); }
   if (name === "performance") loadPerformance();
   if (name === "forward") loadForward();
   if (name === "parlay") { renderSlip(); loadPickGames(); }
@@ -224,6 +224,8 @@ function prefillBet(entry) {
   form.sportsbook.value = entry.sportsbook;
   form.placed_at.value = "";
   form.notes.value = "";
+  form.limit_override.value = "";
+  form.stake.value = entry.stake && entry.stake.recommended > 0 ? entry.stake.recommended.toFixed(2) : "";
   $("#bet-form-status").textContent = `Prefilled from the card: ${entry.bet}. Check the odds you actually got.`;
   $("#bet-form-status").className = "muted";
   showTab("bets");
@@ -244,6 +246,7 @@ $("#bet-form").addEventListener("submit", async (event) => {
     stake: Number(form.stake.value),
     placed_at: form.placed_at.value ? new Date(form.placed_at.value).toISOString() : null,
     notes: form.notes.value || null,
+    limit_override: form.limit_override.value || null,
   };
   try {
     const bet = await api("/api/bets", { method: "POST", body: JSON.stringify(body) });
@@ -251,8 +254,68 @@ $("#bet-form").addEventListener("submit", async (event) => {
     status.className = "ok-msg";
     form.reset();
     loadBets();
+    loadBankroll();
   } catch (error) {
     status.textContent = `Not recorded: ${error.message}`;
+    status.className = "err-msg";
+  }
+});
+
+// ------------------------------------------------------------------ bankroll
+
+const POLICY_PERCENT = ["max_stake_fraction", "max_daily_fraction", "max_open_fraction", "stop_drawdown_fraction"];
+
+async function loadBankroll() {
+  const b = await api("/api/bankroll");
+  const p = b.policy;
+  $("#bankroll-note").textContent = b.configured
+    ? `Limits${p.saved_at ? "" : " (defaults)"}: ${p.kelly_multiplier} Kelly; max stake ${pct(p.max_stake_fraction)}, ` +
+      `per day ${pct(p.max_daily_fraction, 0)}, open ${pct(p.max_open_fraction, 0)}; ` +
+      `stop at ${pct(p.stop_drawdown_fraction, 0)} below peak. A bet over a limit needs a reason.`
+    : "No bankroll yet: add a deposit to turn on staking limits.";
+  $("#bankroll-tiles").replaceChildren(...(b.configured ? [
+    tile("Balance", b.balance.toFixed(2), `deposits ${b.net_deposits.toFixed(2)} · betting ${money(b.realized_profit)}`),
+    tile("Drawdown", signedPct(b.drawdown), `peak ${b.peak.toFixed(2)}`, b.drawdown < 0 ? "neg" : ""),
+    tile("Open", b.open_exposure.toFixed(2), `${b.open_wagers} wager(s)`),
+    tile("Staked today", b.staked_today.toFixed(2), "Eastern day"),
+    tile("Largest stake now", (b.max_allowed ?? 0).toFixed(2), "under every limit", b.max_allowed > 0 ? "" : "neg"),
+  ] : []));
+  const form = $("#bankroll-policy");
+  form.kelly_multiplier.value = p.kelly_multiplier;
+  for (const name of POLICY_PERCENT) form[name].value = +(p[name] * 100).toFixed(2);
+}
+
+$("#bankroll-entry").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const status = $("#bankroll-status");
+  try {
+    await api("/api/bankroll/entries", { method: "POST", body: JSON.stringify({
+      kind: form.kind.value, amount: Number(form.amount.value), note: form.note.value || null,
+    }) });
+    status.textContent = "Entry added";
+    status.className = "ok-msg";
+    form.reset();
+    loadBankroll();
+  } catch (error) {
+    status.textContent = `Not added: ${error.message}`;
+    status.className = "err-msg";
+  }
+});
+
+$("#bankroll-policy").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const status = $("#bankroll-status");
+  const body = { kelly_multiplier: Number(form.kelly_multiplier.value) };
+  for (const name of POLICY_PERCENT) body[name] = Number(form[name].value) / 100;
+  try {
+    await api("/api/bankroll/policy", { method: "PUT", body: JSON.stringify(body) });
+    status.textContent = "Limits saved";
+    status.className = "ok-msg";
+    loadBankroll();
+  } catch (error) {
+    status.textContent = `Not saved: ${error.message}`;
     status.className = "err-msg";
   }
 });
@@ -296,6 +359,7 @@ $("#bets-settle").addEventListener("click", async () => {
     status.textContent = `${settled.bets.length} bet(s), ${settled.parlays.length} parlay(s) settled`;
     loadBets();
     loadParlays();
+    loadBankroll();
   } catch (error) {
     status.textContent = `Settle failed: ${error.message}`;
   }
@@ -587,6 +651,7 @@ $("#parlay-form").addEventListener("submit", async (event) => {
     american_odds: form.american_odds.value === "" ? null : Number(form.american_odds.value),
     placed_at: form.placed_at.value ? new Date(form.placed_at.value).toISOString() : null,
     notes: form.notes.value || null,
+    limit_override: form.limit_override.value || null,
   };
   try {
     const saved = await api("/api/parlays", { method: "POST", body: JSON.stringify(body) });

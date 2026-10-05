@@ -851,6 +851,74 @@ def _fmt_pct(value: float | None, n: int | None = None) -> str:
     return f"{value * 100:+.1f}%" + (f" (n={n})" if n is not None else "")
 
 
+def _bankroll(args: argparse.Namespace, settings: Settings) -> int:
+    from dataclasses import replace
+
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.bankroll import (
+        EntryKind,
+        add_entry,
+        bankroll_state,
+        current_policy,
+        max_allowed,
+        save_policy,
+    )
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        try:
+            if args.bankroll_command in ("deposit", "withdraw", "adjust"):
+                kind = {
+                    "deposit": EntryKind.DEPOSIT,
+                    "withdraw": EntryKind.WITHDRAWAL,
+                    "adjust": EntryKind.ADJUSTMENT,
+                }[args.bankroll_command]
+                add_entry(session, kind, args.amount, note=args.note)
+            elif args.bankroll_command == "policy":
+                changes = {
+                    name: value
+                    for name, value in (
+                        ("kelly_multiplier", args.kelly),
+                        ("max_stake_fraction", args.max_stake),
+                        ("max_daily_fraction", args.max_daily),
+                        ("max_open_fraction", args.max_open),
+                        ("stop_drawdown_fraction", args.stop),
+                    )
+                    if value is not None
+                }
+                if not changes:
+                    print("Nothing to change; see `ttk bankroll policy --help`", file=sys.stderr)
+                    return 2
+                save_policy(session, replace(current_policy(session), **changes), note=args.note)
+        except ValueError as exc:
+            print(f"Not saved: {exc}", file=sys.stderr)
+            return 2
+        session.commit()
+        state = bankroll_state(session)
+        p = state.policy
+        if not state.configured:
+            print("No bankroll yet: `ttk bankroll deposit AMOUNT` turns on the limits.")
+        else:
+            cap = max_allowed(state)
+            print(
+                f"Bankroll {state.balance:.2f} (net deposits {state.net_deposits:.2f}, "
+                f"betting {state.realized_profit:+.2f}); peak {state.peak:.2f}, "
+                f"drawdown {state.drawdown:.1%}"
+            )
+            print(
+                f"Open {state.open_exposure:.2f} on {state.open_wagers} wager(s); "
+                f"staked today {state.staked_today:.2f}; largest stake allowed now "
+                f"{cap or 0:.2f}"
+            )
+        print(
+            f"Policy{' (defaults)' if p.saved_at is None else ''}: {p.kelly_multiplier:g} Kelly; "
+            f"max stake {p.max_stake_fraction:.1%}, per day {p.max_daily_fraction:.0%}, "
+            f"open {p.max_open_fraction:.0%}; stop at {p.stop_drawdown_fraction:.0%} "
+            "below peak"
+        )
+        return 0
+
+
 def _bets(args: argparse.Namespace, settings: Settings) -> int:
     from sqlalchemy import select
 
@@ -879,6 +947,7 @@ def _bets(args: argparse.Namespace, settings: Settings) -> int:
                         args.stake,
                         placed_at,
                         args.notes,
+                        args.override,
                     ),
                 )
             except BetError as exc:
@@ -896,6 +965,8 @@ def _bets(args: argparse.Namespace, settings: Settings) -> int:
             )
             if bet.model_probability is None:
                 print("  (no model prediction at this line before the bet; run `ttk card`)")
+            if bet.limit_override:
+                print(f"  over a bankroll limit: {bet.limit_override}")
             return 0
 
         if args.bets_command == "list":
@@ -1176,6 +1247,23 @@ def main(argv: list[str] | None = None) -> int:
         "--why", action="store_true", help="Show every qualification check for each bet"
     )
     card.add_argument("--no-persist", action="store_true", help="Do not write prediction snapshots")
+    bankroll = sub.add_parser("bankroll", help="Bankroll balance and staking limits")
+    bankroll_sub = bankroll.add_subparsers(dest="bankroll_command")
+    for name, help_text in (
+        ("deposit", "Add money to the bankroll"),
+        ("withdraw", "Take money out of the bankroll"),
+        ("adjust", "Correct the balance (signed amount)"),
+    ):
+        entry = bankroll_sub.add_parser(name, help=help_text)
+        entry.add_argument("amount", type=float)
+        entry.add_argument("--note")
+    policy = bankroll_sub.add_parser("policy", help="Change staking limits (fractions)")
+    policy.add_argument("--kelly", type=float, help="Kelly multiplier, e.g. 0.25")
+    policy.add_argument("--max-stake", type=float, help="Per wager, e.g. 0.03 = 3%%")
+    policy.add_argument("--max-daily", type=float, help="Staked per Eastern day, e.g. 0.10")
+    policy.add_argument("--max-open", type=float, help="Pending stakes, e.g. 0.20")
+    policy.add_argument("--stop", type=float, help="Stop below peak, e.g. 0.25")
+    policy.add_argument("--note")
     bets = sub.add_parser("bets", help="Bet tracker")
     bets_sub = bets.add_subparsers(dest="bets_command", required=True)
     add = bets_sub.add_parser("add", help="Record a bet you placed")
@@ -1197,6 +1285,9 @@ def main(argv: list[str] | None = None) -> int:
         help="ISO time with offset, e.g. 2026-09-27T11:05-04:00 (default: now)",
     )
     add.add_argument("--notes")
+    add.add_argument(
+        "--override", help="Reason to record the bet although it breaks a bankroll limit"
+    )
     bets_list = bets_sub.add_parser("list", help="List bets")
     bets_list.add_argument("--pending", action="store_true")
     bets_sub.add_parser("settle", help="Grade pending bets whose games are final")
@@ -1434,6 +1525,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "bets":
         return _bets(args, settings)
+
+    if args.command == "bankroll":
+        return _bankroll(args, settings)
 
     if args.command == "simulate":
         return _simulate(args, settings)
