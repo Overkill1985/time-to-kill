@@ -30,7 +30,7 @@ ttk card [--date YYYY-MM-DD] [--why]  # the daily card, all sports; saves predic
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one NFL game
-ttk backtest-nfl-elo             # tune on train, report validation; test stays sealed
+ttk backtest-nfl-elo             # tune on train, report validation (--final-test: the test seasons, once)
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
 ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player box scores (~1 h; resumable)
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
@@ -38,6 +38,7 @@ ttk injury-check                 # NBA: how often players on the injury report a
 ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
+ttk score-test --sport NBA       # frozen models on their sealed test seasons (once; done 2026-10-05)
 ttk summary [--days 7] [--write FILE]  # health: storage, collection gaps, quotas, forward tests
 ttk alerts [--test-notify]       # run the health alert checks once (and send a test notification)
 ttk import-espn-history --sport CFB --from-season 2013 --to-season 2025  # college history (hours)

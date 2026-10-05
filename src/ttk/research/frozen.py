@@ -12,20 +12,28 @@ backtest's own probabilities on validation games (``verify``).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
 from ttk.models.anchored import MarketAnchoredModel
 from ttk.models.elo import EloParams, EloPrediction, run_elo
 from ttk.models.margin import KeyNumberMarginModel, MarginModel
+from ttk.models.metrics import score
 from ttk.research.espn_models import (
     FeatureMarginModel,
     SportData,
     SportReport,
     feature_values,
+    opener_test,
     sport_backtest,
 )
-from ttk.research.nfl_elo import priced_spreads, prior_home_field
+from ttk.research.nfl_elo import (
+    PricedSpread,
+    _evaluate_candidate,
+    priced_spreads,
+    prior_home_field,
+)
 
 ARTIFACT_VERSION = 1
 
@@ -168,3 +176,92 @@ def verify(model: FrozenSpreadModel, report: SportReport, *, sample: int = 200) 
         if view is None or abs(view.home_cover_anchored - expected) > 1e-9:
             raise AssertionError(f"frozen model differs from the backtest on game {r.game.game_id}")
     return len(rows)
+
+
+def feature_set_at_tip(model: FrozenSpreadModel) -> bool:
+    """True if the frozen model uses a feature known only at tip-off."""
+    return model.artifact["feature_set"] in model.data.config.at_tip_only
+
+
+def score_frozen(model: FrozenSpreadModel, window: tuple[int, int]) -> dict[str, Any]:
+    """Score a frozen model, exactly as stored, on seasons ``window`` (its sealed
+    test seasons): spread log loss against the closing market (paired), margin
+    error, results at the closing price by edge, and betting the opener where
+    openers exist. Plain data, for the one-time test report."""
+    data = model.data
+    variant = model.artifact.get("variant", "anchored")
+    games = {g.game_id: g for g in data.games}
+    predictions = list(model.elo.values())
+
+    def cover(r: PricedSpread) -> tuple[float, float | None]:
+        v = model.view(r.game.game_id, r.home_line, r.market_home_cover)
+        assert v is not None
+        p = v.home_cover_anchored if variant == "anchored" else v.home_cover_key
+        return p, v.push
+
+    rows = priced_spreads(predictions, games, data.closes, window)
+    result = _evaluate_candidate(str(variant), rows, cover)
+    errors, market_errors = [], []
+    for p in predictions:
+        g = games[p.game_id]
+        if not (window[0] <= p.season <= window[1]) or not g.played:
+            continue
+        assert g.home_score is not None and g.away_score is not None
+        actual = g.home_score - g.away_score
+        values = feature_values(p, data)
+        errors.append(model.margin.expected_margin(values) - actual)
+        line = data.closes.get(p.game_id)
+        if line is not None and line.home_spread is not None:
+            market_errors.append(-line.home_spread - actual)
+    openers = priced_spreads(predictions, games, data.opens, window)
+    # A feature known only at tip-off (who actually played) isn't known when the
+    # opener is posted: betting the opener with it would be leakage, not a test.
+    at_tip = feature_set_at_tip(model)
+    opener = (
+        opener_test(str(variant), cover, openers, data.closes) if openers and not at_tip else None
+    )
+    v = result.vs_market
+    return {
+        "window": list(window),
+        "spread_games": result.spread.n,
+        "log_loss": result.spread.log_loss,
+        "market_log_loss": score(
+            [r.market_home_cover for r in rows if r.cover_margin != 0],
+            [int(r.cover_margin > 0) for r in rows if r.cover_margin != 0],
+        ).log_loss
+        if any(r.cover_margin != 0 for r in rows)
+        else None,
+        "vs_market": v.mean_log_loss_diff,
+        "vs_market_se": v.standard_error,
+        "z": v.z,
+        "margin_games": len(errors),
+        "margin_rmse": math.sqrt(sum(e * e for e in errors) / len(errors)) if errors else None,
+        "market_rmse": math.sqrt(sum(e * e for e in market_errors) / len(market_errors))
+        if market_errors
+        else None,
+        "betting": [
+            {
+                "min_edge": b.min_edge,
+                "bets": b.bets,
+                "wins": b.wins,
+                "losses": b.losses,
+                "pushes": b.pushes,
+                "units": b.units,
+                "roi": b.roi,
+            }
+            for b in result.betting
+        ],
+        "opener": None
+        if opener is None
+        else {
+            "games": len(openers),
+            "price_clv": opener.avg_price_clv,
+            "price_clv_n": opener.price_clv_n,
+            "points_vs_close": opener.avg_points_gained,
+            "points_n": opener.moved_n,
+            "betting": [
+                {"min_edge": b.min_edge, "bets": b.bets, "units": b.units, "roi": b.roi}
+                for b in opener.bets
+            ],
+        },
+    }

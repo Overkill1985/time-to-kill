@@ -106,3 +106,13 @@ def test_injury_substitution_uses_the_report_at_the_snapshot(
         # A report observed after the snapshot time is not used.
         early = model.view(1, -3.0, 0.5, TIP - timedelta(hours=40), 24)
         assert early is not None and early.expected_margin == pytest.approx(0.0)
+
+
+def test_at_tip_models_are_never_scored_at_the_opener() -> None:
+    from ttk.research.frozen import FrozenSpreadModel, feature_set_at_tip
+
+    game = EloGame(1, 2027, TIP, 1, 2, False, None, None)
+    data = SportData(NBA, [game], {}, {}, {1: (2.0, 2.0, False, False)})
+    tip = FrozenSpreadModel({**artifact(), "feature_set": "lineup_tip"}, data)
+    prev = FrozenSpreadModel({**artifact(), "feature_set": "lineup_prev"}, data)
+    assert feature_set_at_tip(tip) and not feature_set_at_tip(prev)

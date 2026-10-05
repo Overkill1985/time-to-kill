@@ -32,7 +32,7 @@ Every result carries the full check list (actual vs required), which is the Why-
 **Pushes:** the model probability is P(win | no push), which is on the same footing as a no-vig market price. The probability and edge thresholds compare those two. EV uses win = p × (1 − P(push)), and a push returns the stake.
 
 **Daily card:**
-- It uses exactly the validated artifact, fitted on the training seasons. Nothing is refitted on the validation or test seasons, so the test seasons stay sealed.
+- It uses exactly the validated artifact, fitted on the training seasons. Nothing is refitted on the validation or test seasons, so the test seasons stay sealed (they were scored once on 2026-10-05; see "Test seasons used").
 - Ratings and features run through the latest completed game.
 - The first saved `ttk card` run registers the model as DEVELOPMENT, so the card can never show QUALIFIED until someone promotes the model in the registry.
 - Best price and EV use only `TTK_BETTABLE_BOOKS`. The market probability always uses every book.
@@ -70,6 +70,10 @@ composite "confidence" score is ever presented as a probability.
 - **NBA injury features** use the report as we observed it at a stated horizon before tip-off (24 h, 1 h), and sit rates learned only from earlier finished games. The 1-hour feature assumes the bet is placed an hour before tip (score it against the close); the 24-hour one is an opener-time proxy. A game before injury tracking began has no injury feature.
 - **Injury reports:** there is no free source of past injury status as of a given time. ESPN's game summaries show each player's *current* status even for old games (a 2017 game shows 2026 dates), so they are never used. Injury status comes only from our own polling (`injury_reports`, append-only, stamped with `observed_at`), queried with `injuries_at(t)`.
 - **Significance:** every model comparison against the market reports the paired per-game log-loss difference, with its standard error. A difference within about 2 standard errors is not an edge.
+
+## Test seasons used (2026-10-05)
+
+The sealed test seasons (NFL 2022–2025, NBA and NCAAB 2025–2026, CFB 2025) were scored once for the frozen models on 2026-10-05 (docs/MODELS.md). They are no longer sealed: any later model change is judged by forward tests, never by re-scoring those seasons. `ttk score-test` refuses to score a model twice.
 
 ## Forward tests
 

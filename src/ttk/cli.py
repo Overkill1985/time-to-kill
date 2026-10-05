@@ -273,6 +273,81 @@ def _db_paths(settings: Settings) -> tuple[Path, Path]:
     return db_path, db_path.parent
 
 
+def _score_test(args: argparse.Namespace, settings: Settings) -> int:
+    """Score every frozen model of a sport on its sealed test seasons, once."""
+    import json
+
+    from sqlalchemy import select
+
+    from ttk.db.models import ModelVersion, utcnow
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.espn_models import load_sport
+    from ttk.research.frozen import FrozenSpreadModel, score_frozen
+    from ttk.services.forward_models import CONFIGS
+
+    _, data_dir = _db_paths(settings)
+    out_dir = data_dir / "reports" / "test_scores"
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        rows = session.scalars(
+            select(ModelVersion).where(
+                ModelVersion.sport == args.sport, ModelVersion.artifact.is_not(None)
+            )
+        ).all()
+        if not rows:
+            print(f"No frozen {args.sport} models (see `ttk forward-freeze`).", file=sys.stderr)
+            return 2
+        done = [r for r in rows if (out_dir / f"{r.name}-{r.version}.json").exists()]
+        if done:
+            names = ", ".join(r.name for r in done)
+            print(
+                f"Already scored on the test seasons: {names}. A sealed season is scored once; "
+                f"the reports are in {out_dir}.",
+                file=sys.stderr,
+            )
+            return 1
+        data = load_sport(session, CONFIGS[args.sport])
+        for row in rows:
+            assert row.artifact is not None
+            window = tuple(row.artifact["splits"]["test"])
+            result = score_frozen(FrozenSpreadModel(row.artifact, data), window)
+            report = {
+                "model": row.name,
+                "version": row.version,
+                "scored_at": utcnow().isoformat(),
+                "note": "One-time score on sealed test seasons (docs/MODEL-GOVERNANCE.md). "
+                "A live_substitution model is scored as frozen, with the at-tip feature.",
+                **result,
+            }
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / f"{row.name}-{row.version}.json").write_text(
+                json.dumps(report, indent=1, default=str), "utf-8"
+            )
+            z = result["z"]
+            print(
+                f"{row.name} {row.version} on {window[0]}-{window[1]}: "
+                f"{result['spread_games']} spread games, log loss {result['log_loss']:.4f} "
+                f"vs market {result['market_log_loss']:.4f} (z {z:+.1f}); margin RMSE "
+                f"{result['margin_rmse']:.2f} vs close {result['market_rmse']:.2f}"
+            )
+            for b in result["betting"]:
+                roi = "n/a" if b["roi"] is None else f"{b['roi']:+.1%}"
+                print(
+                    f"    edge >= {b['min_edge']:.0%}: {b['bets']} bets, "
+                    f"{b['wins']}-{b['losses']}-{b['pushes']}, ROI {roi}"
+                )
+            if result["opener"]:
+                o = result["opener"]
+                clv = "n/a" if o["price_clv"] is None else f"{o['price_clv']:+.2%}"
+                pts = "n/a" if o["points_vs_close"] is None else f"{o['points_vs_close']:+.2f}"
+                print(
+                    f"    opener ({o['games']} games): price CLV {clv} (n={o['price_clv_n']}), "
+                    f"points vs close {pts} (n={o['points_n']})"
+                )
+    print(f"Reports written to {out_dir}")
+    return 0
+
+
 def _alerts(settings: Settings, factory: Any, emit: Callable[[str], None]) -> None:
     """Health alerts on every pass of the long-running loops. Never raises."""
     from ttk.services.alerts import run_alerts, windows_notify
@@ -1018,6 +1093,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    score_p = sub.add_parser(
+        "score-test",
+        help="Score a sport's frozen models on their sealed test seasons (once only)",
+    )
+    score_p.add_argument(
+        "--sport", type=Sport, choices=[Sport.CFB, Sport.NBA, Sport.NCAAB], required=True
+    )
     alerts_p = sub.add_parser("alerts", help="Run the health alert checks once and print them")
     alerts_p.add_argument(
         "--test-notify", action="store_true", help="Also send a test Windows notification"
@@ -1212,6 +1294,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("forward-freeze", "forward-snapshot", "forward-run", "forward-report"):
         return _forward(args, settings)
+
+    if args.command == "score-test":
+        return _score_test(args, settings)
 
     if args.command == "alerts":
         from ttk.db.models import utcnow

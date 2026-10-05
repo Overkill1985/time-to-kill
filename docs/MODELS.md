@@ -3,10 +3,53 @@
 Every result lists sample sizes. "Market" means the no-vig probability from nflverse's
 *reported* lines. Their timing isn't documented upstream; see DATA-SOURCES.md.
 
-**Status: every NFL spread model is DEVELOPMENT, including the EPA and QB models.** None has a demonstrated edge over the
-market. The 2022–2025 test seasons are **sealed and have not been scored**. No model is
-registered yet. **The NBA, college football and college basketball spread models are
-DEVELOPMENT too** (below); their test seasons (NBA and NCAAB 2025-2026, CFB 2025) are sealed.
+**Status (2026-10-05): every spread model, in every sport, is DEVELOPMENT.** None beats the
+closing market, on validation or on the test seasons, which **were scored once on
+2026-10-05** (below) and are no longer sealed. From here, model changes are judged by the
+forward tests (docs/MODEL-GOVERNANCE.md, "Forward tests"), on games played after each model
+was frozen.
+
+## Sealed test seasons, scored once (2026-10-05)
+
+Each frozen model exactly as it is forward-tested, on seasons it had never touched. The scorer
+was first checked on validation seasons, where it reproduced the backtest exactly (CFB: 3,017
+games, log loss 0.7305 and 0.6941). Reports: `data/reports/test_scores/`; `ttk score-test`
+refuses to score a model twice. "vs market" is the paired spread log-loss difference
+(positive = worse than the closing market).
+
+| Model | Test seasons | Spread games | Log loss vs market | z | Margin RMSE vs close | ROI, every game |
+|---|---|---|---|---|---|---|
+| NFL market-anchored EPA + QB | 2022–2025 | 1,110 | 0.6942 vs 0.6926 | +1.4 | 12.67 (features) | −1.7% |
+| CFB in-season, standalone | 2025 | 1,576 | 0.7355 vs 0.6935 | +5.4 | 17.40 vs 15.06 | −2.6% |
+| CFB in-season, market-anchored | 2025 | 1,576 | 0.6946 vs 0.6935 | +1.5 | — | −3.0% |
+| NBA lineup-prev, standalone | 2025–2026 | 2,644 | 0.7173 vs 0.6926 | +5.7 | 14.35 vs 13.89 | −4.0% |
+| NBA lineup-prev, market-anchored | 2025–2026 | 2,644 | 0.6932 vs 0.6926 | +0.7 | — | −4.6% |
+| NBA at-tip lineup ("injury"), standalone | 2025–2026 | 2,644 | 0.7098 vs 0.6926 | +4.7 | 14.20 vs 13.89 | −5.5% |
+| NBA at-tip lineup ("injury"), market-anchored | 2025–2026 | 2,644 | 0.6932 vs 0.6926 | +0.7 | — | −4.0% |
+| NCAAB adjusted efficiency, standalone | 2025–2026 | 11,506 | 0.7260 vs 0.6930 | +13.0 | 12.74 vs 11.23 | −4.4% |
+| NCAAB adjusted efficiency, market-anchored | 2025–2026 | 11,506 | 0.6937 vs 0.6930 | +2.0 | — | −3.8% |
+
+What held up and what didn't:
+
+- **The ranking of signals held.** Every feature that cut margin error on validation cut it on
+  test by about as much (NBA lineups 14.35 → 14.20; NCAAB efficiency 12.74 against the close's
+  11.23), and every standalone model still trails the close.
+- **No model beats the market.** The market-anchored models stay within noise of it (z +0.7 to
+  +1.5), except college basketball's, which is now measurably worse (z +2.0).
+- **The college basketball "large-edge pattern" did not hold.** On validation its rare large
+  edges won (+10% on 295 bets at edge ≥ 4%); on test the same thresholds lost: −7.6% on 404
+  bets at ≥ 4%, −18.6% on 48 at ≥ 6%. It was noise, as flagged.
+- **Betting the opener:** the NBA lineup-prev models' picks were on the side the line moved
+  toward (+1.39 points on ~770 games for the anchored one, +0.22 standalone) but still lost at
+  the opener price (−3.5% to −9.3%); college basketball efficiency +0.26 points (6,461 games),
+  college football standalone +0.35 (1,111). Movement toward the model's side, but not enough
+  to beat the price.
+- **NBA "injury" models are scored as frozen:** with who actually played (known at tip-off),
+  since there is no injury history for those seasons. Their opener numbers would be leakage
+  and are excluded (the reports keep them, marked invalid).
+- **Data caveat:** every NBA closing line in ESPN's 2024-25 and 2025-26 records is a half point
+  (ESPN BET and DraftKings only), so those seasons have no pushes; 2022-23 and 2023-24 had
+  whole numbers. Pushes are excluded from the log-loss comparison either way.
 
 ## NFL spread (2026-09-26)
 
@@ -201,7 +244,7 @@ here: they aren't known when the opener is posted.
 ### Verdicts
 
 - No NBA model beats the closing line. Every one stays DEVELOPMENT, and the test seasons stay
-  sealed.
+  sealed. (Scored once on 2026-10-05: see the top of this file.)
 - Rest and lineups are real signal that the market prices by the close.
 - The early-line lead to follow: models with more information pick the side the line moves
   toward (+0.13 → +0.22 → +0.31 points). The real test is **injury status at the opener**,
@@ -306,7 +349,7 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
 ### Verdicts
 
 - No college basketball model beats the closing line. Every one stays DEVELOPMENT, and
-  2025–2026 stay sealed.
+  2025–2026 stay sealed. (Scored once on 2026-10-05: see the top of this file.)
 - Opponent-adjusted efficiency is the right rating here and replaces Elo. The next tests are
   forward ones on the 2026-27 season (the market-anchored large-edge pattern, and betting the
   opener), not more historical tuning; the sealed seasons are scored once, at the end.
@@ -398,7 +441,7 @@ error of 17.27. After the re-fetch: 2–1, and 15.30.
 ### Verdicts
 
 - No college model comes near the closing line. Every one stays DEVELOPMENT, and 2025 stays
-  sealed.
+  sealed. (Scored once on 2026-10-05: see the top of this file.)
 - Preseason information (returning production, recruiting, transfers, coaching, the
   preseason poll) is real signal, but the market prices it: the preseason model is still
   2 points of margin error behind the close. Team efficiency adds almost nothing beyond Elo.
