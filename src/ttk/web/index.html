@@ -27,6 +27,24 @@
         <button id="card-refresh" class="secondary">Refresh</button>
         <span id="card-status" class="muted" aria-live="polite"></span>
       </div>
+      <div class="toolbar" id="card-filters">
+        <label>Sport
+          <select id="filter-sport"><option value="">All</option><option>NFL</option>
+            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
+        </label>
+        <label>Show
+          <select id="filter-class">
+            <option value="">Everything</option>
+            <option value="QUALIFIED">Qualified only</option>
+            <option value="QUALIFIED,LEAN">Qualified and lean</option>
+            <option value="PASS,NO_BET">Pass and no bet</option>
+          </select>
+        </label>
+        <label>Min edge (pts) <input id="filter-edge" type="number" step="0.5" style="width:5rem"></label>
+        <label>Best book <select id="filter-book"><option value="">Any</option></select></label>
+        <button id="filter-clear" type="button" class="secondary">Clear filters</button>
+        <span id="filter-count" class="muted" aria-live="polite"></span>
+      </div>
       <div id="card-header" class="summary"></div>
       <div id="card-entries" class="cards"></div>
       <div id="card-unmodeled"></div>

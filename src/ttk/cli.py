@@ -12,7 +12,7 @@ from typing import Any
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
-from ttk.domain import Market, Selection, Sport
+from ttk.domain import BetClassification, Market, Selection, Sport
 from ttk.models.metrics import Score
 from ttk.providers.base import OddsProvider
 from ttk.research.nfl_elo import BettingResult, SplitReport
@@ -804,7 +804,7 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
     from zoneinfo import ZoneInfo
 
     from ttk.db.session import make_engine, make_session_factory
-    from ttk.services.daily_card import build_card
+    from ttk.services.daily_card import CardFilter, build_card, filter_entries
     from ttk.services.nfl_spread_predictor import NflSpreadPredictor
 
     eastern = ZoneInfo("America/New_York")
@@ -821,13 +821,26 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
             predictor=predictor,
             persist=not args.no_persist,
             bettable_books=settings.bettable_book_keys(),
-            models=build_card_models(session),  # other sports' frozen models (slow)
+            # Other sports' frozen models (slow): only the sports asked for.
+            models=build_card_models(session, set(args.sport) if args.sport else None),
         )
+    card_filter = CardFilter(
+        sports=frozenset(args.sport) if args.sport else None,
+        classifications=frozenset(args.only) if args.only else None,
+        min_edge=args.min_edge / 100 if args.min_edge is not None else None,
+        books=frozenset(b.lower() for b in args.book) if args.book else None,
+    )
+    entries = filter_entries(card.entries, card_filter)
 
     print(f"TIME-TO-KILL  {day:%A %B %d, %Y}".upper())
     print()
-    modeled = sum(s.modeled for s in card.by_sport.values())
-    with_market = sum(s.with_market for s in card.by_sport.values())
+    summaries = [
+        s
+        for sport, s in card.by_sport.items()
+        if card_filter.sports is None or sport in card_filter.sports
+    ]
+    modeled = sum(s.modeled for s in summaries)
+    with_market = sum(s.with_market for s in summaries)
     print(f"{with_market} games with a live market, {modeled} modeled")
     print(card.headline)
     if card.bettable_books is None:
@@ -838,13 +851,17 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
     else:
         print("Best price and EV use: " + ", ".join(sorted(card.bettable_books)))
     for sport, s in sorted(card.by_sport.items()):
+        if card_filter.sports is not None and sport not in card_filter.sports:
+            continue
         print(
             f"  {sport:<6} games {s.games:>3}  with market {s.with_market:>3}  "
             f"modeled {s.modeled:>3}  qualified {s.qualified:>2}  lean {s.lean:>2}"
         )
     if predictor is None:
         print("\nNo NFL model inputs: run import-nfl-history and import-nfl-pbp.")
-    for e in card.entries:
+    if len(entries) != len(card.entries):
+        print(f"\nShowing {len(entries)} of {len(card.entries)} entries (filtered).")
+    for e in entries:
         kickoff = e.commence_time.astimezone(eastern)
         movement = (
             f"{e.line_opening:+g} -> {e.line_current:+g}"
@@ -874,7 +891,8 @@ def _card(args: argparse.Namespace, settings: Settings) -> int:
     for side in card.unbettable:
         print(f"\n[NO BETTABLE PRICE] {side}")
     for u in card.unmodeled:
-        print(f"\n[UNMODELED] {u.sport} {u.matchup}: {u.reason}")
+        if card_filter.sports is None or u.sport in card_filter.sports:
+            print(f"\n[UNMODELED] {u.sport} {u.matchup}: {u.reason}")
     return 0
 
 
@@ -1349,6 +1367,18 @@ def main(argv: list[str] | None = None) -> int:
         "--why", action="store_true", help="Show every qualification check for each bet"
     )
     card.add_argument("--no-persist", action="store_true", help="Do not write prediction snapshots")
+    card.add_argument(
+        "--sport", type=Sport, choices=list(Sport), action="append", help="Repeatable"
+    )
+    card.add_argument(
+        "--only",
+        type=BetClassification,
+        choices=list(BetClassification),
+        action="append",
+        help="Classification to show (repeatable), e.g. LEAN",
+    )
+    card.add_argument("--min-edge", type=float, help="Minimum edge in points, e.g. 2 = 2.0 points")
+    card.add_argument("--book", action="append", help="Best-price book key (repeatable)")
     bankroll = sub.add_parser("bankroll", help="Bankroll balance and staking limits")
     bankroll_sub = bankroll.add_subparsers(dest="bankroll_command")
     for name, help_text in (

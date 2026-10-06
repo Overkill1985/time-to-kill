@@ -27,6 +27,7 @@ ttk serve                        # UI at http://127.0.0.1:8800, API docs at /doc
 ttk import-nfl-history           # nflverse games 1999+, results, reported lines (~20 s)
 ttk import-nfl-pbp               # play-by-play EPA aggregates (~15 MB per season)
 ttk card [--date YYYY-MM-DD] [--why]  # the daily card, all sports; saves prediction snapshots
+ttk card --sport NBA --only LEAN --min-edge 2 --book fanduel  # filtered (each flag repeatable but --min-edge)
 ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 102 --book fanduel --stake 50
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk bankroll deposit 1000        # turns on staking limits; also withdraw, adjust (signed)

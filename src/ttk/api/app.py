@@ -43,7 +43,7 @@ from ttk.services.bankroll import (
     stake_guidance,
 )
 from ttk.services.bets import BetError, NewBet, performance, record_bet, settle_bets
-from ttk.services.daily_card import build_card, card_window
+from ttk.services.daily_card import CardFilter, build_card, card_window, filter_entries
 from ttk.services.forward_test import forward_dashboard
 from ttk.services.line_history import PricePoint, line_history
 from ttk.services.market import SideMarket, main_lines, side_markets
@@ -531,8 +531,19 @@ def _register_routes(app: FastAPI) -> None:
         session: SessionDep,
         request: Request,
         day: Annotated[date | None, Query(alias="date")] = None,
+        sport: Annotated[list[Sport] | None, Query()] = None,
+        classification: Annotated[list[BetClassification] | None, Query()] = None,
+        min_edge: Annotated[float | None, Query(description="points, e.g. 2")] = None,
+        book: Annotated[list[str] | None, Query()] = None,
     ) -> dict[str, object]:
-        """The daily card. Read-only: predictions are only persisted by `ttk card`."""
+        """The daily card. Read-only: predictions are only persisted by `ttk card`.
+        Filters narrow ``entries`` only; the summaries cover the whole card."""
+        card_filter = CardFilter(
+            sports=frozenset(sport) if sport else None,
+            classifications=frozenset(classification) if classification else None,
+            min_edge=min_edge / 100 if min_edge is not None else None,
+            books=frozenset(b.lower() for b in book) if book else None,
+        )
         settings: Settings = request.app.state.settings
         models, loading = _card_models(request.app)
         for model in models.values():
@@ -569,8 +580,9 @@ def _register_routes(app: FastAPI) -> None:
                         )
                     ),
                 }
-                for e in card.entries
+                for e in filter_entries(card.entries, card_filter)
             ],
+            "total_entries": len(card.entries),
             "unmodeled": [asdict(u) for u in card.unmodeled],
             "unbettable": card.unbettable,
         }

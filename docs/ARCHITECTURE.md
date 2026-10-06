@@ -139,7 +139,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
 | GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |
-| GET | `/api/card?date=YYYY-MM-DD` | The daily card. Read-only: it never saves predictions (`ttk card` does) |
+| GET | `/api/card?date=YYYY-MM-DD` | The daily card. Read-only: it never saves predictions (`ttk card` does). Optional filters on `entries` (summaries stay whole): `sport`, `classification` (repeatable), `min_edge` in points, `book`; `total_entries` is the unfiltered count |
 | GET | `/api/sportsbooks` | Books in the data, flagged bettable or not |
 | GET | `/api/bets?status=pending\|settled` | Tracked bets |
 | POST | `/api/bets` | Record a bet (rejected at or after kickoff) |

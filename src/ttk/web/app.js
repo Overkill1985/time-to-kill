@@ -134,6 +134,75 @@ function renderEntry(entry) {
   return node;
 }
 
+// ------------------------------------------------------------------ card filters
+
+let lastCard = null;
+const FILTER_IDS = ["filter-sport", "filter-class", "filter-edge", "filter-book"];
+
+function cardFilter() {
+  const classes = $("#filter-class").value;
+  const edge = $("#filter-edge").value;
+  return {
+    sport: $("#filter-sport").value || null,
+    classes: classes ? classes.split(",") : null,
+    minEdge: edge === "" ? null : Number(edge) / 100,
+    book: $("#filter-book").value || null,
+  };
+}
+
+function matches(entry, f) {
+  return (!f.sport || entry.sport === f.sport)
+    && (!f.classes || f.classes.includes(entry.classification))
+    && (f.minEdge == null || entry.edge >= f.minEdge - 1e-12)
+    && (!f.book || entry.sportsbook === f.book);
+}
+
+function renderEntries() {
+  if (!lastCard) return;
+  const f = cardFilter();
+  const shown = lastCard.entries.filter((e) => matches(e, f));
+  $("#card-entries").replaceChildren(...shown.map(renderEntry));
+  const books = [...new Set(lastCard.entries.map((e) => e.sportsbook))].sort();
+  const bookSelect = $("#filter-book");
+  const chosen = bookSelect.value;
+  bookSelect.replaceChildren(el("option", { value: "", text: "Any" }),
+    ...books.map((b) => el("option", { value: b, text: b })));
+  if (chosen && !books.includes(chosen)) bookSelect.append(el("option", { value: chosen, text: chosen }));
+  bookSelect.value = chosen;
+  $("#filter-count").textContent = shown.length === lastCard.entries.length
+    ? "" : `Showing ${shown.length} of ${lastCard.entries.length}`;
+}
+
+function saveFilters() {
+  try {
+    localStorage.setItem("ttk-card-filters", JSON.stringify(FILTER_IDS.map((id) => $(`#${id}`).value)));
+  } catch { /* storage unavailable: filters just aren't remembered */ }
+}
+
+function restoreFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("ttk-card-filters") || "null");
+    if (!Array.isArray(saved)) return;
+    FILTER_IDS.forEach((id, i) => {
+      const node = $(`#${id}`);
+      if (node.tagName === "SELECT" && saved[i] && ![...node.options].some((o) => o.value === saved[i])) {
+        node.append(el("option", { value: saved[i], text: saved[i] }));
+      }
+      node.value = saved[i] ?? "";
+    });
+  } catch { /* ignore unreadable storage */ }
+}
+
+for (const id of FILTER_IDS) {
+  $(`#${id}`).addEventListener(id === "filter-edge" ? "input" : "change", () => { saveFilters(); renderEntries(); });
+}
+$("#filter-clear").addEventListener("click", () => {
+  for (const id of FILTER_IDS) $(`#${id}`).value = "";
+  saveFilters();
+  renderEntries();
+});
+restoreFilters();
+
 async function loadCard() {
   const date = $("#card-date").value || todayEastern();
   const status = $("#card-status");
@@ -172,8 +241,8 @@ async function loadCard() {
       header.append(table);
     }
 
-    const entries = $("#card-entries");
-    entries.replaceChildren(...card.entries.map(renderEntry));
+    lastCard = card;
+    renderEntries();
     const unmodeled = $("#card-unmodeled");
     unmodeled.replaceChildren();
     if (card.unmodeled.length || card.unbettable.length) {

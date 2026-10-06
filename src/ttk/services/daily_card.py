@@ -177,6 +177,30 @@ class DailyCard:
         return "NO QUALIFIED BETS TODAY" if n == 0 else f"{n} QUALIFIED OPPORTUNITIES"
 
 
+@dataclass(frozen=True)
+class CardFilter:
+    """Which card entries to show. None = no restriction on that field."""
+
+    sports: frozenset[Sport] | None = None
+    classifications: frozenset[BetClassification] | None = None
+    min_edge: float | None = None
+    """Probability units, as ``CardEntry.edge`` (0.02 = 2.0 points)."""
+    books: frozenset[str] | None = None
+    """The entry's best-price book."""
+
+    def matches(self, e: CardEntry) -> bool:
+        return (
+            (self.sports is None or e.sport in self.sports)
+            and (self.classifications is None or e.classification in self.classifications)
+            and (self.min_edge is None or e.edge >= self.min_edge - 1e-12)
+            and (self.books is None or e.sportsbook in self.books)
+        )
+
+
+def filter_entries(entries: list[CardEntry], card_filter: CardFilter) -> list[CardEntry]:
+    return [e for e in entries if card_filter.matches(e)]
+
+
 def _team_names(session: Session, game: Game) -> tuple[str, str]:
     home = session.get_one(Team, game.home_team_id).name
     away = session.get_one(Team, game.away_team_id).name

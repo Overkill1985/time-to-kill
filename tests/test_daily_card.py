@@ -293,3 +293,35 @@ def test_card_without_a_model_says_so(session_factory: sessionmaker[Session]) ->
     with session_factory() as s:
         card = build_card(s, DAY, RULES, predictor=None, now=NOW, persist=False)
     assert [u.reason for u in card.unmodeled] == ["no validated model for this sport yet"]
+
+
+def test_card_filter_narrows_entries_only(
+    database_url: str, session_factory: sessionmaker[Session]
+) -> None:
+    from dataclasses import replace
+
+    from ttk.domain import BetClassification, Sport
+    from ttk.services.daily_card import CardFilter, filter_entries
+
+    seed(session_factory)
+    with session_factory() as s:
+        card = build_card(s, DAY, RULES, predictor=FakePredictor(0.60), now=NOW, persist=False)
+    e = card.entries[0]
+    lean = replace(e, classification=BetClassification.LEAN, sportsbook="fanduel", edge=0.03)
+    rows = [replace(e, classification=BetClassification.PASS, edge=0.01), lean]
+    assert filter_entries(rows, CardFilter()) == rows
+    leans = CardFilter(classifications=frozenset({BetClassification.LEAN}))
+    assert filter_entries(rows, leans) == [lean]
+    assert filter_entries(rows, CardFilter(books=frozenset({"fanduel"}), min_edge=0.03)) == [lean]
+    assert filter_entries(rows, CardFilter(min_edge=0.02)) == [lean]
+    assert filter_entries(rows, CardFilter(sports=frozenset({Sport.CFB}))) == []
+
+    app = create_app(Settings(database_url=database_url))
+    app.state.predictor = (datetime.now(UTC), FakePredictor(0.60))
+    app.state.card_models = (None, {})
+    client = TestClient(app, base_url="http://localhost")
+    params = {"date": "2026-09-27", "sport": ["NBA", "CFB"], "min_edge": 2, "book": "FanDuel"}
+    body = client.get("/api/card", params=params).json()
+    assert body["entries"] == [] and body["total_entries"] >= 0
+    assert body["by_sport"]["NFL"]["games"] == 1  # summaries cover the whole card
+    assert client.get("/api/card", params={"classification": "MAYBE"}).status_code == 422
