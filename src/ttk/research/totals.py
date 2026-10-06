@@ -26,6 +26,7 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from sqlalchemy import select
@@ -391,3 +392,107 @@ def backtest(
         evaluate(rows_for(games, preds, closes, validate), cal, anchored),
         grid,
     )
+
+
+# --------------------------------------------------------------------------- frozen
+
+TOTALS_ARTIFACT_VERSION = 1
+MIN_GAMES = 5
+"""Both teams need this many games of history, as in validation (rows_for)."""
+
+
+def freeze_totals(
+    result: TotalsBacktest, sport: str, splits: dict[str, list[int]]
+) -> dict[str, object]:
+    """The backtest's fitted parameters as plain JSON (TRAIN only)."""
+    p, c, a = result.params, result.calibration, result.anchored
+    return {
+        "artifact_version": TOTALS_ARTIFACT_VERSION,
+        "market": "TOTAL",
+        "sport": sport,
+        "splits": splits,
+        "min_games": MIN_GAMES,
+        "params": {
+            "half_life": p.half_life,
+            "carryover": p.carryover,
+            "prior_possessions": p.prior_possessions,
+            "prior_games": p.prior_games,
+            "opponent_adjust": p.opponent_adjust,
+        },
+        "calibration": {"intercept": c.intercept, "slope": c.slope, "sigma": c.sigma},
+        "anchored": {
+            "intercept": a.intercept,
+            "market_coef": a.market_coef,
+            "disagreement_coef": a.disagreement_coef,
+            "n_train": a.n_train,
+        },
+    }
+
+
+@dataclass(frozen=True)
+class TotalView:
+    predicted: float
+    """Calibrated predicted total (points)."""
+    over_standalone: float
+    over_anchored: float
+    """P(over | no push) at the line."""
+    push: float
+    features: dict[str, float]
+
+
+def push_probability(cal: Calibration, predicted: float, line: float) -> float:
+    if line != int(line):
+        return 0.0
+    mu = cal.points(predicted)
+    return _phi((line + 0.5 - mu) / cal.sigma) - _phi((line - 0.5 - mu) / cal.sigma)
+
+
+class FrozenTotals:
+    """Rebuilds the predictor from an artifact; only state (team ratings from
+    finished games' box totals) moves forward."""
+
+    def __init__(
+        self, artifact: dict[str, Any], games: Sequence[EloGame], team_games: Sequence[TeamGame]
+    ) -> None:
+        if artifact.get("artifact_version") != TOTALS_ARTIFACT_VERSION:
+            raise ValueError("unknown totals artifact version")
+        self.artifact = artifact
+        self.params = TotalsParams(**artifact["params"])
+        self.calibration = Calibration(**artifact["calibration"])
+        self.anchored = MarketAnchoredModel(**artifact["anchored"])
+        self.min_games = int(artifact["min_games"])
+        self.predictions = walk_forward(games, team_games, self.params)
+
+    def view(self, game_id: int, line: float, market_over: float) -> TotalView | None:
+        p = self.predictions.get(game_id)
+        if p is None or min(p.home_games, p.away_games) < self.min_games:
+            return None
+        points = self.calibration.points(p.total)
+        return TotalView(
+            points,
+            p_over(self.calibration, p.total, line),
+            self.anchored.home_cover_probability(market_over, points - line),
+            push_probability(self.calibration, p.total, line),
+            {
+                "possessions": p.possessions,
+                "raw_total": p.total,
+                "home_games": float(p.home_games),
+                "away_games": float(p.away_games),
+            },
+        )
+
+
+def verify_totals(
+    frozen: FrozenTotals,
+    result: TotalsBacktest,
+    games: Sequence[EloGame],
+    closes: dict[int, ReportedLine],
+    validate: tuple[int, int],
+) -> int:
+    """The thawed model must reproduce the backtest's VALIDATE report exactly.
+    Returns the number of games checked."""
+    rows = rows_for(games, frozen.predictions, closes, validate, min_games=frozen.min_games)
+    report = evaluate(rows, frozen.calibration, frozen.anchored)
+    if repr(report) != repr(result.validate):  # repr: an empty bucket's ROI is nan
+        raise AssertionError("frozen totals model differs from the backtest on VALIDATE")
+    return report.games

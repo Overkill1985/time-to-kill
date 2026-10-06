@@ -408,7 +408,7 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
 
 - The model trails the closing total by 0.7 points of error, closer than the efficiency spread model trails the closing spread (1.5). The market still prices pace and efficiency better.
 - The market-anchored version is level with the market on validation: no edge. Its rare large edges won in both periods, but on 25–112 bets, the same shape as the college basketball spread model's validation pattern that failed on its test seasons.
-- **Verdict:** DEVELOPMENT, no edge. Not on the card. A forward test is the only way to judge the large-edge pattern now that the test seasons are used.
+- **Verdict:** DEVELOPMENT, no edge. Not on the card. A forward test is the only way to judge the large-edge pattern now that the test seasons are used: `ncaab-total-standalone-pace` and `ncaab-total-anchored-pace`, frozen 2026-10-06 (the thawed model reproduces VALIDATE exactly), snapshotted from the 2026-27 season once both teams have 5 games.
 
 ## College football spread (2026-09-27)
 

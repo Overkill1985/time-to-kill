@@ -29,6 +29,15 @@ from ttk.research.moneyline import VariantScore, evaluate, frozen_ml_rows, varia
 from ttk.research.nba_injuries import InjuryTimeline, Report, SitRates, expected_missing
 from ttk.research.nba_model import NBA
 from ttk.research.ncaab_model import NCAAB
+from ttk.research.totals import (
+    FrozenTotals,
+    TeamGame,
+    TotalsBacktest,
+    freeze_totals,
+    load_team_games,
+    verify_totals,
+)
+from ttk.research.totals import backtest as totals_backtest
 from ttk.services.daily_card import CardView
 from ttk.services.forward_test import ForwardModel, ModelView, register
 from ttk.services.frozen_simulator import FrozenSimulator
@@ -165,6 +174,72 @@ def _frozen_ml_model(row: ModelVersion, data: SportData, as_of: datetime) -> For
         )
 
     return ForwardModel(row, Sport(row.sport), view, as_of, market=Market.MONEYLINE)
+
+
+TOTALS_VARIANTS = ("standalone", "anchored")
+
+
+def freeze_totals_and_register(
+    session: Session, sport: Sport = Sport.NCAAB, *, label: str = "pace"
+) -> tuple[list[ModelVersion], int, TotalsBacktest]:
+    """Backtest the totals model (TRAIN only), freeze it, verify the thawed
+    model reproduces VALIDATE exactly, and register both variants as
+    ``<sport>-total-<variant>-<label>``."""
+    if sport is not Sport.NCAAB:
+        raise ValueError("The totals model needs team box totals: college basketball only")
+    config = CONFIGS[sport]
+    data = load_sport(session, config)
+    team_games = load_team_games(session, str(sport))
+    splits = config.splits
+    result = totals_backtest(data.games, team_games, data.closes, splits.train, splits.validate)
+    artifact = freeze_totals(
+        result,
+        str(sport),
+        {"train": list(splits.train), "validate": list(splits.validate), "test": list(splits.test)},
+    )
+    frozen = FrozenTotals(artifact, data.games, team_games)
+    checked = verify_totals(frozen, result, data.games, data.closes, splits.validate)
+    rows = []
+    for variant in TOTALS_VARIANTS:
+        rows.append(
+            register(
+                session,
+                name=f"{str(sport).lower()}-total-{variant}-{label}",
+                version=FROZEN_VERSION,
+                sport=sport,
+                algorithm=(
+                    "pace x efficiency, calibrated, normal around the prediction"
+                    if variant == "standalone"
+                    else "logistic(market no-vig over, prediction minus line)"
+                ),
+                features=["home_pace", "away_pace", "offense", "defense"],
+                artifact={**artifact, "variant": variant},
+                training_window=f"{splits.train[0]}-{splits.train[1]}",
+                validation_window=f"{splits.validate[0]}-{splits.validate[1]}",
+                log_loss=None,
+                brier=None,
+            )
+        )
+    return rows, checked, result
+
+
+def _frozen_totals_model(
+    row: ModelVersion, data: SportData, team_games: list[TeamGame], as_of: datetime
+) -> ForwardModel:
+    assert row.artifact is not None
+    frozen = FrozenTotals(row.artifact, data.games, team_games)
+    anchored = row.artifact.get("variant") == "anchored"
+
+    def view(
+        game_id: int, line: float, market_over: float, at: datetime, horizon: int
+    ) -> ModelView | None:
+        v = frozen.view(game_id, line, market_over)
+        if v is None:
+            return None
+        p = v.over_anchored if anchored else v.over_standalone
+        return ModelView(p, v.push, v.predicted, {**v.features, "market_over": market_over})
+
+    return ForwardModel(row, Sport(row.sport), view, as_of, market=Market.TOTAL)
 
 
 def football_season(now: datetime) -> int:
@@ -344,12 +419,17 @@ def build_forward_models(session: Session, sports: set[Sport] | None = None) -> 
         if data.sit_rates is not None:
             injuries = InjuryState(sport, data.sit_rates, data.rotations)
             injuries.refresh(session)
-        models.extend(
-            _frozen_ml_model(row, data, as_of)
-            if (row.artifact or {}).get("market") == "MONEYLINE"
-            else _frozen_model(row, data, as_of, injuries)
-            for row in rows
-        )
+        team_games: list[TeamGame] | None = None
+        for row in rows:
+            kind = (row.artifact or {}).get("market")
+            if kind == "MONEYLINE":
+                models.append(_frozen_ml_model(row, data, as_of))
+            elif kind == "TOTAL":
+                if team_games is None:
+                    team_games = load_team_games(session, str(sport))
+                models.append(_frozen_totals_model(row, data, team_games, as_of))
+            else:
+                models.append(_frozen_model(row, data, as_of, injuries))
     return models
 
 

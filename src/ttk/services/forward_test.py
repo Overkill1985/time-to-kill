@@ -61,7 +61,9 @@ class ForwardModel:
     market: Market = Market.SPREAD
     """MONEYLINE models get the same view call (main spread and its market) and
     return P(home wins | no tie) as ``home_cover`` and P(tie) as ``push``; the
-    snapshot records the moneyline market and prices alongside."""
+    snapshot records the moneyline market and prices alongside. TOTAL models are
+    called with the main total and its no-vig P(over), and return P(over | no
+    push) as ``home_cover`` and the predicted total as ``expected_margin``."""
 
 
 def register(
@@ -135,6 +137,30 @@ def _main_spread(session: Session, game_id: int) -> tuple[SideMarket, SideMarket
     return (home, away) if away is not None else None
 
 
+def _main_total(session: Session, game_id: int) -> tuple[SideMarket, SideMarket] | None:
+    """The main total's over and under (same line)."""
+    markets = side_markets(session, game_id)
+    over = next(
+        (
+            m
+            for m in main_lines(markets)
+            if m.market is Market.TOTAL and m.selection is Selection.OVER
+        ),
+        None,
+    )
+    if over is None or over.line is None:
+        return None
+    under = next(
+        (
+            m
+            for m in markets
+            if m.market is Market.TOTAL and m.selection is Selection.UNDER and m.line == over.line
+        ),
+        None,
+    )
+    return (over, under) if under is not None else None
+
+
 def _main_moneyline(session: Session, game_id: int) -> tuple[SideMarket, SideMarket] | None:
     sides = {
         m.selection: m
@@ -200,11 +226,18 @@ def snapshot(
             )
             if exists is not None:
                 continue
-            spread = _main_spread(session, game.id)
-            if spread is None:
-                stats.skipped["no two-sided spread"] += 1
+            # The market the model is centered on: the main spread, or for a totals
+            # model the main total (over as "home", under as "away").
+            centered = (
+                _main_total(session, game.id)
+                if model.market is Market.TOTAL
+                else _main_spread(session, game.id)
+            )
+            if centered is None:
+                kind = "total" if model.market is Market.TOTAL else "spread"
+                stats.skipped[f"no two-sided {kind}"] += 1
                 continue
-            home, away = spread
+            home, away = centered
             if now - min(home.oldest_observation, away.oldest_observation) > MAX_ODDS_AGE:
                 stats.skipped["odds older than 2 hours"] += 1
                 continue
@@ -350,6 +383,15 @@ class ScoredRow:
         return (self.cover_margin > 0) == (self.side is Selection.HOME)
 
 
+def result_margin(fp: ForwardPrediction, home_score: int, away_score: int) -> float:
+    """How far the snapshot's "home" side won its bet: home cover margin (spread),
+    home margin (moneyline), or total minus the line (total: over is "home")."""
+    if fp.market == Market.TOTAL:
+        return home_score + away_score - fp.home_line
+    margin = home_score - away_score
+    return margin + fp.home_line if fp.market == Market.SPREAD else margin
+
+
 def _side(fp: ForwardPrediction) -> tuple[Selection, float | None]:
     """The side the model favors against the market, and its best bettable price."""
     side = Selection.HOME if fp.home_cover_probability >= fp.market_home_cover else Selection.AWAY
@@ -368,6 +410,9 @@ def _clv(
     line: float | None = None
     if market is Market.SPREAD:
         line = fp.home_line if side is Selection.HOME else -fp.home_line
+    elif market is Market.TOTAL:
+        line = fp.home_line  # over and under share the number
+        side = Selection.OVER if side is Selection.HOME else Selection.UNDER
     key = (fp.game_id, f"{market}:{side}", line, odds)
     if key not in _CLV_CACHE:
         close = closes.get((fp.game_id, market))
@@ -436,9 +481,7 @@ def scored_rows(
                 home_line=fp.home_line,
                 model_home_cover=fp.home_cover_probability,
                 market_home_cover=fp.market_home_cover,
-                cover_margin=game.home_score
-                - game.away_score
-                + (fp.home_line if fp.market == Market.SPREAD else 0.0),
+                cover_margin=result_margin(fp, game.home_score, game.away_score),
                 side=side,
                 side_odds=odds,
                 price_clv=price_clv,
@@ -570,9 +613,9 @@ def forward_dashboard(
         covered = None
         if game.status == GameStatus.FINAL and game.home_score is not None:
             assert game.away_score is not None
-            line = fp.home_line if fp.market == Market.SPREAD else 0.0
-            margin = game.home_score - game.away_score + line
-            covered = "push" if margin == 0 else ("home" if margin > 0 else "away")
+            margin = result_margin(fp, game.home_score, game.away_score)
+            sides = ("over", "under") if fp.market == Market.TOTAL else ("home", "away")
+            covered = "push" if margin == 0 else (sides[0] if margin > 0 else sides[1])
         rows.append(
             {
                 "model": name,

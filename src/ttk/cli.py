@@ -294,6 +294,9 @@ def _score_test(args: argparse.Namespace, settings: Settings) -> int:
                 ModelVersion.sport == args.sport, ModelVersion.artifact.is_not(None)
             )
         ).all()
+        # Spread models only: moneyline and totals models were frozen after the test
+        # seasons were used, and are judged by forward tests.
+        rows = [r for r in rows if (r.artifact or {}).get("market", "SPREAD") == "SPREAD"]
         if not rows:
             print(f"No frozen {args.sport} models (see `ttk forward-freeze`).", file=sys.stderr)
             return 2
@@ -442,6 +445,20 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                 f"(DEVELOPMENT, validation log loss {row.log_loss or 0:.4f})"
             )
         print(f"verified: the frozen model reproduces the backtest on {checked} validation games")
+        return 0
+    if args.command == "forward-freeze-totals":
+        from ttk.services.forward_models import freeze_totals_and_register
+
+        with factory() as session:
+            rows, checked, result = freeze_totals_and_register(session)
+            session.commit()
+        v = result.validate
+        for row in rows:
+            print(f"registered {row.name} {row.version} (DEVELOPMENT)")
+        print(
+            f"verified: the frozen model reproduces VALIDATE on {checked} games "
+            f"(error {v.rmse:.2f} vs closing total {v.market_rmse:.2f})"
+        )
         return 0
     if args.command == "forward-freeze-ml":
         from ttk.services.forward_models import freeze_moneyline
@@ -1351,6 +1368,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     summ.add_argument("--days", type=int, default=7)
     summ.add_argument("--write", type=Path, help="Also write it to this file")
+    sub.add_parser(
+        "forward-freeze-totals",
+        help="Backtest, freeze and register the college basketball totals models",
+    )
     fwd_ml = sub.add_parser(
         "forward-freeze-ml",
         help="Register moneyline models built from a sport's frozen card spread model",
@@ -1586,6 +1607,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in (
         "forward-freeze",
         "forward-freeze-ml",
+        "forward-freeze-totals",
         "forward-snapshot",
         "forward-run",
         "forward-report",

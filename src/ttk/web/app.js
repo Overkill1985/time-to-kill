@@ -511,11 +511,13 @@ async function loadForward() {
     cell(`${r.sport} · ${r.matchup}`),
     cell(`${r.horizon_hours} h`),
     cell(r.market === "MONEYLINE" ? `ML (spread ${r.home_line >= 0 ? "+" : ""}${r.home_line})`
+      : r.market === "TOTAL" ? `total ${r.home_line}`
       : `${r.home_line >= 0 ? "+" : ""}${r.home_line}`),
     cell(pct(r.model_home_cover)),
     cell(pct(r.market_home_cover)),
     cell(pts(r.edge), signClass(r.edge)),
     cell(r.result == null ? "pending" : r.result === "push" ? "push"
+      : r.market === "TOTAL" ? `went ${r.result}`
       : `${r.result} ${r.market === "MONEYLINE" ? "won" : "covered"}`))));
 }
 
