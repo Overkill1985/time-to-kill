@@ -814,6 +814,48 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             log_file.close()
 
 
+def _backtest_totals(settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.espn_models import load_sport
+    from ttk.research.totals import TotalsReport, backtest, load_team_games
+    from ttk.services.forward_models import CONFIGS
+
+    config = CONFIGS[Sport.NCAAB]
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        data = load_sport(session, config)
+        team_games = load_team_games(session, str(Sport.NCAAB))
+    result = backtest(
+        data.games, team_games, data.closes, config.splits.train, config.splits.validate
+    )
+    for params, rmse in result.grid:
+        print(
+            f"half-life {params.half_life:>4g}  carryover {params.carryover}  "
+            f"opponent-adjusted {params.opponent_adjust!s:<5}  TRAIN error {rmse:.3f}"
+        )
+    p = result.params
+    print(
+        f"\nchosen: half-life {p.half_life:g}, carryover {p.carryover}, "
+        f"opponent-adjusted {p.opponent_adjust}; calibration {result.calibration.intercept:+.2f} "
+        f"+ {result.calibration.slope:.3f} x predicted, sigma {result.calibration.sigma:.2f}"
+    )
+
+    def show(label: str, r: TotalsReport) -> None:
+        (sd, sse), (ad, ase) = r.standalone_vs_market, r.anchored_vs_market
+        print(
+            f"{label}: {r.games} games, error {r.rmse:.2f} vs closing total {r.market_rmse:.2f}; "
+            f"{r.priced} priced: standalone {sd:+.5f} (z {sd / sse if sse else 0:+.2f}), "
+            f"anchored {ad:+.5f} (z {ad / ase if ase else 0:+.2f})"
+        )
+        for edge, (n, roi) in r.anchored_bets.items():
+            print(f"    anchored edge >= {edge:.0%}: {n} bets, ROI {roi:+.1%}")
+
+    show("TRAIN", result.train)
+    show("VALIDATE", result.validate)
+    print("Test seasons are not read. Log loss differences: negative beats the market.")
+    return 0
+
+
 def _card(args: argparse.Namespace, settings: Settings) -> int:
     from zoneinfo import ZoneInfo
 
@@ -1383,6 +1425,10 @@ def main(argv: list[str] | None = None) -> int:
             action="store_true",
             help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
         )
+    sub.add_parser(
+        "backtest-totals",
+        help="Tune and backtest the college basketball totals model (pace and efficiency)",
+    )
     card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
     card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
     card.add_argument(
@@ -1690,6 +1736,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     if args.command in espn_backtests:
         return _backtest_espn(args, settings.database_url, espn_backtests[args.command])
+
+    if args.command == "backtest-totals":
+        return _backtest_totals(settings)
 
     if args.command == "card":
         return _card(args, settings)

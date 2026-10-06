@@ -390,6 +390,26 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
   The sealed 2024-25 and 2025-26 team box totals were imported as *state* (efficiency going
   into 2026-27 is built from them), not scored.
 
+### College basketball totals (2026-10-06)
+
+`src/ttk/research/totals.py`, `ttk backtest-totals`. A walk-forward pace-and-efficiency model from ESPN team box totals. Each team's possessions per game and points per possession, scored and allowed, are exponentially decayed, shrunk toward the league, and opponent-adjusted. A game's predicted total is (home pace + away pace − league pace) × both sides' expected points per possession, linearly calibrated on TRAIN.
+
+- **Tuning:** grid on TRAIN (2017–2022) by error of the calibrated total. Chosen: half-life 16 games, season carryover 0.3, opponent-adjusted (17.32 points; every unadjusted setting was about 0.1 worse). Games count only once both teams have 5 games of history.
+- **Validation, 2023–2024** (12,032 games):
+
+  | | Train | Validate |
+  |---|---|---|
+  | Error of the total (points) vs closing total's | 17.32 vs 16.81 | 17.16 vs 16.48 |
+  | Standalone P(over) vs market, paired log loss | +0.0096 (z +9.9) | +0.0104 (z +7.3) |
+  | Market-anchored P(over) vs market | −0.0003 (z −2.0) | +0.0002 (z +0.8) |
+  | Anchored, edge ≥ 2% | 1,504 bets, +0.4% | 1,089 bets, −0.5% |
+  | Anchored, edge ≥ 4% | 95 bets, +6.5% | 112 bets, +12.4% |
+  | Anchored, edge ≥ 6% | 27 bets, +28.1% | 25 bets, +36.4% |
+
+- The model trails the closing total by 0.7 points of error, closer than the efficiency spread model trails the closing spread (1.5). The market still prices pace and efficiency better.
+- The market-anchored version is level with the market on validation: no edge. Its rare large edges won in both periods, but on 25–112 bets, the same shape as the college basketball spread model's validation pattern that failed on its test seasons.
+- **Verdict:** DEVELOPMENT, no edge. Not on the card. A forward test is the only way to judge the large-edge pattern now that the test seasons are used.
+
 ## College football spread (2026-09-27)
 
 Data: ESPN (DATA-SOURCES.md), FBS and FCS, 2013 to 2025: 20,991 regular-season and postseason
