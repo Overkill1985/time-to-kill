@@ -1,6 +1,7 @@
 from collections import Counter
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -305,7 +306,8 @@ def test_card_filter_narrows_entries_only(
 
     seed(session_factory)
     with session_factory() as s:
-        card = build_card(s, DAY, RULES, predictor=FakePredictor(0.60), now=NOW, persist=False)
+        fake: Any = FakePredictor(0.60)
+        card = build_card(s, DAY, RULES, predictor=fake, now=NOW, persist=False)
     e = card.entries[0]
     lean = replace(e, classification=BetClassification.LEAN, sportsbook="fanduel", edge=0.03)
     rows = [replace(e, classification=BetClassification.PASS, edge=0.01), lean]

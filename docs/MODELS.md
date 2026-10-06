@@ -178,6 +178,22 @@ Margin error, RMSE in points, on validation games with a reported line:
   - A run with 4,000 simulations a game showed college basketball at z +2.8. That was mostly Monte Carlo noise: noisy joint-cell frequencies carry a log-loss penalty of about 0.0004 per game at that size. Validation needs 20,000+ runs a game.
 - **Verdict:** adopted as the distribution and joint-probability engine for these sports, on the same terms as the NFL. It adds no spread-versus-total edge; its value is in legs that share a margin (spread and moneyline on one team) and in line sensitivity.
 
+### Moneylines from the spread models (2026-10-05)
+
+`src/ttk/research/moneyline.py`. Each spread model's margin distribution also prices the moneyline: P(home wins | no tie). Three versions, scored against the closing moneyline (multiplicative no-vig) on VALIDATE seasons, paired log loss (negative = better than the market):
+
+| Sport | Games | Model's own margin | Spread-implied (no model opinion) | Market-anchored |
+|---|---|---|---|---|
+| NFL 2018–21 | 1,083 | +0.0203 (z +4.0) | −0.0008 (z −0.8) | −0.0004 (z −0.3) |
+| CFB 2023–24 | 2,031 | +0.0298 (z +5.5) | +0.0033 (z +1.9) | +0.0050 (z +2.7) |
+| NBA 2023–24 | 2,635 | +0.0216 (z +6.6) | +0.0004 (z +0.7) | +0.0012 (z +1.4) |
+| NCAAB 2023–24 | 11,177 | +0.0171 (z +8.4) | −0.0012 (z −3.6) | −0.0014 (z −3.5) |
+
+- "Spread-implied" centers the distribution where its cover probability matches the closing spread market, so it is the moneyline the spread market implies. Where it matches the moneyline market (NFL, NBA), the two markets agree; no edge.
+- **College football:** the spread-implied moneyline is worse than the moneyline market. The moneyline market is sharper than this distribution's translation (a single sigma for every spread size is probably too blunt at college football's large spreads).
+- **College basketball:** the spread-implied and anchored moneylines beat the closing moneyline. By price, the gain is everywhere but largest in lopsided games (90%+ favorites: −0.0052 per game, z −2.4), where multiplicative no-vig is known to overstate longshots, so part of it is likely the de-vig method rather than mispricing. Betting the side at the closing price: spread-implied, edge ≥ 2%: 883 bets, +4.4%; anchored, edge ≥ 4%: 256 bets, +10.8%. Both are within noise. Not a demonstrated edge.
+- **Verdict:** no moneyline model is adopted. The test seasons are used, so the NCAAB lead is judged by a forward test: `ncaab-ml-spread-implied-eff` and `ncaab-ml-anchored-eff`, registered 2026-10-06 (their validation scores reproduce the table exactly), snapshotted from the 2026-27 season.
+
 ## NBA spread (2026-09-27)
 
 Data: ESPN's core API, one line per game per sportsbook, and ESPN box scores

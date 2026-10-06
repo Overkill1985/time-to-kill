@@ -39,6 +39,7 @@ ttk import-boxscores --sport NBA --from-season 2018 --to-season 2026  # player b
 ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, betting the opener
 ttk injury-check                 # NBA: how often players on the injury report actually sat
 ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
+ttk forward-freeze-ml --sport NCAAB --label eff  # moneyline models from the frozen card spread model
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
 ttk lab --horizon 1              # Performance Lab: results by model probability, calibration, weekly drift

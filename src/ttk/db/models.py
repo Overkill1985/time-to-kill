@@ -484,6 +484,10 @@ class ForwardPrediction(Base):
     features: Mapped[dict[str, float] | None] = mapped_column(JSON)
     inputs_as_of: Mapped[datetime]
     """Latest input used: the newest finished game, odds or injury observation."""
+    market: Mapped[str] = mapped_column(String(12), default="SPREAD", server_default="SPREAD")
+    """SPREAD, or MONEYLINE: then ``home_cover_probability`` is P(home wins | no
+    tie), ``market_home_cover`` and the best prices are the moneyline's, and
+    ``home_line`` is the main spread the model was centered on."""
 
 
 class ForwardScore(Base):

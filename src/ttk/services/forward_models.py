@@ -20,10 +20,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ttk.db.models import Game, InjuryReport, ModelVersion
-from ttk.domain import GameStatus, Sport
+from ttk.domain import GameStatus, Market, Sport
 from ttk.research.cfb_model import CFB
 from ttk.research.espn_models import SportConfig, SportData, SportReport, load_sport
+from ttk.research.espn_simulation import FrozenMarginPmf
 from ttk.research.frozen import FrozenSpreadModel, freeze, verify
+from ttk.research.moneyline import VariantScore, evaluate, frozen_ml_rows, variant_probability
 from ttk.research.nba_injuries import InjuryTimeline, Report, SitRates, expected_missing
 from ttk.research.nba_model import NBA
 from ttk.research.ncaab_model import NCAAB
@@ -85,6 +87,84 @@ def freeze_and_register(
             )
         )
     return rows, checked, report
+
+
+ML_VARIANTS = ("spread_implied", "anchored")
+
+
+def ml_model_name(sport: Sport, label: str, variant: str) -> str:
+    return f"{str(sport).lower()}-ml-{variant.replace('_', '-')}-{label}"
+
+
+def freeze_moneyline(
+    session: Session, sport: Sport, *, label: str
+) -> tuple[list[ModelVersion], dict[str, VariantScore]]:
+    """Register the sport's moneyline models, built from its frozen card spread
+    model exactly as stored (nothing is refitted): ``spread_implied`` and
+    ``anchored`` (research/moneyline). Their validation scores are recomputed
+    here from the same artifact. Returns the rows and the scores."""
+    base = session.scalar(
+        select(ModelVersion)
+        .where(ModelVersion.name == CARD_MODEL_NAMES[sport], ModelVersion.artifact.is_not(None))
+        .order_by(ModelVersion.id.desc())
+    )
+    if base is None or base.artifact is None:
+        raise ValueError(f"No frozen {sport} card model to build moneylines from")
+    model = FrozenSpreadModel(base.artifact, load_sport(session, CONFIGS[sport]))
+    validate = base.artifact["splits"]["validate"]
+    scores = evaluate(
+        frozen_ml_rows(model, (validate[0], validate[1])), FrozenMarginPmf(model), model.anchored
+    )
+    rows = []
+    for variant in ML_VARIANTS:
+        rows.append(
+            register(
+                session,
+                name=ml_model_name(sport, label, variant),
+                version=FROZEN_VERSION,
+                sport=sport,
+                algorithm=f"moneyline from the spread model's margin distribution ({variant})",
+                features=list(base.artifact["margin"]["names"]),
+                artifact={
+                    **base.artifact,
+                    "market": "MONEYLINE",
+                    "moneyline_variant": variant,
+                    "base_model": f"{base.name} {base.version}",
+                },
+                training_window="-".join(map(str, base.artifact["splits"]["train"])),
+                validation_window=f"{validate[0]}-{validate[1]}",
+                log_loss=scores[variant].log_loss,
+                brier=None,
+            )
+        )
+    return rows, scores
+
+
+def _frozen_ml_model(row: ModelVersion, data: SportData, as_of: datetime) -> ForwardModel:
+    """A frozen moneyline model: P(home wins | no tie) from the margin
+    distribution centered at the main spread (research/moneyline)."""
+    assert row.artifact is not None
+    model = FrozenSpreadModel(row.artifact, data)
+    pmf = FrozenMarginPmf(model)
+    variant = row.artifact["moneyline_variant"]
+
+    def view(
+        game_id: int, home_line: float, market: float, at: datetime, horizon: int
+    ) -> ModelView | None:
+        v = model.view(game_id, home_line, market)
+        if v is None:
+            return None
+        p, tie, center = variant_probability(
+            variant, pmf, model.anchored, v.expected_margin, home_line, market
+        )
+        return ModelView(
+            p,
+            tie,
+            center,
+            {**v.features, "spread_market_cover": market, "model_margin": v.expected_margin},
+        )
+
+    return ForwardModel(row, Sport(row.sport), view, as_of, market=Market.MONEYLINE)
 
 
 def football_season(now: datetime) -> int:
@@ -264,7 +344,12 @@ def build_forward_models(session: Session, sports: set[Sport] | None = None) -> 
         if data.sit_rates is not None:
             injuries = InjuryState(sport, data.sit_rates, data.rotations)
             injuries.refresh(session)
-        models.extend(_frozen_model(row, data, as_of, injuries) for row in rows)
+        models.extend(
+            _frozen_ml_model(row, data, as_of)
+            if (row.artifact or {}).get("market") == "MONEYLINE"
+            else _frozen_model(row, data, as_of, injuries)
+            for row in rows
+        )
     return models
 
 

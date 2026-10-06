@@ -510,11 +510,13 @@ async function loadForward() {
     cell(r.model),
     cell(`${r.sport} · ${r.matchup}`),
     cell(`${r.horizon_hours} h`),
-    cell(`${r.home_line >= 0 ? "+" : ""}${r.home_line}`),
+    cell(r.market === "MONEYLINE" ? `ML (spread ${r.home_line >= 0 ? "+" : ""}${r.home_line})`
+      : `${r.home_line >= 0 ? "+" : ""}${r.home_line}`),
     cell(pct(r.model_home_cover)),
     cell(pct(r.market_home_cover)),
     cell(pts(r.edge), signClass(r.edge)),
-    cell(r.result == null ? "pending" : r.result === "push" ? "push" : `${r.result} covered`))));
+    cell(r.result == null ? "pending" : r.result === "push" ? "push"
+      : `${r.result} ${r.market === "MONEYLINE" ? "won" : "covered"}`))));
 }
 
 $("#fwd-sport").addEventListener("change", () => { loadForward(); loadLab(""); });

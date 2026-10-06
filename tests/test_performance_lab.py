@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from test_forward import KICK, model, odds
 from ttk import betting_math as bm
 from ttk.db.models import ForwardScore, Game
-from ttk.domain import GameStatus, Selection
+from ttk.domain import GameStatus, Market, Selection
 from ttk.services import forward_test
 from ttk.services.forward_test import ScoredRow, score_finished, scored_rows, snapshot
 from ttk.services.performance_lab import (
@@ -35,6 +35,7 @@ def row(
         horizon_hours=1,
         game_id=1,
         sport="NFL",
+        market=Market.SPREAD,
         commence_time=kick,
         home_line=-3.5,
         model_home_cover=p_home,

@@ -39,6 +39,7 @@ src/ttk/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
     espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
+    moneyline.py       Moneylines from the spread models' margin distributions; validation vs the ML market
     espn_models.py     ESPN-history pipeline per SportConfig: feature-set margin models, market-anchored, opener test
     nba_model.py       NBA config: splits, grids, rest and lineup feature sets
     cfb_model.py       College football config: splits, grids, regression toward recent level
@@ -83,12 +84,13 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-freeze-ml | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0014: forward_predictions.market (SPREAD or MONEYLINE; added natively, triggers kept).
                        - 0013: forward_scores (append-only CLV of finished forward snapshots).
                        - 0012: bankroll_entries and bankroll_policies (append-only); bankroll columns on bets and parlays.
                        - 0011: forward_predictions (append-only) and model_versions.artifact.

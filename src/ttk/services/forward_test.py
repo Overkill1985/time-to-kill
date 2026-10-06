@@ -58,6 +58,10 @@ class ForwardModel:
     refresh: Callable[[Session], None] | None = None
     """Called at the start of each snapshot pass to reload fast-moving inputs
     (NBA injury reports) that the 6-hourly model build would leave stale."""
+    market: Market = Market.SPREAD
+    """MONEYLINE models get the same view call (main spread and its market) and
+    return P(home wins | no tie) as ``home_cover`` and P(tie) as ``push``; the
+    snapshot records the moneyline market and prices alongside."""
 
 
 def register(
@@ -131,6 +135,16 @@ def _main_spread(session: Session, game_id: int) -> tuple[SideMarket, SideMarket
     return (home, away) if away is not None else None
 
 
+def _main_moneyline(session: Session, game_id: int) -> tuple[SideMarket, SideMarket] | None:
+    sides = {
+        m.selection: m
+        for m in main_lines(side_markets(session, game_id))
+        if m.market is Market.MONEYLINE
+    }
+    home, away = sides.get(Selection.HOME), sides.get(Selection.AWAY)
+    return (home, away) if home is not None and away is not None else None
+
+
 def _best(sm: SideMarket, bettable: frozenset[str] | None) -> tuple[float | None, str | None]:
     prices = [b for b in sm.consensus.books if bettable is None or b.sportsbook in bettable]
     if not prices:
@@ -196,12 +210,25 @@ def snapshot(
                 continue
             assert home.line is not None
             market = home.consensus.consensus_no_vig_probability
+            priced_home, priced_away = home, away
+            if model.market is Market.MONEYLINE:
+                moneyline = _main_moneyline(session, game.id)
+                if moneyline is None:
+                    stats.skipped["no two-sided moneyline"] += 1
+                    continue
+                priced_home, priced_away = moneyline
+                if (
+                    now - min(priced_home.oldest_observation, priced_away.oldest_observation)
+                    > MAX_ODDS_AGE
+                ):
+                    stats.skipped["odds older than 2 hours"] += 1
+                    continue
             view = model.view(game.id, home.line, market, now, h)
             if view is None:
                 stats.skipped["no model inputs"] += 1
                 continue
-            home_odds, home_book = _best(home, bettable_books)
-            away_odds, away_book = _best(away, bettable_books)
+            home_odds, home_book = _best(priced_home, bettable_books)
+            away_odds, away_book = _best(priced_away, bettable_books)
             session.add(
                 ForwardPrediction(
                     model_version_id=model.version.id,
@@ -211,8 +238,8 @@ def snapshot(
                     home_line=home.line,
                     home_cover_probability=view.home_cover,
                     push_probability=view.push,
-                    market_home_cover=market,
-                    books=home.consensus.books_reporting,
+                    market_home_cover=priced_home.consensus.consensus_no_vig_probability,
+                    books=priced_home.consensus.books_reporting,
                     best_home_odds=home_odds,
                     best_home_book=home_book,
                     best_away_odds=away_odds,
@@ -221,6 +248,7 @@ def snapshot(
                     features=view.features,
                     # Everything used (odds, results, injuries) was observed by now.
                     inputs_as_of=now,
+                    market=model.market,
                 )
             )
             stats.written += 1
@@ -271,7 +299,7 @@ def _ll(p: float, y: int) -> float:
     return -math.log(p if y else 1 - p)
 
 
-_CLV_CACHE: dict[tuple[int, str, float, float], tuple[float | None, float | None]] = {}
+_CLV_CACHE: dict[tuple[int, str, float | None, float], tuple[float | None, float | None]] = {}
 """(game, side, line, price) -> (price CLV, points vs close). Only finished games are
 scored, and a finished game's closing state (as of kickoff) never changes."""
 
@@ -285,12 +313,14 @@ class ScoredRow:
     horizon_hours: int
     game_id: int
     sport: str
+    market: Market
     commence_time: datetime
     home_line: float
     model_home_cover: float
     market_home_cover: float
     cover_margin: float
-    """Home margin plus the home line: > 0 home covered, 0 push."""
+    """Home margin plus the home line (a moneyline: the margin): > 0 home won
+    the bet, 0 push."""
     side: Selection
     side_odds: float | None
     """Best bettable price for the side at the snapshot (None: no bettable book)."""
@@ -327,19 +357,22 @@ def _side(fp: ForwardPrediction) -> tuple[Selection, float | None]:
 
 
 def _clv(
-    session: Session, fp: ForwardPrediction, closes: dict[int, ClosingSnapshot]
+    session: Session, fp: ForwardPrediction, closes: dict[tuple[int, Market], ClosingSnapshot]
 ) -> tuple[float | None, float | None]:
     """(price CLV, points vs close) of the snapshot's side, replayed from the odds
     history (about a second per game; ``closes`` shares one replay per game)."""
     side, odds = _side(fp)
     if odds is None:
         return None, None
-    line = fp.home_line if side is Selection.HOME else -fp.home_line
-    key = (fp.game_id, str(side), line, odds)
+    market = Market(fp.market)
+    line: float | None = None
+    if market is Market.SPREAD:
+        line = fp.home_line if side is Selection.HOME else -fp.home_line
+    key = (fp.game_id, f"{market}:{side}", line, odds)
     if key not in _CLV_CACHE:
-        close = closes.get(fp.game_id)
+        close = closes.get((fp.game_id, market))
         if close is None:
-            close = closes[fp.game_id] = closing_snapshot(session, fp.game_id, Market.SPREAD)
+            close = closes[(fp.game_id, market)] = closing_snapshot(session, fp.game_id, market)
         _CLV_CACHE[key] = (close.price_clv(side, line, odds), close.points_gained(side, line))
     return _CLV_CACHE[key]
 
@@ -354,7 +387,7 @@ def score_finished(session: Session) -> int:
         .where(Game.status == GameStatus.FINAL, ForwardScore.forward_prediction_id.is_(None))
         .order_by(ForwardPrediction.game_id)
     ).all()
-    closes: dict[int, ClosingSnapshot] = {}
+    closes: dict[tuple[int, Market], ClosingSnapshot] = {}
     for fp in pending:
         price_clv, points = _clv(session, fp, closes)
         session.add(
@@ -380,7 +413,7 @@ def scored_rows(
     )
     if sport is not None:
         query = query.where(Game.sport == sport)
-    closes: dict[int, ClosingSnapshot] = {}
+    closes: dict[tuple[int, Market], ClosingSnapshot] = {}
     out = []
     for fp, game, mv, stored in session.execute(query).all():
         name = f"{mv.name} {mv.version}"
@@ -398,11 +431,14 @@ def scored_rows(
                 horizon_hours=fp.horizon_hours,
                 game_id=game.id,
                 sport=game.sport,
+                market=Market(fp.market),
                 commence_time=game.commence_time,
                 home_line=fp.home_line,
                 model_home_cover=fp.home_cover_probability,
                 market_home_cover=fp.market_home_cover,
-                cover_margin=game.home_score - game.away_score + fp.home_line,
+                cover_margin=game.home_score
+                - game.away_score
+                + (fp.home_line if fp.market == Market.SPREAD else 0.0),
                 side=side,
                 side_odds=odds,
                 price_clv=price_clv,
@@ -534,7 +570,8 @@ def forward_dashboard(
         covered = None
         if game.status == GameStatus.FINAL and game.home_score is not None:
             assert game.away_score is not None
-            margin = game.home_score - game.away_score + fp.home_line
+            line = fp.home_line if fp.market == Market.SPREAD else 0.0
+            margin = game.home_score - game.away_score + line
             covered = "push" if margin == 0 else ("home" if margin > 0 else "away")
         rows.append(
             {
@@ -543,6 +580,7 @@ def forward_dashboard(
                 "matchup": f"{away_name} @ {home_name}",
                 "commence_time": game.commence_time.isoformat(),
                 "horizon_hours": fp.horizon_hours,
+                "market": fp.market,
                 "snapshot_at": fp.snapshot_at.isoformat(),
                 "home_line": fp.home_line,
                 "model_home_cover": fp.home_cover_probability,

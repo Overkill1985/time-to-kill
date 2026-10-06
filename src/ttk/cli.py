@@ -443,6 +443,20 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             )
         print(f"verified: the frozen model reproduces the backtest on {checked} validation games")
         return 0
+    if args.command == "forward-freeze-ml":
+        from ttk.services.forward_models import freeze_moneyline
+
+        with factory() as session:
+            rows, ml_scores = freeze_moneyline(session, args.sport, label=args.label)
+            session.commit()
+        for row in rows:
+            vs = ml_scores[row.artifact["moneyline_variant"] if row.artifact else ""]
+            print(
+                f"registered {row.name} {row.version} (DEVELOPMENT; validation {vs.games} games, "
+                f"log loss {vs.log_loss:.4f} vs moneyline market {vs.market_log_loss:.4f}, "
+                f"z {vs.z:+.2f})"
+            )
+        return 0
     if args.command == "forward-report":
         with factory() as session:
             score_finished(session)
@@ -1295,6 +1309,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     summ.add_argument("--days", type=int, default=7)
     summ.add_argument("--write", type=Path, help="Also write it to this file")
+    fwd_ml = sub.add_parser(
+        "forward-freeze-ml",
+        help="Register moneyline models built from a sport's frozen card spread model",
+    )
+    fwd_ml.add_argument(
+        "--sport", type=Sport, choices=[Sport.CFB, Sport.NBA, Sport.NCAAB], required=True
+    )
+    fwd_ml.add_argument("--label", required=True, help="Registry label, e.g. eff (NCAAB)")
     fwd_freeze = sub.add_parser(
         "forward-freeze",
         help="Freeze a validated model (fitted on TRAIN) for forward testing; registers it",
@@ -1515,7 +1537,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "repair-espn-lines":
         return _repair_espn_lines(args, settings)
 
-    if args.command in ("forward-freeze", "forward-snapshot", "forward-run", "forward-report"):
+    if args.command in (
+        "forward-freeze",
+        "forward-freeze-ml",
+        "forward-snapshot",
+        "forward-run",
+        "forward-report",
+    ):
         return _forward(args, settings)
 
     if args.command == "score-test":
