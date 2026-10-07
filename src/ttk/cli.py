@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ttk import betting_math as bm
 from ttk.config import Settings, get_settings
@@ -717,6 +717,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.providers.espn import EspnScheduleProvider
     from ttk.providers.espn_boxscore import EspnBoxscores
     from ttk.providers.espn_injuries import EspnInjuries
+    from ttk.providers.espn_roster import EspnRosters
     from ttk.services.bets import settle_bets
     from ttk.services.collector import (
         collect_once,
@@ -726,6 +727,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         refresh_team_boxes,
     )
     from ttk.services.parlay_lab import settle_parlays
+    from ttk.services.props import PropsProvider, collect_props
 
     log_file = None
     if args.log is not None:
@@ -748,6 +750,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     schedule_provider = EspnScheduleProvider()
     injuries = EspnInjuries()
     boxscores = EspnBoxscores()
+    rosters = EspnRosters()
     remaining: int | None = None
     emit(
         f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
@@ -800,6 +803,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             )
         for sport, why in result.skipped.items():
             emit(f"{sport}: skipped ({why})")
+        if hasattr(provider, "event_props"):
+            # Player-prop snapshots at 24 h / 1 h before kickoff (services/props).
+            for line in collect_props(factory, cast(PropsProvider, provider), rosters.fetch):
+                emit(line)
+            remaining = getattr(provider, "daily_remaining", remaining)
         emit(f"quota remaining: {remaining}")
         _alerts(settings, factory, emit)
         _bet_alerts(settings, factory, emit)
@@ -1499,6 +1507,7 @@ def main(argv: list[str] | None = None) -> int:
     bt_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
+    sub.add_parser("props-report", help="Player-prop snapshot coverage: books, markets and drops")
     sub.add_parser(
         "teams-unmatched",
         help="List provider team names not linked to an ESPN team, with their games",
@@ -1820,6 +1829,27 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "backtest-totals":
         return _backtest_totals(settings, args.sport)
+
+    if args.command == "props-report":
+        from ttk.db.session import make_engine, make_session_factory
+        from ttk.services.props import coverage
+
+        factory = make_session_factory(make_engine(settings.database_url))
+        with factory() as session:
+            rows = coverage(session)
+        for c in rows:
+            print(
+                f"\n{c.sport}, {c.horizon} h before kickoff: {c.pulls} pulls, "
+                f"{c.with_quotes} with sportsbook props, {c.quotes} quotes kept; dropped "
+                f"{c.dropped_not_a_sportsbook} pick'em/exchange, {c.dropped_off_roster} off-roster"
+            )
+            for book, (n, q) in c.books.items():
+                print(f"    {book:<16} in {n} of {c.pulls} pulls, {q} quotes")
+            top = ", ".join(f"{m} {n}" for m, n in list(c.markets.items())[:8])
+            print(f"    markets: {top}")
+        if not rows:
+            print("No prop pulls yet: the collector takes them 24 h and 1 h before NFL/NBA games.")
+        return 0
 
     if args.command in ("teams-unmatched", "link-team"):
         return _teams(args, settings)

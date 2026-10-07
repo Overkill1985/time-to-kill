@@ -490,6 +490,44 @@ class ForwardPrediction(Base):
     ``home_line`` is the main spread the model was centered on."""
 
 
+class PropPull(Base):
+    """One player-props snapshot of one game at a horizon before kickoff
+    (services/props). Append-only; one per (game, horizon)."""
+
+    __tablename__ = "prop_pulls"
+    __table_args__ = (UniqueConstraint("game_id", "horizon_hours"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(50))
+    event_id: Mapped[str] = mapped_column(String(100))
+    horizon_hours: Mapped[int] = mapped_column(Integer)
+    pulled_at: Mapped[datetime]
+    books: Mapped[int] = mapped_column(Integer)
+    quotes: Mapped[int] = mapped_column(Integer)
+    stats: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    """Kept and dropped counts by reason (pick'em app, not on either roster, ...)."""
+
+
+class PropQuote(Base):
+    """One sportsbook price for one player prop outcome in a pull. Append-only."""
+
+    __tablename__ = "prop_quotes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pull_id: Mapped[int] = mapped_column(ForeignKey("prop_pulls.id"), index=True)
+    sportsbook_id: Mapped[int] = mapped_column(ForeignKey("sportsbooks.id"))
+    market: Mapped[str] = mapped_column(String(60))
+    player: Mapped[str] = mapped_column(String(100))
+    team_side: Mapped[str] = mapped_column(String(4))
+    """HOME or AWAY: the roster the player was found on at the pull."""
+    selection: Mapped[str] = mapped_column(String(100))
+    point: Mapped[float | None] = mapped_column(Float)
+    american_odds: Mapped[float] = mapped_column(Float)
+    book_changed_at: Mapped[str | None] = mapped_column(String(40))
+    """The provider's last change time for this price, as sent."""
+
+
 class ForwardScore(Base):
     """Closing-line value of a forward snapshot's side, computed once its game is
     final: the closing state as of kickoff never changes, so it is stored rather

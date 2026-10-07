@@ -1,4 +1,6 @@
-"""PropLine REST adapter (https://prop-line.com/docs), bulk game odds.
+"""PropLine REST adapter (https://prop-line.com/docs): bulk game odds, and
+per-event player props (``/events/{id}/markets`` and ``/events/{id}/odds``, 1
+request each).
 
 - Base ``https://api.prop-line.com``; ``GET /v1/sports/{sport_key}/odds?markets=...``.
 - The key is sent in the ``X-API-Key`` header (never the URL, so it cannot leak
@@ -13,6 +15,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -54,13 +57,10 @@ class PropLineProvider:
         self._headers = {"X-API-Key": api_key}
         self.daily_remaining: int | None = None
 
-    def fetch_odds(self, sport: Sport) -> OddsFetch:
+    def _get(self, path: str, params: dict[str, str] | None, what: str) -> Any:
+        """One request: records the daily balance, raises on rate limits and errors."""
         try:
-            response = self._client.get(
-                f"/v1/sports/{SPORT_KEYS[sport]}/odds",
-                params={"markets": self._markets},
-                headers=self._headers,
-            )
+            response = self._client.get(path, params=params, headers=self._headers)
         except httpx.HTTPError as exc:
             raise ProviderError(f"{self.name}: request failed ({type(exc).__name__})") from None
         remaining = response.headers.get("X-Daily-Remaining")
@@ -73,6 +73,68 @@ class PropLineProvider:
                 float(retry) if retry and retry.replace(".", "", 1).isdigit() else None,
             )
         if response.status_code != 200:
-            raise ProviderError(f"{self.name}: HTTP {response.status_code} for {sport}")
-        payload: list[dict[str, Any]] = response.json()
+            raise ProviderError(f"{self.name}: HTTP {response.status_code} for {what}")
+        return response.json()
+
+    def fetch_odds(self, sport: Sport) -> OddsFetch:
+        payload: list[dict[str, Any]] = self._get(
+            f"/v1/sports/{SPORT_KEYS[sport]}/odds", {"markets": self._markets}, str(sport)
+        )
         return normalize_events(payload, provider=self.name, sport=sport)
+
+    def event_markets(self, sport: Sport, event_id: str) -> list[str]:
+        """Market keys listed for one event (1 request)."""
+        payload = self._get(
+            f"/v1/sports/{SPORT_KEYS[sport]}/events/{event_id}/markets", None, f"event {event_id}"
+        )
+        items = payload.get("markets", payload) if isinstance(payload, dict) else payload
+        return sorted({m["key"] if isinstance(m, dict) else str(m) for m in items})
+
+    def event_props(self, sport: Sport, event_id: str, markets: list[str]) -> list[PropQuote]:
+        """Every book's quotes for these markets on one event (1 request)."""
+        payload = self._get(
+            f"/v1/sports/{SPORT_KEYS[sport]}/events/{event_id}/odds",
+            {"markets": ",".join(markets)},
+            f"event {event_id}",
+        )
+        return parse_props(payload)
+
+
+@dataclass(frozen=True)
+class PropQuote:
+    book: str
+    market: str
+    player: str
+    """The outcome's ``description``: a player name (or a team, for team props)."""
+    selection: str
+    """Over / Under / Yes / No, or the player's name for one-way markets."""
+    point: float | None
+    american_odds: float
+    dfs_odds_type: str | None
+    payout_multiplier: float | None
+    last_change_at: str | None
+
+
+def parse_props(payload: dict[str, Any]) -> list[PropQuote]:
+    out = []
+    for book in payload.get("bookmakers", []):
+        for market in book.get("markets", []):
+            for o in market.get("outcomes", []):
+                price = o.get("price")
+                player = o.get("description") or o.get("name")
+                if price is None or not player:
+                    continue
+                out.append(
+                    PropQuote(
+                        book=book.get("key", ""),
+                        market=market.get("key", ""),
+                        player=player,
+                        selection=o.get("name", ""),
+                        point=o.get("point"),
+                        american_odds=float(price),
+                        dfs_odds_type=o.get("dfs_odds_type"),
+                        payout_multiplier=o.get("payout_multiplier"),
+                        last_change_at=o.get("last_change_at"),
+                    )
+                )
+    return out
