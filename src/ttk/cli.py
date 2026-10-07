@@ -450,7 +450,7 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
         from ttk.services.forward_models import freeze_totals_and_register
 
         with factory() as session:
-            rows, checked, result = freeze_totals_and_register(session)
+            rows, checked, result = freeze_totals_and_register(session, args.sport)
             session.commit()
         v = result.validate
         for row in rows:
@@ -831,17 +831,17 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
             log_file.close()
 
 
-def _backtest_totals(settings: Settings) -> int:
+def _backtest_totals(settings: Settings, sport: Sport) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.research.espn_models import load_sport
     from ttk.research.totals import TotalsReport, backtest, load_team_games
     from ttk.services.forward_models import CONFIGS
 
-    config = CONFIGS[Sport.NCAAB]
+    config = CONFIGS[sport]
     factory = make_session_factory(make_engine(settings.database_url))
     with factory() as session:
         data = load_sport(session, config)
-        team_games = load_team_games(session, str(Sport.NCAAB))
+        team_games = load_team_games(session, str(sport))
     result = backtest(
         data.games, team_games, data.closes, config.splits.train, config.splits.validate
     )
@@ -1368,9 +1368,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     summ.add_argument("--days", type=int, default=7)
     summ.add_argument("--write", type=Path, help="Also write it to this file")
-    sub.add_parser(
-        "forward-freeze-totals",
-        help="Backtest, freeze and register the college basketball totals models",
+    fwd_totals = sub.add_parser(
+        "forward-freeze-totals", help="Backtest, freeze and register a basketball totals model"
+    )
+    fwd_totals.add_argument(
+        "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
     fwd_ml = sub.add_parser(
         "forward-freeze-ml",
@@ -1446,9 +1448,11 @@ def main(argv: list[str] | None = None) -> int:
             action="store_true",
             help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
         )
-    sub.add_parser(
-        "backtest-totals",
-        help="Tune and backtest the college basketball totals model (pace and efficiency)",
+    bt_totals = sub.add_parser(
+        "backtest-totals", help="Tune and backtest a basketball totals model (pace and efficiency)"
+    )
+    bt_totals.add_argument(
+        "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
     card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
     card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
@@ -1760,7 +1764,7 @@ def main(argv: list[str] | None = None) -> int:
         return _backtest_espn(args, settings.database_url, espn_backtests[args.command])
 
     if args.command == "backtest-totals":
-        return _backtest_totals(settings)
+        return _backtest_totals(settings, args.sport)
 
     if args.command == "card":
         return _card(args, settings)

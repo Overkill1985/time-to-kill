@@ -29,10 +29,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ttk.db.models import Game, ReportedLine, TeamGameBox
+from ttk.db.models import Game, PlayerGameStat, ReportedLine, TeamGameBox
 from ttk.models.anchored import MarketAnchoredModel, fit_market_anchored
 from ttk.models.elo import EloGame
 from ttk.research.moneyline import no_vig
@@ -48,7 +48,11 @@ class TeamGame:
 
 def load_team_games(session: Session, sport: str) -> list[TeamGame]:
     """Both teams' points and the game's possessions (the mean of both teams'
-    estimates, as for the efficiency spread feature)."""
+    estimates, as for the efficiency spread feature). College basketball reads
+    team box totals; the NBA sums its player box lines (no team rows there; team
+    turnovers credited to no player are missing, about one a game)."""
+    if sport == "NBA":
+        return _team_games_from_players(session, sport)
     by_game: dict[int, list[TeamGameBox]] = defaultdict(list)
     for b in session.scalars(
         select(TeamGameBox).join(Game, Game.id == TeamGameBox.game_id).where(Game.sport == sport)
@@ -63,6 +67,36 @@ def load_team_games(session: Session, sport: str) -> list[TeamGame]:
             continue
         for b in boxes:
             out.append(TeamGame(game_id, b.team_id, possessions, float(2 * b.fgm + b.fg3m + b.ftm)))
+    return out
+
+
+def _team_games_from_players(session: Session, sport: str) -> list[TeamGame]:
+    rows = session.execute(
+        select(
+            PlayerGameStat.game_id,
+            PlayerGameStat.team_id,
+            func.sum(PlayerGameStat.fga),
+            func.sum(PlayerGameStat.oreb),
+            func.sum(PlayerGameStat.tov),
+            func.sum(PlayerGameStat.fta),
+            func.sum(PlayerGameStat.points),
+        )
+        .join(Game, Game.id == PlayerGameStat.game_id)
+        .where(Game.sport == sport, PlayerGameStat.played)
+        .group_by(PlayerGameStat.game_id, PlayerGameStat.team_id)
+    ).all()
+    by_game: dict[int, list[tuple[int, float, float]]] = defaultdict(list)
+    for game_id, team_id, fga, oreb, tov, fta, points in rows:
+        estimate = (fga or 0) - (oreb or 0) + (tov or 0) + 0.44 * (fta or 0)
+        by_game[game_id].append((team_id, float(estimate), float(points or 0)))
+    out: list[TeamGame] = []
+    for game_id, teams in by_game.items():
+        if len(teams) != 2:
+            continue
+        possessions = sum(e for _, e, _ in teams) / 2
+        if possessions <= 0:
+            continue
+        out.extend(TeamGame(game_id, tid, possessions, pts) for tid, _, pts in teams)
     return out
 
 

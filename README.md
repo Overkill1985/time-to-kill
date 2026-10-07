@@ -32,7 +32,7 @@ ttk bets add --game-id 7314 --market SPREAD --selection AWAY --line 2.5 --odds 1
 ttk bets list | settle | summary  # the collector also settles bets and parlays on every pass
 ttk bankroll deposit 1000        # turns on staking limits; also withdraw, adjust (signed)
 ttk bankroll policy --max-stake 0.02 --stop 0.2   # limits as fractions; `ttk bankroll` shows them
-ttk backtest-totals              # college basketball totals model (TRAIN tuning, VALIDATE report)
+ttk backtest-totals [--sport NBA]  # basketball totals model (TRAIN tuning, VALIDATE report)
 ttk simulate --game-id 7321 --preset detailed --seed 42  # Monte Carlo one game (NFL, CFB, NBA, NCAAB)
 ttk backtest-nfl-elo             # tune on train, report validation (--final-test: the test seasons, once)
 ttk import-espn-history --sport NBA --from-season 2018 --to-season 2026  # ESPN games + book lines (hours; resumable)
@@ -41,7 +41,7 @@ ttk backtest-nba                 # NBA: Elo, rest, lineups, market-anchored, bet
 ttk injury-check                 # NBA: how often players on the injury report actually sat
 ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated model for forward tests
 ttk forward-freeze-ml --sport NCAAB --label eff  # moneyline models from the frozen card spread model
-ttk forward-freeze-totals         # college basketball totals models (backtest, freeze, verify, register)
+ttk forward-freeze-totals [--sport NBA]  # basketball totals models (backtest, freeze, verify, register)
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
 ttk forward-report               # score forward snapshots on finished games
 ttk lab --horizon 1              # Performance Lab: results by model probability, calibration, weekly drift

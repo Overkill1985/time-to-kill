@@ -185,8 +185,8 @@ def freeze_totals_and_register(
     """Backtest the totals model (TRAIN only), freeze it, verify the thawed
     model reproduces VALIDATE exactly, and register both variants as
     ``<sport>-total-<variant>-<label>``."""
-    if sport is not Sport.NCAAB:
-        raise ValueError("The totals model needs team box totals: college basketball only")
+    if sport not in (Sport.NCAAB, Sport.NBA):
+        raise ValueError("The totals model needs basketball box scores (NCAAB, NBA)")
     config = CONFIGS[sport]
     data = load_sport(session, config)
     team_games = load_team_games(session, str(sport))

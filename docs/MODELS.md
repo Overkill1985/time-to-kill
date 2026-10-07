@@ -410,6 +410,15 @@ Splits (ESPN season = the year it ends): burn-in 2015–2016, **train 2017–202
 - The market-anchored version is level with the market on validation: no edge. Its rare large edges won in both periods, but on 25–112 bets, the same shape as the college basketball spread model's validation pattern that failed on its test seasons.
 - **Verdict:** DEVELOPMENT, no edge. Not on the card. A forward test is the only way to judge the large-edge pattern now that the test seasons are used: `ncaab-total-standalone-pace` and `ncaab-total-anchored-pace`, frozen 2026-10-06 (the thawed model reproduces VALIDATE exactly), snapshotted from the 2026-27 season once both teams have 5 games.
 
+### NBA totals (2026-10-06)
+
+The same model (`ttk backtest-totals --sport NBA`), with team totals summed from the NBA player box lines already collected (no team rows there; team turnovers credited to no player are missing, about one a game) and the NBA possession formula (0.44 × FTA).
+
+- **Tuning:** TRAIN 2019–2022 chose half-life 10 games, carryover 0.3, opponent-adjusted.
+- **Validation, 2023–2024** (2,639 games): error 18.47 against the closing total's 17.91 (0.56 behind). Standalone P(over) worse than the market (z +4.3); market-anchored level with it (+0.0005, z +1.0). Edge ≥ 2%: 262 bets, −1.2%; almost no larger edges (2 bets at ≥ 4%).
+- **The anchored fit fades the model:** its disagreement coefficient is slightly negative (−0.0098 per point). In training, a higher model total made the over slightly *less* likely once the market was known, so the market already knew what the model saw. Its small intercept is the training seasons' over rate.
+- **Verdict:** DEVELOPMENT, no edge. Forward-tested from the 2026-27 opener (`nba-total-standalone-pace`, `nba-total-anchored-pace`, frozen 2026-10-06; VALIDATE reproduced exactly).
+
 ## College football spread (2026-09-27)
 
 Data: ESPN (DATA-SOURCES.md), FBS and FCS, 2013 to 2025: 20,991 regular-season and postseason
