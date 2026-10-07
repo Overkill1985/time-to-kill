@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ttk.db.models import IngestionRun
@@ -100,3 +101,32 @@ def test_a_broken_notifier_never_breaks_a_pass(
     with session_factory() as s:
         sent = run_alerts(s, data_dir=tmp_path, now=NOW, now_local=LOCAL, notify=broken)
     assert sent  # still logged and returned
+
+
+def test_unmatched_team_with_an_upcoming_game_alerts(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    from ttk.db.models import Game, Team
+
+    now = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+    with session_factory() as s:
+        stray, known = (
+            Team(sport="NFL", name="NOLA Saints"),
+            Team(sport="NFL", name="Vikings", espn_id="16"),
+        )
+        s.add_all([stray, known])
+        s.flush()
+        s.add(
+            Game(
+                sport="NFL",
+                home_team_id=known.id,
+                away_team_id=stray.id,
+                commence_time=now + timedelta(days=4),
+            )
+        )
+        s.commit()
+        keys = {a.key for a in check_health(s, now=now, data_dir=tmp_path)}
+        assert "unmatched-teams" in keys
+        s.scalars(select(Game)).one().status = "DUPLICATE"  # linked: no longer a problem
+        s.commit()
+        assert "unmatched-teams" not in {a.key for a in check_health(s, now=now, data_dir=tmp_path)}

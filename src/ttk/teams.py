@@ -41,5 +41,16 @@ CURATED_ALIASES: dict[Sport, dict[str, str]] = {
         "nicholls state": "2447",  # Nicholls Colonels
         "tennessee martin": "2630",  # UT Martin Skyhawks
         "upenn": "219",  # Pennsylvania Quakers (not Penn State, id 213)
+        "california golden": "25",  # California Golden Bears (PropLine truncates)
+        "north carolina central": "2428",  # North Carolina Central Eagles
+        "nc central": "2428",
+        "east texas a and m": "2837",  # ESPN still lists Texas A&M-Commerce Lions
+        "east texas a and m lions": "2837",
+    },
+    Sport.NBA: {
+        "los angeles clippers": "12",  # ESPN: LA Clippers (not the Lakers)
+    },
+    Sport.NFL: {
+        "nola saints": "18",  # New Orleans Saints
     },
 }

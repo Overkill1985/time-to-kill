@@ -7,7 +7,8 @@ call ``run_alerts`` on every pass, so each watches the other. A shared state fil
 
 Checks: no successful odds poll for 45 minutes (the collector is down or
 failing); repeated failed odds polls; runs left RUNNING (a process died); the
-PropLine quota running low; the forward-test runner silent for an hour.
+PropLine quota running low; the forward-test runner silent for an hour; an
+upcoming game naming a team not linked to ESPN (its odds reach no model).
 """
 
 from __future__ import annotations
@@ -22,10 +23,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ttk.db.models import IngestionRun, utcnow
+from ttk.db.models import Game, IngestionRun, Team, utcnow
+from ttk.domain import GameStatus
 from ttk.services.health import STALE_RUNNING, last_quota
 
 ODDS_STALE = timedelta(minutes=45)
@@ -97,6 +99,28 @@ def check_health(
     quota = last_quota(data_dir / "logs" / "collector.log")
     if quota is not None and quota[1] < QUOTA_LOW:
         alerts.append(Alert("quota-low", f"PropLine requests left today: {quota[1]}."))
+    unmatched = session.scalars(
+        select(Team.name)
+        .where(
+            Team.espn_id.is_(None),
+            select(Game.id)
+            .where(
+                or_(Game.home_team_id == Team.id, Game.away_team_id == Team.id),
+                Game.status != GameStatus.DUPLICATE,
+                Game.commence_time > now,
+            )
+            .exists(),
+        )
+        .order_by(Team.name)
+    ).all()
+    if unmatched:
+        alerts.append(
+            Alert(
+                "unmatched-teams",
+                f"Odds for upcoming games name teams not linked to ESPN: {', '.join(unmatched)}. "
+                "Run `ttk teams-unmatched`.",
+            )
+        )
     forward_log = data_dir / "logs" / "forward.log"
     last_forward = _last_log_time(forward_log)
     local = now_local or datetime.now()

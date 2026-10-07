@@ -211,6 +211,7 @@ def snapshot(
                 Game.commence_time <= now + timedelta(hours=longest),
                 # Preseason games aren't modelled (no competitive results to learn).
                 or_(Game.season_type.is_(None), Game.season_type != "PRE"),
+                Game.status != GameStatus.DUPLICATE,
             )
         ).all()
         for game in games:

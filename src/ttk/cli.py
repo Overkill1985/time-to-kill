@@ -873,6 +873,51 @@ def _backtest_totals(settings: Settings, sport: Sport) -> int:
     return 0
 
 
+def _teams(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.team_review import LinkError, link_team, unmatched_teams
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        if args.command == "teams-unmatched":
+            teams = unmatched_teams(session)
+            for t in teams:
+                print(
+                    f"\n{t.sport} {t.name} (team id {t.team_id}); aliases: {', '.join(t.aliases)}"
+                )
+                for g in t.games:
+                    target = f" -> ESPN game {g.espn_counterpart}" if g.espn_counterpart else ""
+                    print(
+                        f"    game {g.game_id} {g.commence_time[:16]} {g.status} vs {g.opponent}, "
+                        f"{g.odds_rows} odds rows{target}"
+                    )
+                print(
+                    "    closest ESPN teams: "
+                    + "; ".join(f"{name} (id {tid}, {sim:.2f})" for tid, name, sim in t.suggestions)
+                )
+            if not teams:
+                print("No unmatched teams: every provider name links to an ESPN team.")
+            else:
+                print(
+                    "\nLink one with `ttk link-team --team-id ID --espn-team-id ID` (a dry run; "
+                    "add --apply). Suggestions are never applied on their own."
+                )
+            return 0
+        try:
+            plan = link_team(session, args.team_id, args.espn_team_id, apply=args.apply)
+        except LinkError as exc:
+            print(f"Not linked: {exc}", file=sys.stderr)
+            return 2
+        if args.apply:
+            session.commit()
+    print(f"{'Linked' if plan.applied else 'Would link'} {plan.unmatched} -> {plan.espn_team}:")
+    for step in plan.steps:
+        print(f"  {step}")
+    if not plan.applied:
+        print("Dry run: nothing changed. Add --apply to make these changes.")
+    return 0
+
+
 def _card(args: argparse.Namespace, settings: Settings) -> int:
     from zoneinfo import ZoneInfo
 
@@ -1454,6 +1499,16 @@ def main(argv: list[str] | None = None) -> int:
     bt_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
+    sub.add_parser(
+        "teams-unmatched",
+        help="List provider team names not linked to an ESPN team, with their games",
+    )
+    link = sub.add_parser(
+        "link-team", help="Link an unmatched team to its ESPN team (a dry run unless --apply)"
+    )
+    link.add_argument("--team-id", type=int, required=True, help="The unmatched team")
+    link.add_argument("--espn-team-id", type=int, required=True, help="Its ESPN team (teams.id)")
+    link.add_argument("--apply", action="store_true", help="Make the changes (default: show them)")
     card = sub.add_parser("card", help="Show the daily card for a date (US Eastern)")
     card.add_argument("--date", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
     card.add_argument(
@@ -1765,6 +1820,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "backtest-totals":
         return _backtest_totals(settings, args.sport)
+
+    if args.command in ("teams-unmatched", "link-team"):
+        return _teams(args, settings)
 
     if args.command == "card":
         return _card(args, settings)

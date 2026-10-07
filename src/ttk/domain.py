@@ -20,6 +20,9 @@ class GameStatus(StrEnum):
     SUSPENDED = "SUSPENDED"
     CANCELED = "CANCELED"
     UNKNOWN = "UNKNOWN"
+    DUPLICATE = "DUPLICATE"
+    """A provider's copy of a game that was linked to its ESPN game afterwards
+    (services/team_review): its odds rows stay here; it is never modeled."""
 
 
 class Market(StrEnum):

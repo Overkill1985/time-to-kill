@@ -29,6 +29,7 @@ from ttk import betting_math as bm
 from ttk.db.models import Game, GameSourceId, ModelVersion, Prediction, Team, utcnow
 from ttk.domain import (
     BetClassification,
+    GameStatus,
     Market,
     ModelHealth,
     ModelStatus,
@@ -251,7 +252,11 @@ def build_card(
     card = DailyCard(day=day, generated_at=now, bettable_books=bettable_books)
     games = session.scalars(
         select(Game)
-        .where(Game.commence_time >= start, Game.commence_time < end)
+        .where(
+            Game.commence_time >= start,
+            Game.commence_time < end,
+            Game.status != GameStatus.DUPLICATE,
+        )
         .order_by(Game.commence_time)
     ).all()
     nfl_version = predictor.ensure_registered(session) if predictor else None

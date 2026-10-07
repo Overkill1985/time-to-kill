@@ -76,6 +76,7 @@ src/ttk/
     data_quality.py    Rule-based data quality and uncertainty, each with reasons
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
+    team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     bankroll.py        Balance from append-only deposits + settled P/L, staking limits, Kelly guidance
     parlay_lab.py      Parlays: price at one book, correlation, joint prob (simulated same-game, all four sports), EV, save, settle
@@ -85,7 +86,7 @@ src/ttk/
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-freeze-ml | forward-freeze-totals | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
+                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | teams-unmatched | link-team | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-freeze-ml | forward-freeze-totals | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
                            | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | backtest-totals | simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.

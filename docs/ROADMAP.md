@@ -40,7 +40,7 @@ Same-game joint probabilities come from Monte Carlo for all four sports (non-NFL
    - Follow-ups:
      - an NCAAB live run once the season starts (Nov);
      - an NBA live run once the season starts (Oct);
-     - an unmatched-team review view.
+     - ~~an unmatched-team review view~~ **done 2026-10-06:** `ttk teams-unmatched` and `ttk link-team`; 9 names linked, plus a health alert for new ones.
 3. **Scheduled ingestion:** a simple loop or OS task that respects API credits.
 4. ~~NFL history~~ **Done 2026-09-26:** nflverse games from 1999 to 2026, with reported lines used for evaluation only.
    - Still to do: team game stats and EPA from play-by-play.
