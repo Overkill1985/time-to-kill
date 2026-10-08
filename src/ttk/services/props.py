@@ -35,6 +35,7 @@ from ttk.providers.propline import PropQuote
 from ttk.services.forward_test import due_horizon
 
 PROP_SPORTS = (Sport.NFL, Sport.NBA)
+MAX_DROPPED_NAMES = 30
 HORIZONS = (24, 1)
 MIN_REMAINING = 100
 NOT_SPORTSBOOKS = frozenset(
@@ -152,6 +153,7 @@ def pull_props(
     stats: Counter[str] = Counter({"player_markets": len(markets)})
     quotes = provider.event_props(due.sport, due.event_id, markets) if markets else []
     kept: list[tuple[PropQuote, str]] = []
+    off_roster: Counter[str] = Counter()
     for q in quotes:
         if not is_sportsbook(q):
             stats["dropped_not_a_sportsbook"] += 1
@@ -160,6 +162,7 @@ def pull_props(
         sides = [side for side, names in teams.items() if key in names]
         if len(sides) != 1:
             stats["dropped_not_on_one_roster"] += 1
+            off_roster[q.player] += 1
             continue
         kept.append((q, sides[0]))
     books = {q.book for q, _ in kept}
@@ -174,7 +177,12 @@ def pull_props(
         pulled_at=now,
         books=len(books),
         quotes=len(kept),
-        stats=dict(stats),
+        stats={
+            **stats,
+            # The most-quoted names dropped as off-roster, to tell feed errors
+            # from name mismatches.
+            "off_roster_names": dict(off_roster.most_common(MAX_DROPPED_NAMES)),
+        },
     )
     session.add(pull)
     session.flush()
@@ -250,6 +258,17 @@ class Coverage:
     markets: dict[str, int]
     dropped_not_a_sportsbook: int
     dropped_off_roster: int
+    off_roster_names: dict[str, int]
+    """The most-quoted dropped names across these pulls (from each pull's sample)."""
+
+
+def _merged_names(pulls: list[PropPull]) -> dict[str, int]:
+    total: Counter[str] = Counter()
+    for p in pulls:
+        names = (p.stats or {}).get("off_roster_names") or {}
+        if isinstance(names, dict):
+            total.update({str(k): int(v) for k, v in names.items()})
+    return dict(total.most_common(MAX_DROPPED_NAMES))
 
 
 def coverage(session: Session) -> list[Coverage]:
@@ -285,6 +304,7 @@ def coverage(session: Session) -> list[Coverage]:
                 {m: int(n) for m, n in sorted(markets, key=lambda r: -r[1])},
                 sum((p.stats or {}).get("dropped_not_a_sportsbook", 0) for p in pulls),
                 sum((p.stats or {}).get("dropped_not_on_one_roster", 0) for p in pulls),
+                _merged_names(pulls),
             )
         )
     return out

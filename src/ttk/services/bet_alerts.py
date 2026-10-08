@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ttk import betting_math as bm
@@ -126,6 +126,8 @@ def steam(session: Session, *, now: datetime, sports: Sequence[Sport]) -> list[A
             Game.status == GameStatus.SCHEDULED,
             Game.commence_time > now,
             Game.commence_time <= now + STEAM_WINDOW,
+            # Preseason lines swing on rest decisions, and no model covers them.
+            or_(Game.season_type.is_(None), Game.season_type != "PRE"),
         )
     ).all()
     for game in games:

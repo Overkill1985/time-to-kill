@@ -2,6 +2,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from test_bets import KICK, bet, game_id, poll
@@ -72,3 +73,7 @@ def test_steam_needs_a_fast_move_across_books(session_factory: sessionmaker[Sess
         assert steam(s, now=now, sports=[Sport.NBA]) == []
         # Two hours later the move is old news (and inside the lookback both ends agree).
         assert steam(s, now=now + timedelta(minutes=100), sports=[Sport.NFL]) == []
+        # Preseason games are never steam: their lines swing on rest decisions.
+        s.scalars(select(Game)).one().season_type = "PRE"
+        s.flush()
+        assert steam(s, now=now, sports=[Sport.NFL]) == []

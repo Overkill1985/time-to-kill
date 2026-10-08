@@ -117,6 +117,11 @@ def test_off_roster_players_are_dropped(session_factory: sessionmaker[Session]) 
         pull = s.scalars(select(PropPull)).one()
     assert pull.quotes == 4 and pull.stats is not None
     assert pull.stats["dropped_not_on_one_roster"] == 8
+    # Aaron Jones has 4 quotes in the fixture, Barion Brown 4 (Fanatics and Rebet).
+    assert pull.stats["off_roster_names"] == {"Aaron Jones": 4, "Barion Brown": 4}
+    with session_factory() as s:
+        (c,) = coverage(s)
+    assert c.off_roster_names == {"Aaron Jones": 4, "Barion Brown": 4}
 
 
 def test_quota_floor_duplicates_and_failures(session_factory: sessionmaker[Session]) -> None:

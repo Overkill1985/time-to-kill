@@ -51,6 +51,7 @@ Player props (probe 2026-10-07, 2 requests):
 - **Saints–Vikings, 4 days out:** 9 books, 615 outcomes, 32 players, 21 player markets. Mostly pick'em apps (PrizePicks, Underdog, Dabble, ParlayPlay: flat payouts, `dfs_odds_type`/`payout_multiplier` set) and prediction markets (Kalshi, Polymarket); sportsbooks were Fanatics, Rebet and Betway only. No DraftKings, FanDuel or BetMGM props yet.
 - **NBA preseason (Pacers–Timberwolves, same day):** FanDuel and Pick6 only, 6 players. FanDuel's list included **LaMelo Ball (Hornets)**: the feed can file a player under the wrong game, so every prop is checked against both teams' ESPN rosters at the pull and dropped otherwise.
 - PropLine merges duplicate events itself (`merged_from_event_ids`).
+- **First real pull, 2026-10-07** (Buccaneers @ Cowboys, 24 h out): 3,829 sportsbook quotes from 12 books, among them DraftKings (801), FanDuel, BetMGM and Pinnacle, across 32 player markets. 4,549 pick'em or exchange quotes and 886 off-roster quotes were dropped. Each pull now records its most-quoted off-roster names, to separate feed errors from name mismatches.
 - **Collection** (`services/props.py`): snapshots at 24 h and 1 h before kickoff, NFL and NBA regular season, sportsbook prices only; append-only `prop_pulls` / `prop_quotes` with every drop counted. About 15 requests a day in the NBA season, 32 a week in the NFL. `ttk props-report` shows which books carry what.
 
 ESPN behaviors verified 2026-09-26 (`src/ttk/providers/espn.py`):

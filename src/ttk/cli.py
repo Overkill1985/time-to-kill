@@ -1847,6 +1847,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"    {book:<16} in {n} of {c.pulls} pulls, {q} quotes")
             top = ", ".join(f"{m} {n}" for m, n in list(c.markets.items())[:8])
             print(f"    markets: {top}")
+            if c.off_roster_names:
+                names = ", ".join(f"{n} ({k})" for n, k in list(c.off_roster_names.items())[:12])
+                print(f"    most-quoted off-roster names: {names}")
         if not rows:
             print("No prop pulls yet: the collector takes them 24 h and 1 h before NFL/NBA games.")
         return 0
