@@ -86,9 +86,12 @@ src/ttk/
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
-  cli.py               ttk migrate | ingest-schedule | ingest-odds | collect-odds | import-nfl-history | import-nfl-pbp | card | bets | serve
-                           | import-espn-history | import-boxscores | import-team-boxes | import-cfbd | import-cfbd-games | bankroll | props-report | teams-unmatched | link-team | lab | injury-check | summary | alerts | score-test | forward-freeze | forward-freeze-ml | forward-freeze-totals | forward-snapshot | forward-run | forward-report | repair-merged-games | repair-espn-lines
-                           | backtest-nfl-elo | backtest-nba | backtest-cfb | backtest-ncaab | backtest-totals | simulate
+  cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
+                       - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
+                       - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
+                       - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals, score-test, injury-check
+                       - forward.py: forward-freeze(-ml/-totals), forward-snapshot/run/report, lab
+                       - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
