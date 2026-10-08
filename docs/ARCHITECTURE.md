@@ -84,7 +84,9 @@ src/ttk/
     simulation_service.py  One-game simulation summary: distributions, sensitivity, max acceptable line
     frozen_simulator.py    Monte Carlo from a frozen card model (CFB, NBA, NCAAB), anchored to the market
     market.py          Current market per game: per-book latest, pairing, consensus, main line
-  api/app.py           FastAPI routes. Loopback only, and cross-site writes are refused (see Security)
+  api/app.py           create_app: loopback only, cross-site writes refused (see Security); includes the routers
+  api/routes/          One APIRouter per area: games, card, bets, bankroll, forward, parlays, tools (simulator, math)
+  api/common.py        Request/response models, conversions, the session dependency, cached models
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
