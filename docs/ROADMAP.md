@@ -1,13 +1,13 @@
 # Roadmap
 
-Status as of 2026-09-26.
+Status as of 2026-10-08.
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1. Assessment | Tooling inventory, repo analysis, docs | **Done** |
 | 2. Foundation | Schema + migrations, provider interfaces, odds ingestion, schedule/results, API shell | **Done except one item.** ESPN schedule/results, cross-provider game linking, the web UI, and scheduled ingestion (the Windows collector task, since 2026-09-26) are built and running. Remaining: a first live run of The Odds API adapter (needs a key; PropLine is the live source) |
 | 3. Betting math | Odds conversions, no-vig, edge, EV, fair odds, Kelly, parlays, settlement, CLV, consensus, qualification | **Done** |
-| 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), a market-anchored model (no significant edge), and EPA and QB-change features from play-by-play (adopted; they close a third of Elo's margin-error gap to the market, but no edge against it). All stay DEVELOPMENT; the test seasons were scored once on 2026-10-05, no edge (docs/MODELS.md). Next: timestamped odds history |
+| 4. First model | NFL spread: historical data ingestion (nflverse), Elo baseline, then logistic regression, walk-forward validation, calibration, model registry | **In progress.** The history import is done (7,548 games). Built and validated: Elo, a key-number margin model (adopted: fixes push prediction), a season-by-season home field (tested, not adopted), a market-anchored model (no significant edge), and EPA and QB-change features from play-by-play (adopted; they close a third of Elo's margin-error gap to the market, but no edge against it). All stay DEVELOPMENT; the test seasons were scored once on 2026-10-05, no edge (docs/MODELS.md). Timestamped odds history has been collected since 2026-09-26; the NFL model is under forward test (Phase 9b) |
 | 5. Monte Carlo | Reusable score simulation (seeded, reproducible), line sensitivity, maximum acceptable line | **Built, NFL.** The engine, presets and seeds; margin anchored to the validated model; totals around the market; rank copula; CLI, API and UI tab; same-game parlay joints. Validated: no gain over independence for spread × total (z +0.75). **All four sports since 2026-10-05:** college football, NBA and college basketball simulate from their frozen card models (margin centered on the market-anchored cover probability, no ties, TRAIN copula pairs from ESPN closing totals); validated against independence on their validation seasons (docs/MODELS.md) |
 | 6. Daily card | Qualified opportunities, filters, Why-Not view, data-quality scoring | **Started.** Since 2026-10-04 the card prices every sport's spreads: NFL with its predictor, college football, NBA and college basketball with their frozen forward-tested market-anchored models (all DEVELOPMENT, so nothing qualifies; the web app builds them in the background and lists those sports as loading meanwhile). `ttk card` and `/api/card` cover with qualification, Why-Not, data quality, uncertainty, bettable books, line movement and prediction snapshots. The first UI is at `/` (Today, Bet Tracker and Performance tabs). **Filters 2026-10-05:** sport, classification, minimum edge and best-price book, in the Today tab (remembered per browser), `ttk card` and `/api/card`. Moneyline and totals models researched 2026-10-05/06: no edge against the market (moneylines from the spread models; a college basketball pace-and-efficiency totals model trailing the closing total by 0.7 points); NCAAB moneylines under forward test. Still to do: put them on the card if a forward test earns it |
 | 7. Parlay Lab | Cross-sport slips, joint probability, correlation warnings, same-game simulation | **Started.** Built:
@@ -28,40 +28,23 @@ Same-game joint probabilities come from Monte Carlo for all four sports (non-NFL
 | 10. Performance Lab | Threshold lab (52-60%), calibration drift, CLV trends | **Built 2026-10-05** on forward-test data only: betting the model's side at probability thresholds 50–60% (record, ROI ± SE, break-even, CLV; under 30 bets flagged), calibration bins for model and market, weekly log loss vs market and CLV with running totals (`ttk lab`, Forward tests tab). Forward closing-line values are now stored once per finished snapshot (reports no longer replay the odds history). Still to do: the same views for real bets once there are some |
 | 11. Advanced | Props, injury impact, alerts, movement analysis | **Alerts started 2026-10-04:** health alerts (collector or forward runner down, failing polls, dead runs, low quota) as Windows notifications and a log, from both long-running tasks. **Bet and movement alerts 2026-10-05:** one-time events from the collector: a pending bet's line 1.5+ points from your number, settlements, and steam (consensus main spread 1+ or total 1.5+ in 60 min, 3+ books, games within 24 h, NFL and NBA by default). **Props collection 2026-10-07:** NFL/NBA player-prop snapshots at 24 h and 1 h before kickoff from PropLine (sportsbooks only, roster-checked, `ttk props-report`); no prop model yet |
 
-## Next steps (Phase 2 remainder, then Phase 4)
+## Where things stand (2026-10-08)
 
-1. **Live odds run:**
-   - Set `TTK_ODDS_API_KEY`.
-   - Run `ttk ingest-odds --sport NFL`.
-   - Verify the stored snapshots against the book.
-2. ~~Schedule and results provider~~ **Done 2026-09-26:**
-   - ESPN covers all four sports.
-   - Cross-provider linking is resolved by ESPN id, never guessed.
-   - Follow-ups:
-     - an NCAAB live run once the season starts (Nov);
-     - an NBA live run once the season starts (Oct);
-     - ~~an unmatched-team review view~~ **done 2026-10-06:** `ttk teams-unmatched` and `ttk link-team`; 9 names linked, plus a health alert for new ones.
-3. **Scheduled ingestion:** a simple loop or OS task that respects API credits.
-4. ~~NFL history~~ **Done 2026-09-26:** nflverse games from 1999 to 2026, with reported lines used for evaluation only.
-   - Still to do: team game stats and EPA from play-by-play.
-5. ~~Elo baseline~~ **Done 2026-09-26:** see docs/MODELS.md. The test seasons were scored once on 2026-10-05.
-6. ~~Beat the baseline~~ **Done 2026-09-26:**
-   - The key-number margin model is adopted.
-   - Season-by-season home field was not adopted.
-   - The market-anchored model shows no edge (z −0.2).
-7. **New information for the market-anchored model**, each judged by its paired z against the market on validation:
-   - ~~quarterback status~~ and ~~EPA from play-by-play~~ **done 2026-09-26:** signal confirmed, no edge against the (probably closing) reported lines;
-   - **timestamped odds history (highest priority):** opening, intraday and closing prices, so models can be tested against early lines and measured by closing-line value.
-     - **Built 2026-09-26:** the PropLine adapter, `ttk collect-odds`, line history and CLV.
-     - **Done 2026-09-26:** the PropLine key is configured and verified live, change-only storage is built, and the DraftKings/exchange name bug is fixed.
-     - **Running since 2026-09-26 16:14:** the Windows scheduled task "Time-to-Kill odds collector" (see README). NFL, CFB and NBA (openers up to 90 days out) are polled every 15 minutes. NCAAB starts once it has games within 7 days.
-     - After that, each week of collection adds opening-to-closing data. One NFL season is roughly 270 games;
-   - injuries at bet time;
-   - rest, travel and weather;
-   - timestamped odds, so bets can be scored by closing-line value.
-   - Only a model that clearly beats the market goes to PAPER, and only then are the test seasons scored.
+Everything buildable without new data or decisions is built. What remains waits on the season or on you.
 
-## Open decisions
+**Waiting on games** (forward tests; a z against the market is shown at 30 decided games per horizon):
 
-- Whether to build the PropLine REST adapter. It needs a PropLine key and confirmed endpoint docs.
-- Frontend technology for Phase 6. A server-rendered minimal UI versus a small SPA.
+- NFL spread: about 15 decided games per horizon now; 30 around Oct 19.
+- College football spreads: the first full Saturday under forward test is Oct 10.
+- NBA spreads and NBA player props: from the Oct 20 opener. NBA totals about Nov 1 (both teams need 5 games).
+- College basketball spreads and moneylines: opening week in early November. Totals mid-November (the same 5-game rule).
+- NFL player props: collected since 2026-10-07 (24 h and 1 h before kickoff). No prop model until there is history to validate on.
+
+**Open decisions:**
+
+- Whether to add The Odds API to the collector as a daily cross-check (about 180 of its 500 monthly credits for NFL and NBA). Run once by hand on 2026-10-08 (docs/DATA-SOURCES.md).
+- Whether a prop model is worth building, once a few weeks of 24 h and 1 h snapshots exist.
+
+**Not started:** weather and travel features for football. NFL injuries are collected but not yet a model feature; NBA injuries are, through the injury model.
+
+**Follow-ups:** an NBA live check after the opener and an NCAAB one after its opener; review `ttk props-report` (the off-roster names) after the first weekend.

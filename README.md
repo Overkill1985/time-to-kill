@@ -43,6 +43,7 @@ ttk forward-freeze --sport CFB --feature-set inseason  # freeze a validated mode
 ttk forward-freeze-ml --sport NCAAB --label eff  # moneyline models from the frozen card spread model
 ttk forward-freeze-totals [--sport NBA]  # basketball totals models (backtest, freeze, verify, register)
 ttk forward-run --loop-minutes 30 --refresh-inputs  # snapshots 24 h / 1 h before kickoff; refresh inputs every 6 h
+ttk forward-snapshot             # one forward-test pass now (the scheduled task runs forward-run)
 ttk forward-report               # score forward snapshots on finished games
 ttk lab --horizon 1              # Performance Lab: results by model probability, calibration, weekly drift
 ttk score-test --sport NBA       # frozen models on their sealed test seasons (once; done 2026-10-05)
