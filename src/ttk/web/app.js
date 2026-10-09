@@ -89,6 +89,7 @@ function modelName(raw) {
     : name.endsWith("lineup-prev") ? "lineups"
     : name.endsWith("injury") ? "lineups and injury report"
     : name.endsWith("eff") ? "efficiency"
+    : name.endsWith("wind") ? "market total and forecast wind"
     : name.endsWith("pace") ? "pace and efficiency" : "";
   return { title: `${s} ${market}`, detail: [flavor, inputs].filter(Boolean).join(", ") };
 }

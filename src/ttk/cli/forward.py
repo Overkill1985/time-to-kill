@@ -67,6 +67,27 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             f"(error {v.rmse:.2f} vs closing total {v.market_rmse:.2f})"
         )
         return 0
+    if args.command == "forward-freeze-nfl-wind":
+        from ttk.providers.nflverse import NflverseProvider
+        from ttk.services.forward_models import freeze_nfl_wind_and_register
+
+        csv_rows = NflverseProvider().fetch_rows()
+        with factory() as session:
+            row, wind = freeze_nfl_wind_and_register(session, csv_rows)
+            session.commit()
+        m, wv = wind.model, wind.validation
+        print(
+            f"fitted on {wind.train_games} outdoor training games: "
+            f"{m.wind_coef:+.3f} points per mph around {m.wind_ref:.1f} mph, sigma {m.sigma:.2f}"
+        )
+        print(
+            f"validation ({wv.games} games): error {wv.rmse_line:.3f} -> {wv.rmse_model:.3f} "
+            f"(z {wv.rmse_z:+.2f}); log loss vs market on {wv.priced} priced games: "
+            f"{wv.log_loss_market or 0:.4f} -> {wv.log_loss_model or 0:.4f} "
+            f"(z {wv.log_loss_z or 0:+.2f})"
+        )
+        print(f"registered {row.name} {row.version} (DEVELOPMENT)")
+        return 0
     if args.command == "forward-freeze-ml":
         from ttk.services.forward_models import freeze_moneyline
 
@@ -231,6 +252,10 @@ def register(sub: Any) -> None:
     fwd_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
+    sub.add_parser(
+        "forward-freeze-nfl-wind",
+        help="Fit, freeze and register the NFL totals wind model (downloads nflverse games.csv)",
+    )
     fwd_ml = sub.add_parser(
         "forward-freeze-ml",
         help="Register moneyline models built from a sport's frozen card spread model",
@@ -279,6 +304,7 @@ def register(sub: Any) -> None:
 HANDLERS: dict[str, Handler] = {
     "forward-freeze": _forward,
     "forward-freeze-ml": _forward,
+    "forward-freeze-nfl-wind": _forward,
     "forward-freeze-totals": _forward,
     "forward-snapshot": _forward,
     "forward-run": _forward,

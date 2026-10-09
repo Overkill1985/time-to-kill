@@ -35,6 +35,7 @@ Everything buildable without new data or decisions is built. What remains waits 
 **Waiting on games** (forward tests; a z against the market is shown at 30 decided games per horizon):
 
 - NFL spread: about 15 decided games per horizon now; 30 around Oct 19.
+- NFL totals and wind: from Sunday Oct 11, outdoor games only (about 9 a week); 30 decided games per horizon around early November.
 - College football spreads: the first full Saturday under forward test is Oct 10.
 - NBA spreads and NBA player props: from the Oct 20 opener. NBA totals about Nov 1 (both teams need 5 games).
 - College basketball spreads and moneylines: opening week in early November. Totals mid-November (the same 5-game rule).
@@ -45,6 +46,8 @@ Everything buildable without new data or decisions is built. What remains waits 
 - Whether to add The Odds API to the collector as a daily cross-check (about 180 of its 500 monthly credits for NFL and NBA). Run once by hand on 2026-10-08 (docs/DATA-SOURCES.md).
 - Whether a prop model is worth building, once a few weeks of 24 h and 1 h snapshots exist.
 
-**Not started:** weather and travel features for football. NFL injuries are collected but not yet a model feature; NBA injuries are, through the injury model.
+**Rest, travel and weather (NFL, measured 2026-10-09):** rest and travel add nothing to the line. Wind does (the total under-reacts to it), so `nfl-total-wind` is under forward test on forecast wind from Week 5 (docs/MODELS.md).
+
+**Not started:** weather for college football. NFL injuries are collected but not yet a model feature; NBA injuries are, through the injury model.
 
 **Follow-ups:** an NBA live check after the opener and an NCAAB one after its opener; review `ttk props-report` (the off-roster names) after the first weekend.

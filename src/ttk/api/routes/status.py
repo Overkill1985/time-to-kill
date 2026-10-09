@@ -60,10 +60,10 @@ def status(session: SessionDep, request: Request) -> dict[str, object]:
             "decided": 0,
             "z": None,
         }
-    nfl = next(
-        (m["model"] for m in dashboard["models"] if str(m["model"]).startswith("nfl-")), None
-    )
-    if nfl is not None and nfl not in progress:
+    # The NFL spread model has no artifact (it is rebuilt from its code each run).
+    for nfl in [m["model"] for m in dashboard["models"] if str(m["model"]).startswith("nfl-")]:
+        if nfl in progress:
+            continue
         progress[nfl] = {
             "model": nfl,
             "name": str(nfl).rsplit(" ", 1)[0],

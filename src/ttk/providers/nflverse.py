@@ -196,16 +196,21 @@ class NflverseProvider:
     def __init__(self, *, client: httpx.Client | None = None) -> None:
         self._client = client or httpx.Client(timeout=60.0, follow_redirects=True)
 
-    def fetch_history(
-        self, *, first_season: int = 1999, last_season: int | None = None
-    ) -> tuple[list[HistoricalGame], dict[str, int]]:
+    def fetch_rows(self) -> list[dict[str, str]]:
+        """``games.csv`` as raw rows (every column, including roof and wind)."""
         try:
             response = self._client.get(GAMES_URL)
         except httpx.HTTPError as exc:
             raise ProviderError(f"nflverse: request failed ({type(exc).__name__})") from None
         if response.status_code != 200:
             raise ProviderError(f"nflverse: HTTP {response.status_code}")
-        rows = csv.DictReader(io.StringIO(response.text))
+        return list(csv.DictReader(io.StringIO(response.text)))
+
+    def fetch_history(
+        self, *, first_season: int = 1999, last_season: int | None = None
+    ) -> tuple[list[HistoricalGame], dict[str, int]]:
         return parse_games(
-            rows, first_season=first_season, last_season=last_season or date.today().year
+            self.fetch_rows(),
+            first_season=first_season,
+            last_season=last_season or date.today().year,
         )

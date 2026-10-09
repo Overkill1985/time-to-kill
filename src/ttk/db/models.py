@@ -528,6 +528,31 @@ class PropQuote(Base):
     """The provider's last change time for this price, as sent."""
 
 
+class WeatherForecast(Base):
+    """The forecast weather at an outdoor NFL game's kickoff hour, taken once at
+    each horizon before kickoff (services/weather). Append-only; one per (game,
+    horizon)."""
+
+    __tablename__ = "weather_forecasts"
+    __table_args__ = (UniqueConstraint("game_id", "horizon_hours"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    horizon_hours: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(50))
+    stadium_id: Mapped[str] = mapped_column(String(10))
+    """nflverse stadium id; the coordinates are research/nfl_weather.STADIUMS'."""
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    valid_at: Mapped[datetime]
+    """The forecast hour used (kickoff, rounded to the hour)."""
+    fetched_at: Mapped[datetime]
+    wind_mph: Mapped[float] = mapped_column(Float)
+    gust_mph: Mapped[float | None] = mapped_column(Float)
+    temperature_f: Mapped[float | None] = mapped_column(Float)
+    precipitation_mm: Mapped[float | None] = mapped_column(Float)
+
+
 class ForwardScore(Base):
     """Closing-line value of a forward snapshot's side, computed once its game is
     final: the closing state as of kickoff never changes, so it is stored rather

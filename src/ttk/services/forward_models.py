@@ -19,8 +19,10 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ttk.db.models import Game, InjuryReport, ModelVersion
+from ttk.db.models import Game, InjuryReport, ModelVersion, utcnow
 from ttk.domain import GameStatus, Market, Sport
+from ttk.providers.nflverse import NflverseProvider
+from ttk.providers.open_meteo import OpenMeteo
 from ttk.research.cfb_model import CFB
 from ttk.research.espn_models import SportConfig, SportData, SportReport, load_sport
 from ttk.research.espn_simulation import FrozenMarginPmf
@@ -29,6 +31,10 @@ from ttk.research.moneyline import VariantScore, evaluate, frozen_ml_rows, varia
 from ttk.research.nba_injuries import InjuryTimeline, Report, SitRates, expected_missing
 from ttk.research.nba_model import NBA
 from ttk.research.ncaab_model import NCAAB
+from ttk.research.nfl_weather import WindBacktest
+from ttk.research.nfl_weather import backtest as wind_backtest
+from ttk.research.nfl_weather import freeze as freeze_wind
+from ttk.research.nfl_weather import thaw as thaw_wind
 from ttk.research.totals import (
     FrozenTotals,
     TeamGame,
@@ -42,6 +48,7 @@ from ttk.services.daily_card import CardView
 from ttk.services.forward_test import ForwardModel, ModelView, register
 from ttk.services.frozen_simulator import FrozenSimulator
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
+from ttk.services.weather import WeatherState
 
 CONFIGS: dict[Sport, SportConfig] = {Sport.CFB: CFB, Sport.NBA: NBA, Sport.NCAAB: NCAAB}
 VARIANTS = ("key", "anchored")
@@ -258,7 +265,6 @@ def refresh_inputs(
     - college football: CollegeFootballData per-game efficiency (1 API call).
     Returns one line per step for the log."""
     from ttk.providers.cfbd import CfbdClient
-    from ttk.providers.nflverse import NflverseProvider
     from ttk.providers.nflverse_pbp import NflversePbpProvider
     from ttk.services.cfbd_import import import_cfbd_games
     from ttk.services.history_import import run_nfl_history_import
@@ -398,7 +404,74 @@ def _frozen_model(
     )
 
 
-def build_forward_models(session: Session, sports: set[Sport] | None = None) -> list[ForwardModel]:
+NFL_WIND_NAME = "nfl-total-wind"
+
+
+def freeze_nfl_wind_and_register(
+    session: Session, rows: list[dict[str, str]]
+) -> tuple[ModelVersion, WindBacktest]:
+    """Fit the wind adjustment on TRAIN from nflverse rows, check it on
+    VALIDATE, and register it as ``nfl-total-wind``."""
+    result = wind_backtest(rows)
+    row = register(
+        session,
+        name=NFL_WIND_NAME,
+        version=FROZEN_VERSION,
+        sport=Sport.NFL,
+        algorithm="market total + wind adjustment, normal",
+        features=["total_line", "forecast_wind_mph"],
+        artifact=freeze_wind(result),
+        training_window="2002-2017",
+        validation_window="2018-2021",
+        log_loss=result.validation.log_loss_model,
+        brier=None,
+    )
+    return row, result
+
+
+def _nfl_wind_model(row: ModelVersion, weather: WeatherState) -> ForwardModel:
+    assert row.artifact is not None
+    model = thaw_wind(row.artifact)
+
+    def view(
+        game_id: int, line: float, market_over: float, at: datetime, horizon: int
+    ) -> ModelView | None:
+        f = weather.forecast(game_id, horizon, at)
+        if f is None:
+            return None
+        features = {
+            "forecast_wind_mph": f.wind_mph,
+            "adjustment": model.adjustment(f.wind_mph),
+            "market_over": market_over,
+            "forecast_age_minutes": (at - f.fetched_at).total_seconds() / 60,
+        }
+        for name, value in (
+            ("forecast_gust_mph", f.gust_mph),
+            ("forecast_temperature_f", f.temperature_f),
+            ("forecast_precipitation_mm", f.precipitation_mm),
+        ):
+            if value is not None:
+                features[name] = value
+        return ModelView(
+            model.p_over(line, f.wind_mph),
+            model.push(line, f.wind_mph),
+            line + model.adjustment(f.wind_mph),
+            features,
+        )
+
+    return ForwardModel(
+        row, Sport.NFL, view, utcnow(), refresh=weather.refresh, market=Market.TOTAL
+    )
+
+
+def build_forward_models(
+    session: Session,
+    sports: set[Sport] | None = None,
+    *,
+    weather: WeatherState | None = None,
+) -> list[ForwardModel]:
+    """``weather`` serves the NFL wind model's forecasts (default: nflverse
+    venues and Open-Meteo)."""
     models: list[ForwardModel] = []
     if sports is None or Sport.NFL in sports:
         nfl = _nfl_model(session)
@@ -410,8 +483,14 @@ def build_forward_models(session: Session, sports: set[Sport] | None = None) -> 
     by_sport: dict[Sport, list[ModelVersion]] = {}
     for row in frozen:
         sport = Sport(row.sport)
-        if sports is None or sport in sports:
-            by_sport.setdefault(sport, []).append(row)
+        if sports is not None and sport not in sports:
+            continue
+        if (row.artifact or {}).get("kind") == "nfl_wind":
+            if weather is None:
+                weather = WeatherState(NflverseProvider().fetch_rows, OpenMeteo())
+            models.append(_nfl_wind_model(row, weather))
+            continue
+        by_sport.setdefault(sport, []).append(row)
     for sport, rows in by_sport.items():
         data = load_sport(session, CONFIGS[sport])
         as_of = _latest_final(session, sport)

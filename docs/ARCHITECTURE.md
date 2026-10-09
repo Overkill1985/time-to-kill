@@ -37,6 +37,7 @@ src/ttk/
     simulation.py      Monte Carlo: key-number margin x market total, rank copula, seeded
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
+    nfl_weather.py     NFL totals wind model: fit on recorded wind, outdoor stadium table (Wikipedia coordinates)
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
     espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
     moneyline.py       Moneylines from the spread models' margin distributions; validation vs the ML market
@@ -77,6 +78,7 @@ src/ttk/
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
+    weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     bankroll.py        Balance from append-only deposits + settled P/L, staking limits, Kelly guidance
@@ -96,12 +98,13 @@ src/ttk/
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
                        - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals, score-test, injury-check
-                       - forward.py: forward-freeze(-ml/-totals), forward-snapshot/run/report, lab
+                       - forward.py: forward-freeze(-ml/-totals/-nfl-wind), forward-snapshot/run/report, lab
                        - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0016: weather_forecasts (append-only forecast per game and horizon).
                        - 0015: prop_pulls and prop_quotes (append-only player-prop snapshots).
                        - 0014: forward_predictions.market (SPREAD or MONEYLINE; added natively, triggers kept).
                        - 0013: forward_scores (append-only CLV of finished forward snapshots).

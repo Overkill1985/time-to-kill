@@ -522,3 +522,27 @@ Elo only knows past scores, and the market already knows those. An edge needs in
 These plug into the market-anchored model as extra disagreement terms. Each is judged by the paired z against the market on validation. Only a model that clearly beats the market there gets promoted to PAPER, and only then are the test seasons scored, once.
 
 **The benchmark is probably the hardest one available.** nflverse's reported lines are most likely closing lines, and closing lines already contain nearly all public information. Even a sound model will look no better than the close. The practical edge in betting usually comes from betting *before* the market has moved: early-week lines, beaten by a model that sees what the close will see. Testing that needs **timestamped odds history**: opening and intraday prices, plus the close for measuring closing-line value. That's the most valuable next data source. PropLine exposes odds history and closing lines; The Odds API's historical odds are a paid tier.
+
+### Rest, travel and weather (measured 2026-10-09)
+
+- **Data:** nflverse `games.csv` columns `home_rest`, `away_rest`, `roof`, `temp`, `wind` (wind and temperature are the values **recorded at the game**, outdoor games only), plus each team's home time zone. Neutral-site games get no travel shift.
+- **Method:** least squares on the market's miss (final margin minus `spread_line`; final total minus `total_line`), fitted on 2002–2017 regular seasons (n=4,096), checked on 2018–2021 (n=1,040) by paired squared-error z against the line alone. An exploratory script, not a registered model.
+
+| Target | Features | Validation RMSE, line → line + adjustment | z |
+|---|---|---|---|
+| Spread miss | rest difference, byes, short weeks, time-zone shift, body-clock early/late kickoffs, division game | 13.19 → 13.28 | −2.75, worse |
+| Spread miss | body-clock terms only (training t ≈ +2.5 on 316 and 72 games) | 13.19 → 13.26 | −2.27, worse |
+| Total miss | wind (mph) | 13.26 → 13.20 | +1.66, not significant |
+| Total miss | wind, 15+ mph, freezing, dome | 13.26 → 13.23 | +0.97 |
+| Total miss | travel, short weeks, division | 13.26 → 13.28 | −0.69 |
+
+Unders in outdoor games with recorded wind of 10+ mph, at the reported under prices: 2002–2017 403-360-14 (+3.4% ROI), 2018–2021 152-104-2 (+15.6%), and an exploratory look at 2022–2025 110-82-2 (+9.7%).
+
+**Verdict:** rest and travel carry nothing beyond the line; the training-season body-clock effects did not hold up. Wind is the one lead: the line under-reacts to it in every block. But it is **hindsight wind**. At bet time only a forecast exists, and the closing line already reflects the forecast, so part of this effect is forecast error that no bettor could have used. It can only be judged by a forward test that records the forecast wind before each bet.
+
+**Forward test (built 2026-10-09):** `nfl-total-wind 1`, DEVELOPMENT (`ttk forward-freeze-nfl-wind`; `research/nfl_weather.py`, `services/weather.py`).
+
+- Predicted total = market main total + coef × (forecast wind − reference), outdoor stadiums only (nflverse `roof` "outdoors"; domes, retractable roofs and unclassified games get no prediction).
+- Fitted on the 3,067 outdoor regular-season games of 2002–2017: **−0.167 points per mph** around 8.4 mph, σ 13.48. The reference centers the adjustment, so the model leans under in wind and over in calm, never one way in general.
+- Validation, 2018–2021 (728 outdoor games): margin error 13.241 → 13.195 (z +1.32); over/under log loss against the no-vig market on 718 priced games 0.6930 → 0.6914 (z −0.73). Not significant, which is why it is a forward test and nothing more.
+- Live input: Open-Meteo's forecast wind at the kickoff hour, taken once per game and horizon (24 h, 1 h) and stored append-only in `weather_forecasts` before the snapshot uses it. Trained on recorded wind, run on forecast wind: forecast error makes the live effect smaller, if anything.
