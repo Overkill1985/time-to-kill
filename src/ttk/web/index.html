@@ -2,343 +2,403 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Time-to-Kill</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/style.css">
+  <script>
+    // Apply the saved theme before first paint (no flash).
+    try {
+      const t = localStorage.getItem("ttk-theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch { /* storage unavailable: follow the system */ }
+  </script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">TIME-TO-KILL</div>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="today" aria-selected="true">Today</button>
-      <button role="tab" data-tab="parlay" aria-selected="false">Parlay Lab <span id="slip-count" class="count"></span></button>
-      <button role="tab" data-tab="sim" aria-selected="false">Simulator</button>
-      <button role="tab" data-tab="bets" aria-selected="false">Bet Tracker</button>
-      <button role="tab" data-tab="performance" aria-selected="false">Performance</button>
-      <button role="tab" data-tab="forward" aria-selected="false">Forward tests</button>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Main">
+      <a class="brand" href="#home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Time-to-Kill</span>
+      </a>
+      <ul class="nav">
+        <li><a href="#home" data-page="home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>Home</span></a></li>
+        <li><a href="#today" data-page="today">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 10h16M9 3v4M15 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Today's games</span></a></li>
+        <li><a href="#slip" data-page="slip">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Parlay builder</span><span id="slip-count" class="count"></span></a></li>
+        <li><a href="#bets" data-page="bets">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span>My bets</span></a></li>
+        <li><a href="#sim" data-page="sim">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c3-9 5-12 8-12s5 3 8 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Simulator</span></a></li>
+        <li><a href="#models" data-page="models">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9M10 19V5M15 19v-7M20 19v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Model report</span></a></li>
+      </ul>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Change color theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span id="theme-label">Theme: system</span>
+      </button>
     </nav>
-  </header>
 
-  <main>
-    <!-- TODAY -->
-    <section id="tab-today" class="tab" role="tabpanel">
-      <div class="toolbar">
-        <label>Date <input type="date" id="card-date"></label>
-        <button id="card-refresh" class="secondary">Refresh</button>
-        <span id="card-status" class="muted" aria-live="polite"></span>
-      </div>
-      <div class="toolbar" id="card-filters">
-        <label>Sport
-          <select id="filter-sport"><option value="">All</option><option>NFL</option>
-            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
-        </label>
-        <label>Show
-          <select id="filter-class">
-            <option value="">Everything</option>
-            <option value="QUALIFIED">Qualified only</option>
-            <option value="QUALIFIED,LEAN">Qualified and lean</option>
-            <option value="PASS,NO_BET">Pass and no bet</option>
-          </select>
-        </label>
-        <label>Min edge (pts) <input id="filter-edge" type="number" step="0.5" style="width:5rem"></label>
-        <label>Best book <select id="filter-book"><option value="">Any</option></select></label>
-        <button id="filter-clear" type="button" class="secondary">Clear filters</button>
-        <span id="filter-count" class="muted" aria-live="polite"></span>
-      </div>
-      <div id="card-header" class="summary"></div>
-      <div id="card-entries" class="cards"></div>
-      <div id="card-unmodeled"></div>
-    </section>
-
-    <!-- PARLAY LAB -->
-    <section id="tab-parlay" class="tab" role="tabpanel" hidden>
-      <div class="lab">
-        <div class="panel">
-          <h2>Slip</h2>
-          <div class="toolbar">
-            <label>Book <select id="slip-book"></select></label>
-            <button id="slip-clear" class="secondary">Clear slip</button>
-          </div>
-          <ol id="slip-legs" class="slip"></ol>
-          <p id="slip-empty" class="muted">Add legs from the Today card, or pick them below. Any sport, any mix.</p>
-
-          <h2>Add a leg</h2>
-          <div class="toolbar">
-            <label>Date <input type="date" id="pick-date"></label>
-            <label>Sport
-              <select id="pick-sport"><option value="">All</option><option>NFL</option>
-                <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
-            </label>
-            <label>Game <select id="pick-game"></select></label>
-          </div>
-          <div id="pick-offers" class="offers"></div>
-        </div>
-
-        <div class="panel">
-          <h2>Analysis</h2>
-          <div id="lab-status" class="muted" aria-live="polite">Add at least two legs.</div>
-          <div id="lab-summary" class="tiles small"></div>
-          <ul id="lab-warnings" class="warnings"></ul>
-          <div class="table-wrap">
-            <table id="lab-legs">
-              <thead><tr>
-                <th>Leg</th><th>Odds</th><th>Prob</th><th>Source</th><th class="num">Edge</th>
-                <th class="num">EV</th><th>Correlation</th><th></th>
-              </tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-
-          <form id="parlay-form" autocomplete="off">
-            <h2>Record this parlay</h2>
-            <div class="grid">
-              <label>Stake <input name="stake" type="number" step="0.01" min="0.01" required></label>
-              <label>Odds taken <input name="american_odds" type="number" placeholder="product of legs"></label>
-              <label>Placed at <input name="placed_at" type="datetime-local"></label>
-              <label class="wide">Notes <input name="notes" maxlength="2000"></label>
-              <label class="wide">Over-limit reason <input name="limit_override" maxlength="500"
-                placeholder="Only if the parlay breaks a bankroll limit and you're placing it anyway"></label>
+    <main id="main" tabindex="-1">
+      <!-- HOME -->
+      <section class="page" id="page-home" aria-labelledby="home-title">
+        <header class="page-head">
+          <p class="eyebrow" id="home-date"></p>
+          <h1 id="home-title">Good to see you</h1>
+          <p class="lede" id="home-lede">Checking on everything…</p>
+        </header>
+        <div class="home-grid">
+          <article class="card" id="home-today">
+            <h2>Today</h2>
+            <div class="skeleton-lines"><span></span><span></span><span></span></div>
+          </article>
+          <article class="card" id="home-collection">
+            <h2>Data collection</h2>
+            <div class="skeleton-lines"><span></span><span></span></div>
+          </article>
+          <article class="card" id="home-bankroll">
+            <h2>Your bankroll</h2>
+            <div class="skeleton-lines"><span></span><span></span></div>
+          </article>
+          <article class="card wide" id="home-models">
+            <div class="card-head">
+              <h2>Models under test</h2>
+              <a class="link" href="#models">Full report</a>
             </div>
-            <div class="actions">
-              <button type="submit">Record parlay</button>
-              <span id="parlay-form-status" aria-live="polite"></span>
-            </div>
-          </form>
+            <p class="muted small">Each model needs <span id="home-min-decided">30</span> finished games before its results mean anything. Nothing is a recommended bet until a model beats the market and is promoted.</p>
+            <div id="home-model-list" class="progress-list"></div>
+          </article>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- SIMULATOR -->
-    <section id="tab-sim" class="tab" role="tabpanel" hidden>
-      <div class="toolbar">
-        <label>Sport
-          <select id="sim-sport"><option>NFL</option><option>CFB</option>
-            <option>NBA</option><option>NCAAB</option></select>
-        </label>
-        <label>Date <input type="date" id="sim-date"></label>
-        <label>Game <select id="sim-game"></select></label>
-        <label>Runs
-          <select id="sim-preset">
-            <option value="quick">Quick (10,000)</option>
-            <option value="detailed">Detailed (50,000)</option>
-            <option value="research">Research (100,000)</option>
-          </select>
-        </label>
-        <label>Seed <input type="number" id="sim-seed" placeholder="random" style="width:7rem"></label>
-        <button id="sim-run">Simulate</button>
-        <span id="sim-status" class="muted" aria-live="polite"></span>
-      </div>
-      <p class="muted">The margin is centered where the sport's market-anchored model's cover
-        probability holds at the main spread; the total is centered on the market total. College
-        football, NBA and college basketball games never end tied, so the simulation gives ties no weight.
-        Those models load in the background after the app starts.
-        More runs shrink sampling error only - the model's own error does not shrink.</p>
-      <div id="sim-result"></div>
-    </section>
-
-    <!-- BET TRACKER -->
-    <section id="tab-bets" class="tab" role="tabpanel" hidden>
-      <div class="panel">
-        <h2>Bankroll</h2>
-        <p id="bankroll-note" class="muted"></p>
-        <div id="bankroll-tiles" class="tiles small"></div>
-        <form id="bankroll-entry" class="grid" autocomplete="off">
-          <label>Entry
-            <select name="kind">
-              <option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdrawal</option>
-              <option value="ADJUSTMENT">Adjustment (signed)</option>
-            </select>
-          </label>
-          <label>Amount <input name="amount" type="number" step="0.01" required></label>
-          <label>Note <input name="note" maxlength="500"></label>
-          <div class="actions"><button type="submit" class="secondary">Add entry</button></div>
-        </form>
-        <details>
-          <summary>Staking limits</summary>
-          <form id="bankroll-policy" class="grid" autocomplete="off">
-            <label>Kelly multiplier <input name="kelly_multiplier" type="number" step="0.01" min="0.01" max="1" required></label>
-            <label>Max stake % <input name="max_stake_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
-            <label>Max per day % <input name="max_daily_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
-            <label>Max open % <input name="max_open_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
-            <label>Stop below peak % <input name="stop_drawdown_fraction" type="number" step="0.1" min="0.1" max="99" required></label>
-            <div class="actions"><button type="submit" class="secondary">Save limits</button></div>
-          </form>
+      <!-- TODAY -->
+      <section class="page" id="page-today" aria-labelledby="today-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow">Betting card</p>
+          <h1 id="today-title">Today's games</h1>
+          <p class="lede">Every game with a live market, priced by its sport's model. A green <em>Qualified</em> tag is the only thing the system would actually bet.</p>
+        </header>
+        <div class="filters">
+          <div class="filter-row">
+            <label class="field inline">Date <input type="date" id="card-date"></label>
+            <div class="pills" role="group" aria-label="Sport" id="sport-pills">
+              <button type="button" class="pill" data-sport="" aria-pressed="true">All</button>
+              <button type="button" class="pill" data-sport="NFL" aria-pressed="false">NFL</button>
+              <button type="button" class="pill" data-sport="CFB" aria-pressed="false">College football</button>
+              <button type="button" class="pill" data-sport="NBA" aria-pressed="false">NBA</button>
+              <button type="button" class="pill" data-sport="NCAAB" aria-pressed="false">College basketball</button>
+            </div>
+            <input type="search" id="card-search" class="search" placeholder="Find a team" aria-label="Find a team">
+            <button id="card-refresh" class="ghost" type="button">Refresh</button>
+          </div>
+          <details class="more-filters">
+            <summary>More filters</summary>
+            <div class="filter-row">
+              <label class="field inline">Show
+                <select id="filter-class">
+                  <option value="">Everything</option>
+                  <option value="QUALIFIED,LEAN">Worth a look (qualified or lean)</option>
+                  <option value="QUALIFIED">Qualified only</option>
+                  <option value="PASS,NO_BET">Passes and no-bets</option>
+                </select>
+              </label>
+              <label class="field inline">Minimum edge <input id="filter-edge" type="number" step="0.5" min="0" placeholder="points" class="short"></label>
+              <label class="field inline">Best price at <select id="filter-book"><option value="">Any book</option></select></label>
+              <button id="filter-clear" type="button" class="ghost">Clear filters</button>
+            </div>
+          </details>
+        </div>
+        <div id="card-banner"></div>
+        <div id="card-summary" class="summary-strip"></div>
+        <div id="card-games" class="game-list"></div>
+        <details id="card-unmodeled" class="quiet-list" hidden>
+          <summary></summary>
+          <ul></ul>
         </details>
-        <span id="bankroll-status" aria-live="polite"></span>
-      </div>
+      </section>
 
-      <form id="bet-form" class="panel" autocomplete="off">
-        <h2>Record a bet</h2>
-        <p class="muted">Use <em>Track</em> on a card entry to prefill, or enter a game id from the card.</p>
-        <div class="grid">
-          <label>Game id <input name="game_id" type="number" required min="1"></label>
-          <label>Market
-            <select name="market">
-              <option>SPREAD</option><option>MONEYLINE</option><option>TOTAL</option>
-            </select>
-          </label>
-          <label>Side
-            <select name="selection">
-              <option>HOME</option><option>AWAY</option><option>OVER</option><option>UNDER</option>
-            </select>
-          </label>
-          <label>Line <input name="line" type="number" step="0.5"></label>
-          <label>Odds (American) <input name="american_odds" type="number" required></label>
-          <label>Book <select name="sportsbook" id="book-select" required></select></label>
-          <label>Stake <input name="stake" type="number" step="0.01" min="0.01" required></label>
-          <label>Placed at <input name="placed_at" type="datetime-local"></label>
-          <label class="wide">Notes <input name="notes" maxlength="2000"></label>
-          <label class="wide">Over-limit reason <input name="limit_override" maxlength="500"
-            placeholder="Only if the bet breaks a bankroll limit and you're placing it anyway"></label>
+      <!-- PARLAY BUILDER -->
+      <section class="page" id="page-slip" aria-labelledby="slip-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow">Parlays</p>
+          <h1 id="slip-title">Parlay builder</h1>
+          <p class="lede">Build a parlay at one sportsbook from any games and sports. It shows the real chance all legs hit, the fair price, and whether same-game legs are tied together.</p>
+        </header>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-head">
+              <h2>Your slip</h2>
+              <button id="slip-clear" class="ghost small-btn" type="button">Clear</button>
+            </div>
+            <label class="field">Sportsbook <select id="slip-book"></select></label>
+            <ol id="slip-legs" class="slip"></ol>
+            <p id="slip-empty" class="empty-note">No legs yet. Add them from <a href="#today">Today's games</a> or pick a game below.</p>
+
+            <h3>Add a leg</h3>
+            <div class="form-grid">
+              <label class="field">Date <input type="date" id="pick-date"></label>
+              <label class="field">Sport
+                <select id="pick-sport"><option value="">All sports</option><option value="NFL">NFL</option>
+                  <option value="CFB">College football</option><option value="NBA">NBA</option><option value="NCAAB">College basketball</option></select>
+              </label>
+              <label class="field wide">Game <select id="pick-game"></select></label>
+            </div>
+            <div id="pick-offers" class="offers"></div>
+          </div>
+
+          <div class="card">
+            <h2>What this parlay is worth</h2>
+            <p id="lab-status" class="muted">Add at least two legs.</p>
+            <div id="lab-summary" class="metric-row"></div>
+            <ul id="lab-warnings" class="notes warn-notes"></ul>
+            <div id="lab-legs" class="leg-list"></div>
+
+            <form id="parlay-form" class="record-form" autocomplete="off">
+              <h3>I placed this parlay</h3>
+              <div class="form-grid">
+                <label class="field">Stake <input name="stake" type="number" step="0.01" min="0.01" required></label>
+                <label class="field">Odds you got <input name="american_odds" type="number" placeholder="leave blank to use the book's"></label>
+                <label class="field">When <input name="placed_at" type="datetime-local"></label>
+                <label class="field wide">Notes <input name="notes" maxlength="2000"></label>
+                <label class="field wide" id="parlay-override-field" hidden>Reason to go over your bankroll limit
+                  <input name="limit_override" maxlength="500"></label>
+              </div>
+              <div class="actions">
+                <button type="submit">Record parlay</button>
+                <span id="parlay-form-status" class="form-status" aria-live="polite"></span>
+              </div>
+            </form>
+          </div>
         </div>
-        <div class="actions">
-          <button type="submit">Record bet</button>
-          <span id="bet-form-status" aria-live="polite"></span>
+      </section>
+
+      <!-- MY BETS -->
+      <section class="page" id="page-bets" aria-labelledby="bets-title" hidden>
+        <header class="page-head with-action">
+          <div>
+            <p class="eyebrow">Tracker</p>
+            <h1 id="bets-title">My bets</h1>
+            <p class="lede">Record what you actually bet. Each bet is graded automatically when its game ends, with closing-line value: whether you beat the final price.</p>
+          </div>
+          <button id="new-bet" type="button" class="primary">Record a bet</button>
+        </header>
+        <div class="segmented" role="tablist" aria-label="My bets sections">
+          <button role="tab" type="button" data-sub="list" aria-selected="true">Bets</button>
+          <button role="tab" type="button" data-sub="bankroll" aria-selected="false">Bankroll</button>
+          <button role="tab" type="button" data-sub="results" aria-selected="false">Results</button>
         </div>
-      </form>
 
-      <div class="toolbar">
-        <label>Show
-          <select id="bet-filter">
-            <option value="">All</option><option value="pending">Pending</option>
-            <option value="settled">Settled</option>
-          </select>
-        </label>
-        <button id="bets-settle" class="secondary">Settle finished games</button>
-        <span id="bets-status" class="muted" aria-live="polite"></span>
-      </div>
-      <div class="table-wrap">
-        <table id="bets-table">
-          <thead><tr>
-            <th>Placed</th><th>Bet</th><th>Book</th><th>Odds</th><th class="num">Stake</th>
-            <th>Model / Market</th><th class="num">EV</th><th>Result</th><th class="num">P/L</th>
-            <th class="num">CLV</th><th></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h2 class="section">Parlays</h2>
-      <div class="table-wrap">
-        <table id="parlays-table">
-          <thead><tr>
-            <th>Placed</th><th>Legs</th><th>Book</th><th>Odds</th><th class="num">Stake</th>
-            <th class="num">Joint prob</th><th class="num">EV</th><th>Correlation</th>
-            <th>Result</th><th class="num">P/L</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="subpage" id="sub-list">
+          <div class="filter-row">
+            <div class="pills" role="group" aria-label="Which bets" id="bet-pills">
+              <button type="button" class="pill" data-status="" aria-pressed="true">All</button>
+              <button type="button" class="pill" data-status="pending" aria-pressed="false">Waiting on a result</button>
+              <button type="button" class="pill" data-status="settled" aria-pressed="false">Settled</button>
+            </div>
+            <button id="bets-settle" class="ghost" type="button">Grade finished games now</button>
+            <span id="bets-status" class="form-status" aria-live="polite"></span>
+          </div>
+          <div id="bet-list" class="bet-list"></div>
+          <h3>Parlays</h3>
+          <div id="parlay-list" class="bet-list"></div>
+        </div>
 
-    <!-- PERFORMANCE -->
-    <section id="tab-performance" class="tab" role="tabpanel" hidden>
-      <div class="toolbar">
-        <label>Sport
-          <select id="perf-sport"><option value="">All</option><option>NFL</option>
-            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
-        </label>
-        <label>Market
-          <select id="perf-market"><option value="">All</option><option>SPREAD</option>
-            <option>MONEYLINE</option><option>TOTAL</option></select>
-        </label>
-      </div>
-      <div id="perf-tiles" class="tiles"></div>
-      <h2 class="section">Parlays</h2>
-      <div id="perf-parlay-tiles" class="tiles"></div>
-      <p class="muted">Closing-line value (CLV) is the long-run diagnostic: a positive average CLV over
-        a large sample is the best evidence of an edge. Every figure shows its sample size.</p>
-    </section>
+        <div class="subpage" id="sub-bankroll" hidden>
+          <div class="card">
+            <p id="bankroll-note" class="muted"></p>
+            <div id="bankroll-tiles" class="metric-row"></div>
+            <form id="bankroll-entry" class="form-grid" autocomplete="off">
+              <label class="field">Money in or out
+                <select name="kind">
+                  <option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdrawal</option>
+                  <option value="ADJUSTMENT">Correction (+ or −)</option>
+                </select>
+              </label>
+              <label class="field">Amount <input name="amount" type="number" step="0.01" required></label>
+              <label class="field">Note <input name="note" maxlength="500"></label>
+              <div class="actions"><button type="submit">Save</button></div>
+            </form>
+            <span id="bankroll-status" class="form-status" aria-live="polite"></span>
+          </div>
+          <details class="card">
+            <summary><h2 class="inline-h">Staking limits</h2> <span class="muted small">what keeps one bad day from sinking the bankroll</span></summary>
+            <form id="bankroll-policy" class="form-grid" autocomplete="off">
+              <label class="field"><span>Kelly fraction <button type="button" class="term" data-term="kelly">?</button></span>
+                <input name="kelly_multiplier" type="number" step="0.01" min="0.01" max="1" required></label>
+              <label class="field">Most on one bet (% of bankroll) <input name="max_stake_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
+              <label class="field">Most per day (%) <input name="max_daily_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
+              <label class="field">Most riding at once (%) <input name="max_open_fraction" type="number" step="0.1" min="0.1" max="100" required></label>
+              <label class="field"><span>Stop after a drop of (%) <button type="button" class="term" data-term="drawdown">?</button></span>
+                <input name="stop_drawdown_fraction" type="number" step="0.1" min="0.1" max="99" required></label>
+              <div class="actions"><button type="submit">Save limits</button></div>
+            </form>
+          </details>
+        </div>
 
-    <section id="tab-forward" class="tab" role="tabpanel" hidden>
-      <div class="toolbar">
-        <label>Sport
-          <select id="fwd-sport"><option value="">All</option><option>NFL</option>
-            <option>CFB</option><option>NBA</option><option>NCAAB</option></select>
-        </label>
-        <button id="fwd-refresh" type="button">Refresh</button>
-      </div>
-      <p id="fwd-note" class="muted"></p>
-      <div class="table-wrap">
-        <table id="fwd-scores">
-          <thead><tr>
-            <th>Model</th><th>Horizon</th><th>Decided</th><th>Log loss vs market</th><th>z</th>
-            <th>Price CLV</th><th>Points vs close</th><th>Edge ≥ 2%: record</th><th>ROI</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h2 class="section">Snapshots so far</h2>
-      <div id="fwd-models" class="tiles"></div>
-      <h2 class="section">Latest snapshots</h2>
-      <div class="table-wrap">
-        <table id="fwd-recent">
-          <thead><tr>
-            <th>Taken</th><th>Model</th><th>Game</th><th>Horizon</th><th>Home line</th>
-            <th>Model</th><th>Market</th><th>Edge</th><th>Result</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div class="subpage" id="sub-results" hidden>
+          <div class="filter-row">
+            <label class="field inline">Sport
+              <select id="perf-sport"><option value="">All sports</option><option value="NFL">NFL</option>
+                <option value="CFB">College football</option><option value="NBA">NBA</option><option value="NCAAB">College basketball</option></select>
+            </label>
+            <label class="field inline">Market
+              <select id="perf-market"><option value="">All markets</option><option value="SPREAD">Spread</option>
+                <option value="MONEYLINE">Moneyline</option><option value="TOTAL">Total</option></select>
+            </label>
+          </div>
+          <div id="perf-body"></div>
+        </div>
+      </section>
 
-      <h2 class="section">Performance Lab</h2>
-      <div class="toolbar">
-        <label>Model and horizon <select id="lab-pick"></select></label>
-      </div>
-      <p id="lab-note" class="muted"></p>
-      <h3>Betting the model's side, by its probability</h3>
-      <div class="table-wrap">
-        <table id="lab-thresholds">
-          <thead><tr>
-            <th>Model P(side) ≥</th><th class="num">Bets</th><th>Record</th><th class="num">ROI ± SE</th>
-            <th class="num">Hit rate</th><th class="num">Break-even</th><th class="num">CLV</th><th></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h3>Calibration: P(home covers), pushes left out</h3>
-      <div class="table-wrap">
-        <table id="lab-calibration">
-          <thead><tr>
-            <th>Bin</th><th class="num">Model n</th><th class="num">Model predicted</th><th class="num">Observed</th>
-            <th class="num">Market n</th><th class="num">Market predicted</th><th class="num">Observed</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h3>By week: drift against the market</h3>
-      <div class="table-wrap">
-        <table id="lab-weeks">
-          <thead><tr>
-            <th>Week of</th><th class="num">Games</th><th class="num">Log loss vs market</th>
-            <th class="num">Running</th><th class="num">CLV</th><th class="num">Running</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+      <!-- SIMULATOR -->
+      <section class="page" id="page-sim" aria-labelledby="sim-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow">What could happen</p>
+          <h1 id="sim-title">Game simulator</h1>
+          <p class="lede">Plays a game thousands of times to show the likely scores, how each spread and total would do, and the worst line still worth taking at today's best price.</p>
+        </header>
+        <div class="card">
+          <div class="form-grid">
+            <label class="field">Sport
+              <select id="sim-sport"><option value="NFL">NFL</option><option value="CFB">College football</option>
+                <option value="NBA">NBA</option><option value="NCAAB">College basketball</option></select>
+            </label>
+            <label class="field">Date <input type="date" id="sim-date"></label>
+            <label class="field wide">Game <select id="sim-game"></select></label>
+            <label class="field">How many runs
+              <select id="sim-preset">
+                <option value="quick">Quick (10,000)</option>
+                <option value="detailed">Detailed (50,000)</option>
+                <option value="research">Research (100,000)</option>
+              </select>
+            </label>
+            <label class="field"><span>Seed <button type="button" class="term" data-term="seed">?</button></span>
+              <input type="number" id="sim-seed" placeholder="random"></label>
+          </div>
+          <div class="actions">
+            <button id="sim-run" type="button">Simulate</button>
+            <span id="sim-status" class="form-status" aria-live="polite"></span>
+          </div>
+        </div>
+        <div id="sim-result"></div>
+      </section>
 
-  <template id="entry-template">
-    <article class="entry">
-      <header>
-        <span class="badge"></span>
-        <h3 class="bet"></h3>
-        <span class="odds"></span>
+      <!-- MODEL REPORT -->
+      <section class="page" id="page-models" aria-labelledby="models-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow">Forward tests</p>
+          <h1 id="models-title">Model report</h1>
+          <p class="lede">Every model is frozen and recorded before each game, then scored against the closing market once the game ends. These are test records, never bets.</p>
+        </header>
+        <div class="filter-row">
+          <div class="pills" role="group" aria-label="Sport" id="model-pills">
+            <button type="button" class="pill" data-sport="" aria-pressed="true">All</button>
+            <button type="button" class="pill" data-sport="NFL" aria-pressed="false">NFL</button>
+            <button type="button" class="pill" data-sport="CFB" aria-pressed="false">College football</button>
+            <button type="button" class="pill" data-sport="NBA" aria-pressed="false">NBA</button>
+            <button type="button" class="pill" data-sport="NCAAB" aria-pressed="false">College basketball</button>
+          </div>
+        </div>
+        <div id="model-cards" class="model-grid"></div>
+
+        <details class="card" id="lab-panel">
+          <summary><h2 class="inline-h">Performance Lab</h2> <span class="muted small">thresholds, calibration and weekly drift for one model</span></summary>
+          <label class="field">Model and timing <select id="lab-pick"></select></label>
+          <p id="lab-note" class="muted small"></p>
+          <h3>Betting the model's side, by how sure it was</h3>
+          <div class="table-wrap"><table id="lab-thresholds"><thead><tr>
+            <th>Model at least</th><th class="num">Bets</th><th>Record</th><th class="num">Return ± error</th>
+            <th class="num">Win rate</th><th class="num">Needed to break even</th><th class="num">CLV</th><th></th>
+          </tr></thead><tbody></tbody></table></div>
+          <h3>Calibration: when it said X%, how often did it happen?</h3>
+          <div class="table-wrap"><table id="lab-calibration"><thead><tr>
+            <th>Range</th><th class="num">Model games</th><th class="num">Model said</th><th class="num">Happened</th>
+            <th class="num">Market games</th><th class="num">Market said</th><th class="num">Happened</th>
+          </tr></thead><tbody></tbody></table></div>
+          <h3>Week by week</h3>
+          <div class="table-wrap"><table id="lab-weeks"><thead><tr>
+            <th>Week of</th><th class="num">Games</th><th class="num">vs market</th><th class="num">Running</th>
+            <th class="num">CLV</th><th class="num">Running</th>
+          </tr></thead><tbody></tbody></table></div>
+        </details>
+
+        <details class="card">
+          <summary><h2 class="inline-h">Latest snapshots</h2> <span class="muted small">what each model said before recent games</span></summary>
+          <div class="table-wrap"><table id="fwd-recent"><thead><tr>
+            <th>Taken</th><th>Model</th><th>Game</th><th>Before kickoff</th><th>Line</th>
+            <th class="num">Model</th><th class="num">Market</th><th class="num">Edge</th><th>Result</th>
+          </tr></thead><tbody></tbody></table></div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <!-- Record a bet -->
+  <dialog id="bet-dialog" aria-labelledby="bet-dialog-title">
+    <form id="bet-form" method="dialog" autocomplete="off">
+      <header class="dialog-head">
+        <h2 id="bet-dialog-title">Record a bet</h2>
+        <button type="button" class="icon-btn" id="bet-dialog-close" aria-label="Close">×</button>
       </header>
-      <p class="matchup muted"></p>
-      <div class="probbar" role="img">
-        <div class="bar model"><span></span></div>
-        <div class="bar market"><span></span></div>
+      <div class="dialog-body">
+        <div id="bet-game-picker">
+          <div class="form-grid">
+            <label class="field">Date <input type="date" id="bet-date"></label>
+            <label class="field wide">Find the game <input type="search" id="bet-game-search" placeholder="Team name"></label>
+          </div>
+          <ul id="bet-game-results" class="choice-list" aria-label="Games"></ul>
+        </div>
+        <div id="bet-chosen" class="chosen" hidden>
+          <div><strong id="bet-chosen-game"></strong> <span id="bet-chosen-time" class="muted small"></span></div>
+          <button type="button" class="ghost small-btn" id="bet-change-game">Change game</button>
+        </div>
+        <div id="bet-details" hidden>
+          <div class="form-grid">
+            <label class="field">Sportsbook <select name="sportsbook" id="bet-book" required></select></label>
+            <div class="field">Market
+              <div class="segmented compact" role="radiogroup" aria-label="Market" id="bet-market">
+                <button type="button" role="radio" data-market="SPREAD" aria-checked="true">Spread</button>
+                <button type="button" role="radio" data-market="MONEYLINE" aria-checked="false">Moneyline</button>
+                <button type="button" role="radio" data-market="TOTAL" aria-checked="false">Total</button>
+              </div>
+            </div>
+          </div>
+          <p class="muted small">Tap a line to fill it in. Change the odds if you got a different price.</p>
+          <div id="bet-offers" class="offers"></div>
+          <div class="form-grid">
+            <label class="field">Your pick
+              <select name="selection" id="bet-selection"></select></label>
+            <label class="field">Line <input name="line" id="bet-line" type="number" step="0.5"></label>
+            <label class="field">Odds (American) <input name="american_odds" id="bet-odds" type="number" required></label>
+            <label class="field">Stake <input name="stake" id="bet-stake" type="number" step="0.01" min="0.01" required>
+              <span id="bet-stake-hint" class="hint"></span></label>
+            <label class="field">When <input name="placed_at" type="datetime-local"></label>
+            <label class="field wide">Notes <input name="notes" maxlength="2000"></label>
+            <label class="field wide" id="bet-override-field" hidden>Reason to go over your bankroll limit
+              <input name="limit_override" maxlength="500"></label>
+          </div>
+        </div>
       </div>
-      <dl class="stats"></dl>
-      <details class="why"><summary>Why</summary><ul></ul></details>
-      <div class="entry-actions">
-        <button class="track secondary">Track</button>
-        <button class="add-leg secondary">Add to parlay</button>
-        <button class="simulate secondary">Simulate</button>
-      </div>
-    </article>
-  </template>
+      <footer class="dialog-foot">
+        <span id="bet-form-status" class="form-status" aria-live="polite"></span>
+        <button type="button" class="ghost" id="bet-cancel">Cancel</button>
+        <button type="submit" id="bet-submit" disabled>Record bet</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="term-pop" class="term-pop" role="tooltip" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="/app.js" type="module"></script>
 </body>

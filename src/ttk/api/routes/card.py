@@ -85,4 +85,6 @@ def daily_card(
         "total_entries": len(card.entries),
         "unmodeled": [asdict(u) for u in card.unmodeled],
         "unbettable": card.unbettable,
+        # Sports whose models are still building (their games show as unmodeled).
+        "loading": sorted(loading),
     }

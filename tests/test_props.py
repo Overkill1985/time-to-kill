@@ -25,6 +25,8 @@ ROSTERS = {
 def test_player_keys_and_book_filter() -> None:
     assert player_key("Aaron Jones Sr.") == player_key("Aaron Jones") == "aaron jones"
     assert player_key("Ja'Marr Chase") == "jamarr chase"
+    assert player_key("Dak Prescott (DAL)") == player_key("Dak Prescott") == "dak prescott"
+    assert player_key("Chris Godwin Jr. (TB)") == "chris godwin"
     quotes = parse_props(json.loads(FIXTURE.read_text("utf-8")))
     assert len(quotes) == 24
     kept = {q.book for q in quotes if is_sportsbook(q)}

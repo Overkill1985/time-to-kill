@@ -87,7 +87,11 @@ src/ttk/
   api/app.py           create_app: loopback only, cross-site writes refused (see Security); includes the routers
   api/routes/          One APIRouter per area: games, card, bets, bankroll, forward, parlays, tools (simulator, math)
   api/common.py        Request/response models, conversions, the session dependency, cached models
-  web/                 The browser UI (index.html, app.js, style.css): no build step, served at /
+  web/                 The browser UI (index.html, app.js, style.css): no build step, served at /. Pages (hash routes):
+                       Home (#home: collection health, today, bankroll, model progress), Today's games (#today: one card per game,
+                       plain-language verdicts, glossary), Parlay builder (#slip), My bets (#bets, #bets/bankroll, #bets/results; a
+                       record-a-bet dialog with game search and one-tap lines), Simulator (#sim), Model report (#models). Light and
+                       dark themes. Data is inserted as text only (textContent), never as HTML.
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
@@ -147,6 +151,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Status + last ingestion run |
+| GET | `/api/status` | Home page: last odds poll, PropLine quota, health alerts, last props pull, every frozen model's forward progress, next games per sport, bankroll |
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
 | GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |

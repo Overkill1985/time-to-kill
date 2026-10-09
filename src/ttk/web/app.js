@@ -2,16 +2,20 @@
 // textContent (never innerHTML), so values from odds feeds or notes cannot inject markup.
 
 const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
-    if (value === undefined || value === null) continue;
+    if (value === undefined || value === null || value === false) continue;
     if (key === "class") node.className = value;
     else if (key === "text") node.textContent = value;
-    else node.setAttribute(key, value);
+    else node.setAttribute(key, value === true ? "" : value);
   }
-  for (const child of children) node.append(child instanceof Node ? child : String(child));
+  for (const child of children) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : String(child));
+  }
   return node;
 }
 
@@ -25,591 +29,1012 @@ async function api(path, options = {}) {
     const detail = body && body.detail;
     const message = Array.isArray(detail)
       ? detail.map((d) => `${d.loc?.slice(-1)[0] ?? ""} ${d.msg}`).join("; ")
-      : detail || `HTTP ${response.status}`;
-    throw new Error(message);
+      : detail || `The server answered ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return body;
 }
 
 // ------------------------------------------------------------------ formatting
 
-const american = (n) => (n == null ? "n/a" : (Math.round(n) > 0 ? "+" : "") + Math.round(n));
-const pct = (x, digits = 1) => (x == null ? "n/a" : `${(x * 100).toFixed(digits)}%`);
+const american = (n) => (n == null ? "–" : (Math.round(n) > 0 ? "+" : "") + Math.round(n));
+const pct = (x, digits = 1) => (x == null ? "–" : `${(x * 100).toFixed(digits)}%`);
 const signedPct = (x, digits = 1) =>
-  x == null ? "n/a" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(digits)}%`;
-const pts = (x) => (x == null ? "n/a" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pts`);
-const money = (x) => (x == null ? "n/a" : `${x >= 0 ? "+" : ""}${x.toFixed(2)}`);
+  x == null ? "–" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(digits)}%`;
+const pts = (x) => (x == null ? "–" : `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)} pts`);
+const money = (x) => (x == null ? "–" : `${x < 0 ? "−" : ""}$${Math.abs(x).toFixed(2)}`);
+const signedMoney = (x) => (x == null ? "–" : `${x >= 0 ? "+" : "−"}$${Math.abs(x).toFixed(2)}`);
 const lineText = (x) => (x == null ? "" : x === 0 ? "PK" : `${x > 0 ? "+" : ""}${x}`);
 const signClass = (x) => (x == null ? "" : x > 0 ? "pos" : x < 0 ? "neg" : "");
-const eastern = (iso) =>
+const eastern = (iso, opts = {}) =>
   new Date(iso).toLocaleString("en-US", {
-    timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit",
+    timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit", ...opts,
   }) + " ET";
 const todayEastern = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+const easternDateOf = (iso) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(iso));
+const ago = (minutes) => {
+  if (minutes == null) return "never";
+  if (minutes < 1.5) return "just now";
+  if (minutes < 90) return `${Math.round(minutes)} min ago`;
+  if (minutes < 60 * 36) return `${Math.round(minutes / 60)} h ago`;
+  return `${Math.round(minutes / 1440)} days ago`;
+};
+const untilText = (iso) => {
+  if (!iso) return "";
+  const hours = (new Date(iso) - Date.now()) / 3.6e6;
+  if (hours < 1) return "within the hour";
+  if (hours < 36) return `in ${Math.round(hours)} h`;
+  return `in ${Math.round(hours / 24)} days`;
+};
 
-// ------------------------------------------------------------------ tabs
+const SPORT_NAMES = { NFL: "NFL", CFB: "College football", NBA: "NBA", NCAAB: "College basketball" };
+const sportName = (s) => SPORT_NAMES[s] ?? s;
+const MARKET_NAMES = { SPREAD: "Spread", MONEYLINE: "Moneyline", TOTAL: "Total" };
 
-function showTab(name) {
-  for (const button of document.querySelectorAll(".tabs button")) {
-    button.setAttribute("aria-selected", String(button.dataset.tab === name));
+/** A registry name like "ncaab-ml-spread-implied-eff 1" in plain words. */
+function modelName(raw) {
+  const name = String(raw).replace(/\s*\(.*\)$/, "").replace(/ [^ ]+$/, "");
+  const [sport] = name.split("-");
+  const s = sportName(sport.toUpperCase());
+  const flavor = name.includes("anchored") ? "market-anchored"
+    : name.includes("spread-implied") ? "spread-implied"
+    : name.includes("standalone") || name.includes("-key-") ? "standalone" : "";
+  const market = name.includes("-ml-") ? "moneyline" : name.includes("-total-") ? "total" : "spread";
+  const inputs = name.endsWith("features") ? "EPA and QB"
+    : name.endsWith("inseason") ? "in-season efficiency"
+    : name.endsWith("lineup-prev") ? "lineups"
+    : name.endsWith("injury") ? "lineups and injury report"
+    : name.endsWith("eff") ? "efficiency"
+    : name.endsWith("pace") ? "pace and efficiency" : "";
+  return { title: `${s} ${market}`, detail: [flavor, inputs].filter(Boolean).join(", ") };
+}
+
+// ------------------------------------------------------------------ glossary
+
+const TERMS = {
+  edge: ["Edge", "How much more likely the model thinks this side is than the market does, in percentage points. +2 pts means the model says 52% where the market says 50%."],
+  ev: ["Expected value", "The average profit per $1 bet if the model's probability is right, after the book's cut. Positive means the price is better than fair."],
+  fair: ["Fair odds", "The price at which this bet would exactly break even if the model is right."],
+  push: ["Push", "A tie with the line: the stake comes back. Whole-number lines can push; half-point lines can't."],
+  uncertainty: ["Uncertainty", "How settled the model's number is. High uncertainty (thin data, early season) stops a bet from qualifying."],
+  data: ["Data quality", "How complete and fresh the inputs are: odds age, how many books, the model's inputs."],
+  oddsage: ["Odds age", "Minutes since the books' prices were last confirmed. Stale prices can't qualify."],
+  linemove: ["Line move", "The main line when first seen, and now. A move toward a side means money came in on it."],
+  clv: ["Closing-line value", "How your price compares with the final price before kickoff. Beating the close again and again is the best early sign of real skill, long before wins and losses settle it."],
+  vsmarket: ["Compared with the market", "How much worse (+) or better (−) the model's probabilities were than the closing market's, game by game (paired log loss)."],
+  z: ["z-score", "How many standard errors the model is from the market. Within about ±2 is noise; below −2 would mean genuinely better than the market."],
+  decided: ["Decided games", "Finished games that didn't push. A model needs 30 at each timing before its score is shown."],
+  timing: ["Timing", "When the prediction was recorded: 24 hours or 1 hour before kickoff."],
+  kelly: ["Kelly fraction", "Kelly is the stake that grows a bankroll fastest if the edge is real. Betting a quarter of it (0.25) cuts the swings a lot for a small cost."],
+  drawdown: ["Drop from the peak", "How far the bankroll is below its best point. New bets pause after the drop you set."],
+  roi: ["Return", "Profit divided by the total staked."],
+  QUALIFIED: ["Qualified", "Passes every check: a confident model, a real edge, positive value, fresh data, and a model that has earned trust. Only these are recommended."],
+  LEAN: ["Lean", "The model favors this side, but at least one check fails. For now that is always because the model is still being tested."],
+  PASS: ["Pass", "The model doesn't favor this side at this price."],
+  NO_BET: ["No bet", "The data is too stale or too thin to judge this one."],
+  testing: ["In testing", "A model being forward-tested: its predictions are recorded and scored, never recommended."],
+  seed: ["Seed", "Fixes the random numbers so the same simulation gives the same answer. Leave it blank for a fresh run."],
+  maxline: ["Worst line still worth it", "The worst number you could take at today's best price and still expect a profit."],
+  joint: ["Chance all legs win", "The chance every leg hits. Legs in the same game are simulated together, because they move together."],
+  winrate: ["Win rate", "Wins divided by wins plus losses (pushes left out)."],
+  breakeven: ["Break-even rate", "How often bets at these prices must win just to break even."],
+};
+
+function term(key) {
+  return el("button", { type: "button", class: "term", "data-term": key, "aria-label": `What is ${TERMS[key]?.[0] ?? key}?`, text: "?" });
+}
+
+const pop = $("#term-pop");
+function showTerm(button) {
+  const entry = TERMS[button.dataset.term];
+  if (!entry) return;
+  pop.replaceChildren(el("strong", { text: entry[0] }), el("span", { text: entry[1] }));
+  pop.hidden = false;
+  const r = button.getBoundingClientRect();
+  const width = Math.min(300, window.innerWidth - 32);
+  const left = Math.max(16, Math.min(r.left + window.scrollX - 12, window.scrollX + window.innerWidth - width - 16));
+  pop.style.left = `${left}px`;
+  pop.style.top = `${r.bottom + window.scrollY + 8}px`;
+}
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".term");
+  if (button) { event.preventDefault(); event.stopPropagation(); showTerm(button); return; }
+  pop.hidden = true;
+});
+window.addEventListener("scroll", () => { pop.hidden = true; }, { passive: true });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") pop.hidden = true; });
+
+function toast(message) {
+  const t = $("#toast");
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, 4200);
+}
+
+// ------------------------------------------------------------------ theme
+
+const THEMES = ["system", "light", "dark"];
+function currentTheme() {
+  return document.documentElement.dataset.theme || "system";
+}
+function setTheme(theme) {
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("ttk-theme", theme); } catch { /* not remembered */ }
+  $("#theme-label").textContent = `Theme: ${theme}`;
+}
+$("#theme-toggle").addEventListener("click", () => {
+  setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]);
+});
+$("#theme-label").textContent = `Theme: ${currentTheme()}`;
+
+// ------------------------------------------------------------------ routing
+
+const PAGES = ["home", "today", "slip", "bets", "sim", "models"];
+const loaders = {};
+
+function route() {
+  const [page, sub] = (location.hash.slice(1) || "home").split("/");
+  const name = PAGES.includes(page) ? page : "home";
+  for (const p of PAGES) $(`#page-${p}`).hidden = p !== name;
+  for (const a of $$(".nav a")) {
+    if (a.dataset.page === name) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   }
-  for (const panel of document.querySelectorAll(".tab")) {
-    panel.hidden = panel.id !== `tab-${name}`;
+  pop.hidden = true;
+  loaders[name]?.(sub);
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+
+function go(hash) {
+  if (location.hash === `#${hash}`) route();
+  else location.hash = hash;
+}
+
+function pressPill(group, button) {
+  for (const b of $$(".pill", group)) b.setAttribute("aria-pressed", String(b === button));
+}
+
+function empty(title, text, ...actions) {
+  return el("div", { class: "empty" }, el("strong", { text: title }), el("span", { text }), ...actions);
+}
+
+function metric(label, value, sub = "", cls = "", termKey = null) {
+  return el("div", { class: "metric" },
+    el("div", { class: "label" }, el("span", { text: label }), termKey ? term(termKey) : null),
+    el("div", { class: `value ${cls}`, text: value }),
+    sub ? el("div", { class: "sub", text: sub }) : null);
+}
+
+// ------------------------------------------------------------------ shared data
+
+let books = [];
+async function loadBooks() {
+  books = await api("/api/sportsbooks");
+  books.sort((a, b) => Number(b.bettable) - Number(a.bettable) || a.key.localeCompare(b.key));
+  const options = () => books.map((b) => el("option", { value: b.key, text: b.bettable ? b.key : `${b.key} (not one of yours)` }));
+  $("#slip-book").replaceChildren(...options());
+  $("#bet-book").replaceChildren(...options());
+  if (slip.book) $("#slip-book").value = slip.book;
+  else slip.book = $("#slip-book").value;
+}
+
+// ------------------------------------------------------------------ home
+
+loaders.home = async () => {
+  const now = new Date();
+  $("#home-date").textContent = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const hour = now.getHours();
+  $("#home-title").textContent = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  try {
+    const s = await api("/api/status");
+    renderHome(s);
+  } catch (error) {
+    $("#home-lede").textContent = `Couldn't reach the app's data: ${error.message}`;
   }
-  if (name === "bets") { loadBankroll(); loadBets(); loadParlays(); }
-  if (name === "performance") loadPerformance();
-  if (name === "forward") { loadForward(); loadLab(); }
-  if (name === "parlay") { renderSlip(); loadPickGames(); }
-  if (name === "sim") loadSimGames();
-}
+};
 
-for (const button of document.querySelectorAll(".tabs button")) {
-  button.addEventListener("click", () => showTab(button.dataset.tab));
-}
+function renderHome(s) {
+  const c = s.collection;
+  const fresh = c.minutes_since_poll != null && c.minutes_since_poll < 45;
+  const alerts = c.alerts || [];
+  $("#home-lede").textContent = alerts.length
+    ? `${alerts.length === 1 ? "One thing needs" : `${alerts.length} things need`} your attention below. Nothing qualifies as a bet yet: every model is still being tested.`
+    : fresh
+      ? "Everything is running. Nothing qualifies as a bet yet: every model is still being tested against the market."
+      : "Odds collection looks stalled. Check that the collector task is running.";
 
-// ------------------------------------------------------------------ today (card)
-
-function stat(label, value, cls = "") {
-  return el("div", {}, el("dt", { text: label }), el("dd", { text: value, class: cls }));
-}
-
-function renderEntry(entry) {
-  const node = $("#entry-template").content.firstElementChild.cloneNode(true);
-  const badge = $(".badge", node);
-  badge.textContent = entry.classification.replace("_", " ");
-  badge.classList.add(entry.classification);
-  $(".bet", node).textContent = entry.bet;
-  $(".odds", node).textContent = `${american(entry.american_odds)} @ ${entry.sportsbook}`;
-  $(".matchup", node).textContent = `${entry.matchup} · ${eastern(entry.commence_time)}`;
-
-  const bars = $(".probbar", node);
-  bars.setAttribute(
-    "aria-label",
-    `Model ${pct(entry.model_probability)}, market ${pct(entry.market_probability)}`,
+  // Today
+  const today = $("#home-today");
+  const soon = s.upcoming.filter((u) => u.next_24h > 0);
+  const total = soon.reduce((n, u) => n + u.next_24h, 0);
+  today.replaceChildren(
+    el("h2", { text: "Today" }),
+    el("div", {}, el("div", { class: "big-number", text: String(total) }),
+      el("div", { class: "muted small", text: total === 1 ? "game in the next 24 hours" : "games in the next 24 hours" })),
+    soon.length
+      ? el("dl", { class: "kv" }, ...soon.flatMap((u) => [el("dt", { text: sportName(u.sport) }), el("dd", { text: String(u.next_24h) })]))
+      : el("p", { class: "muted small", text: nextKickoffText(s.upcoming) }),
+    el("a", { class: "link", href: "#today", text: "See today's games →" }),
   );
-  const [modelBar, marketBar] = bars.querySelectorAll(".bar span");
-  modelBar.style.width = pct(entry.model_probability, 2);
-  modelBar.textContent = `Model ${pct(entry.model_probability)}`;
-  marketBar.style.width = pct(entry.market_probability, 2);
-  marketBar.textContent = `Market ${pct(entry.market_probability)}`;
 
-  const movement =
-    entry.line_opening != null && entry.line_current != null
-      ? `${lineText(entry.line_opening)} → ${lineText(entry.line_current)}`
-      : "n/a";
-  $(".stats", node).append(
-    stat("Edge", pts(entry.edge), signClass(entry.edge)),
-    stat("EV", `${entry.ev_percent >= 0 ? "+" : ""}${entry.ev_percent.toFixed(1)}%`,
-         signClass(entry.ev_percent)),
-    stat("Fair odds", american(entry.fair_american_odds)),
-    stat("Push", pct(entry.push_probability)),
-    stat("Uncertainty", entry.uncertainty.replace("_", " ")),
-    stat("Data", entry.data_quality),
-    stat("Odds age", `${Math.round(entry.odds_age_minutes)} min`),
-    stat("Line move", movement),
-    stat("Model", entry.model_version),
+  // Collection
+  const col = $("#home-collection");
+  col.replaceChildren(
+    el("h2", { text: "Data collection" }),
+    el("div", { class: `status-line ${fresh ? "good" : "bad"}` }, el("span", { class: "dot" }),
+      el("span", { text: fresh ? "Collecting odds" : "Odds collection has stopped" })),
+    el("dl", { class: "kv" },
+      el("dt", { text: "Last odds update" }), el("dd", { text: ago(c.minutes_since_poll) }),
+      el("dt", { text: "PropLine requests left today" }), el("dd", { text: c.quota_remaining == null ? "–" : String(c.quota_remaining) }),
+      el("dt", { text: "Last player-prop pull" }), el("dd", { text: c.last_props_pull ? ago((Date.now() - new Date(c.last_props_pull)) / 6e4) : "none yet" })),
+    alerts.length ? el("ul", { class: "alert-list" }, ...alerts.map((a) => el("li", { text: a.message }))) : null,
   );
 
-  const list = $(".why ul", node);
-  for (const check of entry.checks) {
-    list.append(el("li", {
-      class: check.passed ? "ok" : "fail",
-      text: `${check.passed ? "PASS" : "FAIL"} ${check.name}: ${check.actual} (required ${check.required})`,
-    }));
-  }
-  for (const note of entry.notes.filter((n) => !entry.checks.some((c) => n.startsWith(c.name)))) {
-    list.append(el("li", { class: "ok", text: note }));
-  }
+  // Bankroll
+  const b = s.bankroll;
+  const bank = $("#home-bankroll");
+  bank.replaceChildren(
+    el("h2", { text: "Your bankroll" }),
+    ...(b.configured
+      ? [el("div", {}, el("div", { class: "big-number", text: money(b.balance) }),
+            el("div", { class: "muted small", text: `${b.open_wagers} open bet${b.open_wagers === 1 ? "" : "s"} · ${money(b.open_exposure)} riding` })),
+         b.drawdown < 0 ? el("p", { class: "small neg", text: `${signedPct(b.drawdown)} from its peak` }) : null,
+         el("a", { class: "link", href: "#bets/bankroll", text: "Manage bankroll →" })]
+      : [el("p", { class: "muted small", text: "Not set up yet. Add a starting amount to turn on staking limits, so one bad day can't sink you." }),
+         el("a", { class: "link", href: "#bets/bankroll", text: "Set up my bankroll →" })]),
+  );
 
-  $(".track", node).addEventListener("click", () => prefillBet(entry));
-  const simulate = $(".simulate", node);
-  simulate.addEventListener("click", () => openSimulation(entry.game_id, entry.commence_time, entry.sport));
-  $(".add-leg", node).addEventListener("click", () => {
-    // A new slip takes the entry's best book; later legs are priced at the slip's book.
+  // Models
+  $("#home-min-decided").textContent = String(s.min_decided);
+  $("#home-model-list").replaceChildren(...sortModels(s.models).map((m) => progressRow(m, s)));
+}
+
+function nextKickoffText(upcoming) {
+  const next = upcoming.filter((u) => u.next_kickoff).sort((a, b) => new Date(a.next_kickoff) - new Date(b.next_kickoff))[0];
+  return next ? `Next: ${sportName(next.sport)} ${untilText(next.next_kickoff)} (${eastern(next.next_kickoff)}).` : "No games on the schedule yet.";
+}
+
+function modelState(m, s) {
+  const need = s.min_decided;
+  if (m.snapshots === 0) {
+    const u = s.upcoming.find((x) => x.sport === m.sport);
+    return { text: u?.next_kickoff ? `Starts ${untilText(u.next_kickoff)}` : "Waiting for its season", cls: "" };
+  }
+  if (m.z == null || m.decided < need) return { text: `${m.decided} of ${need} games`, cls: "" };
+  if (m.z <= -2) return { text: `Beating the market (z ${m.z.toFixed(1)})`, cls: "pos" };
+  if (m.z >= 2) return { text: `Worse than the market (z +${m.z.toFixed(1)})`, cls: "neg" };
+  return { text: `Level with the market (z ${m.z >= 0 ? "+" : ""}${m.z.toFixed(1)})`, cls: "" };
+}
+
+const SPORT_ORDER = ["NFL", "CFB", "NBA", "NCAAB"];
+const sortModels = (models) => [...models].sort((a, b) =>
+  SPORT_ORDER.indexOf(a.sport) - SPORT_ORDER.indexOf(b.sport) || b.decided - a.decided || a.model.localeCompare(b.model));
+
+function progressRow(m, s) {
+  const n = modelName(m.model);
+  const state = modelState(m, s);
+  const share = Math.min(1, m.decided / s.min_decided);
+  return el("div", { class: "progress-row" },
+    el("div", { class: "label" }, el("span", { text: n.title }), el("span", { text: n.detail })),
+    el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${s.min_decided} games` },
+      el("div", { class: "bar-fill", style: `width:${(share * 100).toFixed(1)}%` })),
+    el("div", { class: `state ${state.cls}`, text: state.text }));
+}
+
+// ------------------------------------------------------------------ today's games
+
+let lastCard = null;
+let cardSport = "";
+const cardDate = $("#card-date");
+cardDate.value = todayEastern();
+
+const CHECK_NAMES = {
+  probability: "Model confidence", edge: "Edge over the market", expected_value: "Value at this price",
+  model_validated: "Model trusted (not in testing)", odds_fresh: "Fresh odds", odds_current: "Fresh odds",
+  data_quality: "Data quality", uncertainty: "Uncertainty", model_health: "Model health",
+};
+const checkName = (n) => CHECK_NAMES[n] ?? n.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
+
+function verdictText(entry) {
+  const failing = entry.checks.filter((c) => !c.passed);
+  if (entry.classification === "QUALIFIED") return "Every check passes.";
+  if (entry.classification === "PASS") {
+    return entry.edge > 0
+      ? `Close, but not at this price: the ${pts(entry.edge)} edge doesn't cover the book's cut (value ${entry.ev_percent.toFixed(1)}%).`
+      : "The model doesn't favor this side.";
+  }
+  if (!failing.length) return TERMS[entry.classification]?.[1] ?? "";
+  const names = failing.map((c) => checkName(c.name).toLowerCase());
+  return `Not a bet yet: ${names.join(", ")}.`;
+}
+
+function compareBars(entry) {
+  const row = (who, cls, p) => el("div", { class: `row ${cls}` },
+    el("span", { class: "who", text: who }),
+    el("div", { class: "track" }, el("div", { class: "fill", style: `width:${(p * 100).toFixed(1)}%` })),
+    el("span", { class: "val", text: pct(p) }));
+  return el("div", { class: "compare", role: "img", "aria-label": `Model ${pct(entry.model_probability)}, market ${pct(entry.market_probability)}` },
+    row("Model", "model", entry.model_probability),
+    row("Market", "market", entry.market_probability),
+    el("div", { class: `edge ${signClass(entry.edge)}` }, `Edge ${pts(entry.edge)} `, term("edge")));
+}
+
+function detailsBlock(entry) {
+  const dl = el("dl", { class: "details-grid" });
+  const item = (label, value, key, cls = "") => dl.append(el("div", {},
+    el("dt", {}, el("span", { text: label }), key ? term(key) : null), el("dd", { class: cls, text: value })));
+  item("Expected value", `${entry.ev_percent >= 0 ? "+" : ""}${entry.ev_percent.toFixed(1)}%`, "ev", signClass(entry.ev_percent));
+  item("Fair odds", american(entry.fair_american_odds), "fair");
+  item("Chance of a push", pct(entry.push_probability), "push");
+  item("Uncertainty", entry.uncertainty.replace("_", " ").toLowerCase(), "uncertainty");
+  item("Data quality", entry.data_quality.toLowerCase(), "data");
+  item("Odds age", `${Math.round(entry.odds_age_minutes)} min`, "oddsage");
+  item("Line move", entry.line_opening != null && entry.line_current != null
+    ? `${lineText(entry.line_opening)} → ${lineText(entry.line_current)}` : "–", "linemove");
+  item("Model", modelName(entry.model_version).detail || entry.model_version, null);
+  const checks = el("ul", { class: "checks" }, ...entry.checks.map((c) =>
+    el("li", { class: c.passed ? "" : "fail", text: `${checkName(c.name)}: ${c.actual} (needs ${c.required})` })));
+  return el("details", {}, el("summary", { text: "Details and checks" }), dl, checks);
+}
+
+function sideRow(entry) {
+  const track = el("button", { type: "button", text: "Track bet" });
+  track.addEventListener("click", () => openBetDialog({
+    game: { id: entry.game_id, matchup: entry.matchup, commence_time: entry.commence_time, sport: entry.sport },
+    market: entry.market, selection: entry.selection, line: entry.line,
+    american_odds: entry.american_odds, sportsbook: entry.sportsbook,
+    stake: entry.stake && entry.stake.recommended > 0 ? entry.stake.recommended : null,
+  }));
+  const add = el("button", { type: "button", class: "ghost", text: "Add to parlay" });
+  add.addEventListener("click", () => {
     if (!slip.legs.length) setSlipBook(entry.sportsbook);
     addLeg({ game_id: entry.game_id, market: entry.market, selection: entry.selection,
              line: entry.line, label: `${entry.bet} (${entry.matchup})` });
+    toast(`Added to your parlay: ${entry.bet}`);
   });
-  return node;
+  return el("div", { class: "side" },
+    el("div", { class: "pick" },
+      el("div", { class: "pick-title" },
+        el("span", { class: `chip ${entry.classification}`, text: entry.classification.replace("_", " ") }),
+        term(entry.classification),
+        el("span", { text: entry.bet })),
+      el("p", { class: "price", text: `Best price ${american(entry.american_odds)} at ${entry.sportsbook}` }),
+      el("p", { class: "verdict", text: verdictText(entry) })),
+    compareBars(entry),
+    el("div", { class: "side-actions" }, track, add),
+    detailsBlock(entry));
 }
 
-// ------------------------------------------------------------------ card filters
-
-let lastCard = null;
-const FILTER_IDS = ["filter-sport", "filter-class", "filter-edge", "filter-book"];
+function gameCard(entries) {
+  const first = entries[0];
+  const sim = el("button", { type: "button", class: "ghost small-btn", text: "Simulate" });
+  sim.addEventListener("click", () => openSimulation(first.game_id, first.commence_time, first.sport));
+  return el("article", { class: "game" },
+    el("header", { class: "game-head" },
+      el("span", { class: "chip sport", text: sportName(first.sport) }),
+      el("h2", { text: first.matchup }),
+      el("span", { class: "when", text: eastern(first.commence_time) }),
+      el("span", { class: "spacer" }),
+      sim),
+    ...entries.map(sideRow));
+}
 
 function cardFilter() {
   const classes = $("#filter-class").value;
   const edge = $("#filter-edge").value;
   return {
-    sport: $("#filter-sport").value || null,
+    sport: cardSport || null,
     classes: classes ? classes.split(",") : null,
     minEdge: edge === "" ? null : Number(edge) / 100,
     book: $("#filter-book").value || null,
+    search: $("#card-search").value.trim().toLowerCase(),
   };
 }
-
 function matches(entry, f) {
   return (!f.sport || entry.sport === f.sport)
     && (!f.classes || f.classes.includes(entry.classification))
     && (f.minEdge == null || entry.edge >= f.minEdge - 1e-12)
-    && (!f.book || entry.sportsbook === f.book);
+    && (!f.book || entry.sportsbook === f.book)
+    && (!f.search || entry.matchup.toLowerCase().includes(f.search));
 }
 
-function renderEntries() {
+function renderGames() {
   if (!lastCard) return;
   const f = cardFilter();
   const shown = lastCard.entries.filter((e) => matches(e, f));
-  $("#card-entries").replaceChildren(...shown.map(renderEntry));
-  const books = [...new Set(lastCard.entries.map((e) => e.sportsbook))].sort();
-  const bookSelect = $("#filter-book");
-  const chosen = bookSelect.value;
-  bookSelect.replaceChildren(el("option", { value: "", text: "Any" }),
-    ...books.map((b) => el("option", { value: b, text: b })));
-  if (chosen && !books.includes(chosen)) bookSelect.append(el("option", { value: chosen, text: chosen }));
-  bookSelect.value = chosen;
-  $("#filter-count").textContent = shown.length === lastCard.entries.length
-    ? "" : `Showing ${shown.length} of ${lastCard.entries.length}`;
+  const byGame = new Map();
+  for (const e of shown) {
+    if (!byGame.has(e.game_id)) byGame.set(e.game_id, []);
+    byGame.get(e.game_id).push(e);
+  }
+  const games = [...byGame.values()].sort((a, b) => new Date(a[0].commence_time) - new Date(b[0].commence_time));
+  const box = $("#card-games");
+  if (games.length) box.replaceChildren(...games.map(gameCard));
+  else if (lastCard.entries.length) {
+    const clear = el("button", { type: "button", class: "ghost", text: "Clear filters" });
+    clear.addEventListener("click", clearFilters);
+    box.replaceChildren(empty("No games match your filters", `${lastCard.entries.length} priced sides are hidden.`, clear));
+  } else {
+    box.replaceChildren(empty("No priced games for this date",
+      lastCard.unmodeled.length ? "Games with odds are listed below, but no model priced them." : "There are no games with a live market on this date. Try another date."));
+  }
+  const booksSeen = [...new Set(lastCard.entries.map((e) => e.sportsbook))].sort();
+  const sel = $("#filter-book");
+  const chosen = sel.value;
+  sel.replaceChildren(el("option", { value: "", text: "Any book" }), ...booksSeen.map((b) => el("option", { value: b, text: b })));
+  if (chosen) sel.value = booksSeen.includes(chosen) ? chosen : "";
+}
+
+function clearFilters() {
+  $("#filter-class").value = "";
+  $("#filter-edge").value = "";
+  $("#filter-book").value = "";
+  $("#card-search").value = "";
+  cardSport = "";
+  pressPill($("#sport-pills"), $("#sport-pills .pill"));
+  saveFilters();
+  renderGames();
 }
 
 function saveFilters() {
   try {
-    localStorage.setItem("ttk-card-filters", JSON.stringify(FILTER_IDS.map((id) => $(`#${id}`).value)));
-  } catch { /* storage unavailable: filters just aren't remembered */ }
+    localStorage.setItem("ttk-card-filters", JSON.stringify({
+      sport: cardSport, cls: $("#filter-class").value, edge: $("#filter-edge").value, book: $("#filter-book").value,
+    }));
+  } catch { /* not remembered */ }
 }
-
 function restoreFilters() {
   try {
     const saved = JSON.parse(localStorage.getItem("ttk-card-filters") || "null");
-    if (!Array.isArray(saved)) return;
-    FILTER_IDS.forEach((id, i) => {
-      const node = $(`#${id}`);
-      if (node.tagName === "SELECT" && saved[i] && ![...node.options].some((o) => o.value === saved[i])) {
-        node.append(el("option", { value: saved[i], text: saved[i] }));
-      }
-      node.value = saved[i] ?? "";
-    });
-  } catch { /* ignore unreadable storage */ }
+    if (!saved || Array.isArray(saved)) return;
+    cardSport = saved.sport || "";
+    $("#filter-class").value = saved.cls || "";
+    $("#filter-edge").value = saved.edge || "";
+    if (saved.book) $("#filter-book").append(el("option", { value: saved.book, text: saved.book }));
+    $("#filter-book").value = saved.book || "";
+    const pill = $(`#sport-pills .pill[data-sport="${cardSport}"]`);
+    if (pill) pressPill($("#sport-pills"), pill);
+  } catch { /* ignore */ }
 }
 
-for (const id of FILTER_IDS) {
-  $(`#${id}`).addEventListener(id === "filter-edge" ? "input" : "change", () => { saveFilters(); renderEntries(); });
+for (const pill of $$("#sport-pills .pill")) {
+  pill.addEventListener("click", () => {
+    cardSport = pill.dataset.sport;
+    pressPill($("#sport-pills"), pill);
+    saveFilters();
+    renderGames();
+  });
 }
-$("#filter-clear").addEventListener("click", () => {
-  for (const id of FILTER_IDS) $(`#${id}`).value = "";
-  saveFilters();
-  renderEntries();
-});
-restoreFilters();
+for (const id of ["filter-class", "filter-book"]) $(`#${id}`).addEventListener("change", () => { saveFilters(); renderGames(); });
+$("#filter-edge").addEventListener("input", () => { saveFilters(); renderGames(); });
+$("#card-search").addEventListener("input", renderGames);
+$("#filter-clear").addEventListener("click", clearFilters);
+cardDate.addEventListener("change", () => loadCard());
+$("#card-refresh").addEventListener("click", () => loadCard());
 
-async function loadCard() {
-  const date = $("#card-date").value || todayEastern();
-  const status = $("#card-status");
+let cardSeq = 0;
+let loadingRetry = null;
+async function loadCard({ quiet = false } = {}) {
+  const seq = ++cardSeq;
+  clearTimeout(loadingRetry);
+  const started = Date.now();
+  const banner = $("#card-banner");
   const refresh = $("#card-refresh");
   refresh.disabled = true;
-  status.textContent = "Building the card (the first load fits the model, ~10 s)…";
+  let timer = null;
+  if (!quiet) {
+    $("#card-summary").replaceChildren();
+    $("#card-games").replaceChildren(...[1, 2, 3].map(() => el("div", { class: "skeleton-card" })));
+    const note = el("div", { class: "banner info" }, el("span", { text: "Building the card…" }));
+    banner.replaceChildren(note);
+    timer = setInterval(() => {
+      const s = Math.round((Date.now() - started) / 1000);
+      note.firstChild.textContent = `Building the card… ${s} s. The first load after the app starts fits the NFL model, which takes about 20 seconds.`;
+    }, 1000);
+  }
   try {
-    const card = await api(`/api/card?date=${encodeURIComponent(date)}`);
-    const header = $("#card-header");
-    header.replaceChildren();
-    const sports = Object.entries(card.by_sport);
-    const withMarket = sports.reduce((n, [, s]) => n + s.with_market, 0);
-    const modeled = sports.reduce((n, [, s]) => n + s.modeled, 0);
-    header.append(
-      el("div", { class: "muted", text: new Date(`${card.date}T12:00:00`).toLocaleDateString(
-        "en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).toUpperCase() }),
-      el("div", {
-        class: `headline ${card.headline.startsWith("NO") ? "none" : "some"}`,
-        text: card.headline,
-      }),
-      el("div", { text: `${withMarket} games with a live market · ${modeled} modeled` }),
-    );
-    if (card.bettable_books == null) {
-      header.append(el("div", { class: "warn",
-        text: "Best price and EV use every book, including exchanges and prediction markets. Set TTK_BETTABLE_BOOKS." }));
-    } else {
-      header.append(el("div", { class: "muted", text: `Best price from: ${card.bettable_books.join(", ")}` }));
-    }
-    if (sports.length) {
-      const table = el("table", {}, el("tr", {}, ...["Sport", "Games", "With market", "Modeled",
-        "Qualified", "Lean"].map((h) => el("th", { text: h }))));
-      for (const [sport, s] of sports) {
-        table.append(el("tr", {}, ...[sport, s.games, s.with_market, s.modeled, s.qualified, s.lean]
-          .map((v) => el("td", { text: String(v) }))));
-      }
-      header.append(table);
-    }
-
+    const card = await api(`/api/card?date=${encodeURIComponent(cardDate.value || todayEastern())}`);
+    if (seq !== cardSeq) return;
     lastCard = card;
-    renderEntries();
-    const unmodeled = $("#card-unmodeled");
-    unmodeled.replaceChildren();
-    if (card.unmodeled.length || card.unbettable.length) {
-      const list = el("ul");
-      for (const u of card.unmodeled) {
-        list.append(el("li", { text: `${u.sport} · ${u.matchup} · ${eastern(u.commence_time)}: ${u.reason}` }));
-      }
-      for (const side of card.unbettable) {
-        list.append(el("li", { text: `${side}: no bettable book quotes this line` }));
-      }
-      unmodeled.append(el("div", { class: "unmodeled" }, el("h2", { text: "Not evaluated" }), list));
+    renderCardSummary(card);
+    banner.replaceChildren();
+    if (card.loading && card.loading.length) {
+      banner.replaceChildren(el("div", { class: "banner" },
+        el("span", { text: `${card.loading.map(sportName).join(" and ")} ${card.loading.length === 1 ? "is" : "are"} still loading (about a minute after the app starts). This page updates by itself when ready.` })));
+      loadingRetry = setTimeout(() => { if (!$("#page-today").hidden) loadCard({ quiet: true }); }, 30000);
     }
-    status.textContent = card.entries.length || card.unmodeled.length
-      ? `Updated ${new Date(card.generated_at).toLocaleTimeString()}`
-      : "No games with a live market on this date.";
+    renderGames();
+    renderUnmodeled(card);
   } catch (error) {
-    status.textContent = `Could not load the card: ${error.message}`;
+    if (seq !== cardSeq) return;
+    banner.replaceChildren(el("div", { class: "banner" }, el("span", { text: `Couldn't build the card: ${error.message}` })));
+    $("#card-games").replaceChildren();
   } finally {
+    clearInterval(timer);
     refresh.disabled = false;
   }
 }
 
-$("#card-date").value = todayEastern();
-$("#card-date").addEventListener("change", loadCard);
-$("#card-refresh").addEventListener("click", loadCard);
-
-// ------------------------------------------------------------------ bet tracker
-
-async function loadBooks() {
-  const books = await api("/api/sportsbooks");
-  books.sort((a, b) => Number(b.bettable) - Number(a.bettable) || a.key.localeCompare(b.key));
-  const options = () =>
-    books.map((b) => el("option", { value: b.key, text: b.bettable ? b.key : `${b.key} (not bettable)` }));
-  $("#book-select").replaceChildren(...options());
-  $("#slip-book").replaceChildren(...options());
-  if (slip.book) $("#slip-book").value = slip.book;
-  else slip.book = $("#slip-book").value;
+function renderCardSummary(card) {
+  const sports = Object.values(card.by_sport);
+  const withMarket = sports.reduce((n, s) => n + s.with_market, 0);
+  const modeled = sports.reduce((n, s) => n + s.modeled, 0);
+  const some = !card.headline.startsWith("NO");
+  $("#card-summary").replaceChildren(
+    el("span", { class: `headline ${some ? "some" : "none"}`, text: some ? card.headline.toLowerCase().replace(/^./, (c) => c.toUpperCase()) : "No qualified bets today" }),
+    el("span", { class: "muted", text: `${withMarket} game${withMarket === 1 ? "" : "s"} with a live market · ${modeled} priced by a model` }),
+    card.bettable_books ? el("span", { class: "muted small", text: `Best prices from your books: ${card.bettable_books.join(", ")}` })
+      : el("span", { class: "small", style: "color:var(--warn)", text: "Best prices use every book, including exchanges. Set TTK_BETTABLE_BOOKS to your own books." }),
+  );
 }
 
-function prefillBet(entry) {
-  const form = $("#bet-form");
-  form.game_id.value = entry.game_id;
-  form.market.value = entry.market;
-  form.selection.value = entry.selection;
-  form.line.value = entry.line ?? "";
-  form.american_odds.value = Math.round(entry.american_odds);
-  form.sportsbook.value = entry.sportsbook;
-  form.placed_at.value = "";
-  form.notes.value = "";
-  form.limit_override.value = "";
-  form.stake.value = entry.stake && entry.stake.recommended > 0 ? entry.stake.recommended.toFixed(2) : "";
-  $("#bet-form-status").textContent = `Prefilled from the card: ${entry.bet}. Check the odds you actually got.`;
-  $("#bet-form-status").className = "muted";
-  showTab("bets");
-  form.stake.focus();
+function renderUnmodeled(card) {
+  const box = $("#card-unmodeled");
+  const items = [
+    ...card.unmodeled.map((u) => `${sportName(u.sport)} · ${u.matchup} · ${eastern(u.commence_time)}: ${u.reason}`),
+    ...card.unbettable.map((side) => `${side}: none of your books offers this line`),
+  ];
+  box.hidden = !items.length;
+  $("summary", box).textContent = `${items.length} game${items.length === 1 ? "" : "s"} without a model price`;
+  $("ul", box).replaceChildren(...items.map((t) => el("li", { text: t })));
 }
 
-$("#bet-form").addEventListener("submit", async (event) => {
+loaders.today = () => { if (!lastCard || lastCard.date !== cardDate.value) loadCard(); else renderGames(); };
+
+// ------------------------------------------------------------------ record a bet
+
+const betDialog = $("#bet-dialog");
+const betForm = $("#bet-form");
+const bet = { game: null, market: "SPREAD", offers: [], maxAllowed: undefined, showAlternates: false };
+
+function splitMatchup(matchup) {
+  const [away, home] = matchup.split(" @ ");
+  return { away, home };
+}
+
+async function openBetDialog(prefill = {}) {
+  betForm.reset();
+  $("#bet-override-field").hidden = true;
+  setStatus($("#bet-form-status"), "");
+  bet.game = null;
+  bet.offers = [];
+  bet.showAlternates = false;
+  $("#bet-date").value = prefill.game ? easternDateOf(prefill.game.commence_time) : todayEastern();
+  if (prefill.sportsbook) $("#bet-book").value = prefill.sportsbook;
+  setBetMarket(prefill.market || "SPREAD");
+  betDialog.showModal();
+  loadBetLimits();
+  if (prefill.game) {
+    await chooseGame(prefill.game);
+    if (prefill.selection) $("#bet-selection").value = prefill.selection;
+    if (prefill.line != null) $("#bet-line").value = prefill.line;
+    if (prefill.american_odds != null) $("#bet-odds").value = Math.round(prefill.american_odds);
+    if (prefill.stake) $("#bet-stake").value = prefill.stake.toFixed(2);
+    const isMain = bet.offers.some((o) => o.main && o.market === bet.market && o.selection === prefill.selection && o.line === prefill.line);
+    if (!isMain) { bet.showAlternates = true; renderBetOffers(); }
+    markChosenOffer();
+    $("#bet-stake").focus();
+    setStatus($("#bet-form-status"), "Check the odds match what you actually got.");
+  } else {
+    showGamePicker();
+    loadBetGames();
+    $("#bet-game-search").focus();
+  }
+  updateBetSubmit();
+}
+
+function showGamePicker() {
+  $("#bet-game-picker").hidden = false;
+  $("#bet-chosen").hidden = true;
+  $("#bet-details").hidden = true;
+}
+
+let betGames = [];
+async function loadBetGames() {
+  const list = $("#bet-game-results");
+  list.replaceChildren(el("li", { class: "muted small", text: "Loading games…" }));
+  try {
+    betGames = await api(`/api/games?date=${encodeURIComponent($("#bet-date").value || todayEastern())}`);
+    renderBetGames();
+  } catch (error) {
+    list.replaceChildren(el("li", { class: "muted small", text: `Couldn't load games: ${error.message}` }));
+  }
+}
+function renderBetGames() {
+  const q = $("#bet-game-search").value.trim().toLowerCase();
+  const shown = betGames.filter((g) => !q || `${g.away_team} ${g.home_team}`.toLowerCase().includes(q)).slice(0, 60);
+  const list = $("#bet-game-results");
+  if (!shown.length) {
+    list.replaceChildren(el("li", { class: "muted small", text: betGames.length ? "No game matches that name." : "No upcoming games on this date." }));
+    return;
+  }
+  list.replaceChildren(...shown.map((g) => {
+    const b = el("button", { type: "button" },
+      el("span", { text: `${g.away_team} @ ${g.home_team}` }),
+      el("span", { text: `${sportName(g.sport)} · ${eastern(g.commence_time)}` }));
+    b.addEventListener("click", () => chooseGame({
+      id: g.id, matchup: `${g.away_team} @ ${g.home_team}`, commence_time: g.commence_time, sport: g.sport,
+    }));
+    return el("li", {}, b);
+  }));
+}
+$("#bet-date").addEventListener("change", loadBetGames);
+$("#bet-game-search").addEventListener("input", renderBetGames);
+$("#bet-change-game").addEventListener("click", () => { bet.game = null; showGamePicker(); loadBetGames(); updateBetSubmit(); });
+
+async function chooseGame(game) {
+  bet.game = game;
+  $("#bet-game-picker").hidden = true;
+  $("#bet-chosen").hidden = false;
+  $("#bet-details").hidden = false;
+  $("#bet-chosen-game").textContent = game.matchup;
+  $("#bet-chosen-time").textContent = `${sportName(game.sport)} · ${eastern(game.commence_time)}`;
+  fillSelections();
+  await loadBetOffers();
+  updateBetSubmit();
+}
+
+function fillSelections() {
+  if (!bet.game) return;
+  const { away, home } = splitMatchup(bet.game.matchup);
+  const opts = bet.market === "TOTAL"
+    ? [["OVER", "Over"], ["UNDER", "Under"]]
+    : [["HOME", home], ["AWAY", away]];
+  $("#bet-selection").replaceChildren(...opts.map(([v, t]) => el("option", { value: v, text: t })));
+  $("#bet-line").disabled = bet.market === "MONEYLINE";
+  if (bet.market === "MONEYLINE") $("#bet-line").value = "";
+}
+
+function setBetMarket(market) {
+  bet.market = market;
+  bet.showAlternates = false;
+  for (const b of $$("#bet-market button")) b.setAttribute("aria-checked", String(b.dataset.market === market));
+  fillSelections();
+  renderBetOffers();
+}
+for (const b of $$("#bet-market button")) b.addEventListener("click", () => setBetMarket(b.dataset.market));
+$("#bet-book").addEventListener("change", loadBetOffers);
+
+let offersSeq = 0;
+async function loadBetOffers() {
+  if (!bet.game) return;
+  const seq = ++offersSeq;
+  const box = $("#bet-offers");
+  box.replaceChildren(el("span", { class: "muted small", text: "Loading this book's lines…" }));
+  try {
+    const offers = await api(`/api/games/${bet.game.id}/offers?book=${encodeURIComponent($("#bet-book").value)}`);
+    if (seq !== offersSeq) return;
+    bet.offers = offers;
+  } catch {
+    if (seq !== offersSeq) return;
+    bet.offers = [];
+  }
+  renderBetOffers();
+}
+
+function offerLabel(o, matchup) {
+  const { away, home } = splitMatchup(matchup);
+  if (o.market === "TOTAL") return `${o.selection === "OVER" ? "Over" : "Under"} ${o.line}`;
+  const team = o.selection === "HOME" ? home : away;
+  return o.market === "MONEYLINE" ? `${team} to win` : `${team} ${lineText(o.line)}`;
+}
+
+function renderBetOffers() {
+  const box = $("#bet-offers");
+  if (!bet.game) { box.replaceChildren(); return; }
+  const offers = bet.offers.filter((o) => o.market === bet.market).sort((a, b) => Number(b.main) - Number(a.main));
+  if (!offers.length) {
+    box.replaceChildren(el("span", { class: "muted small", text: `${$("#bet-book").value} has no ${MARKET_NAMES[bet.market].toLowerCase()} lines for this game right now. You can still type the bet in.` }));
+    return;
+  }
+  // The book's main lines first; alternates (sorted nearest the main line) on request.
+  const main = offers.filter((o) => o.main);
+  const mainLine = (sel) => main.find((m) => m.selection === sel)?.line;
+  const alternates = offers.filter((o) => !o.main).sort((a, b) =>
+    Math.abs((a.line ?? 0) - (mainLine(a.selection) ?? 0)) - Math.abs((b.line ?? 0) - (mainLine(b.selection) ?? 0)));
+  const visible = bet.showAlternates || !main.length ? [...main, ...alternates] : main;
+  const buttons = visible.map((o) => {
+    const b = el("button", { type: "button", class: `offer ${o.main ? "main" : ""}`, "aria-pressed": "false",
+      "data-sel": o.selection, "data-line": o.line ?? "" },
+      el("span", { text: offerLabel(o, bet.game.matchup) }),
+      el("span", { class: "odds", text: `${american(o.american_odds)}${o.main ? " · main line" : ""}` }));
+    b.addEventListener("click", () => {
+      $("#bet-selection").value = o.selection;
+      $("#bet-line").value = o.line ?? "";
+      $("#bet-odds").value = Math.round(o.american_odds);
+      markChosenOffer();
+      updateBetSubmit();
+      $("#bet-stake").focus();
+    });
+    return b;
+  });
+  if (!bet.showAlternates && main.length && alternates.length) {
+    const more = el("button", { type: "button", class: "ghost small-btn", text: `Show ${alternates.length} alternate lines` });
+    more.addEventListener("click", () => { bet.showAlternates = true; renderBetOffers(); });
+    buttons.push(more);
+  }
+  box.replaceChildren(...buttons);
+  markChosenOffer();
+}
+
+function markChosenOffer() {
+  const sel = $("#bet-selection").value;
+  const line = $("#bet-line").value;
+  for (const b of $$("#bet-offers .offer")) {
+    b.setAttribute("aria-pressed", String(b.dataset.sel === sel && String(b.dataset.line) === String(line)));
+  }
+}
+
+async function loadBetLimits() {
+  try {
+    const b = await api("/api/bankroll");
+    bet.maxAllowed = b.configured ? b.max_allowed : null;
+  } catch { bet.maxAllowed = null; }
+  updateStakeHint();
+}
+function updateStakeHint() {
+  const hint = $("#bet-stake-hint");
+  const stake = Number($("#bet-stake").value);
+  if (bet.maxAllowed === undefined) { hint.textContent = ""; return; }
+  if (bet.maxAllowed === null) { hint.textContent = "No bankroll set up, so no limits apply."; hint.className = "hint"; return; }
+  const over = stake > bet.maxAllowed + 1e-9;
+  hint.textContent = over ? `Over your limits (up to ${money(bet.maxAllowed)} right now).` : `Your limits allow up to ${money(bet.maxAllowed)}.`;
+  hint.className = `hint ${over ? "over" : ""}`;
+}
+
+function updateBetSubmit() {
+  $("#bet-submit").disabled = !(bet.game && $("#bet-odds").value !== "" && Number($("#bet-stake").value) > 0);
+}
+for (const id of ["bet-odds", "bet-stake", "bet-line"]) {
+  $(`#${id}`).addEventListener("input", () => { updateBetSubmit(); updateStakeHint(); markChosenOffer(); });
+}
+$("#bet-selection").addEventListener("change", markChosenOffer);
+$("#bet-dialog-close").addEventListener("click", () => betDialog.close());
+$("#bet-cancel").addEventListener("click", () => betDialog.close());
+$("#new-bet").addEventListener("click", () => openBetDialog());
+
+betForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = event.currentTarget;
   const status = $("#bet-form-status");
   const body = {
-    game_id: Number(form.game_id.value),
-    market: form.market.value,
-    selection: form.selection.value,
-    line: form.line.value === "" ? null : Number(form.line.value),
-    american_odds: Number(form.american_odds.value),
-    sportsbook: form.sportsbook.value,
-    stake: Number(form.stake.value),
-    placed_at: form.placed_at.value ? new Date(form.placed_at.value).toISOString() : null,
-    notes: form.notes.value || null,
-    limit_override: form.limit_override.value || null,
+    game_id: bet.game.id,
+    market: bet.market,
+    selection: $("#bet-selection").value,
+    line: bet.market === "MONEYLINE" || $("#bet-line").value === "" ? null : Number($("#bet-line").value),
+    american_odds: Number($("#bet-odds").value),
+    sportsbook: $("#bet-book").value,
+    stake: Number($("#bet-stake").value),
+    placed_at: betForm.placed_at.value ? new Date(betForm.placed_at.value).toISOString() : null,
+    notes: betForm.notes.value || null,
+    limit_override: betForm.limit_override.value || null,
   };
+  $("#bet-submit").disabled = true;
   try {
-    const bet = await api("/api/bets", { method: "POST", body: JSON.stringify(body) });
-    status.textContent = `Recorded: ${bet.description} ${bet.american_odds}`;
-    status.className = "ok-msg";
-    form.reset();
-    loadBets();
-    loadBankroll();
+    const saved = await api("/api/bets", { method: "POST", body: JSON.stringify(body) });
+    betDialog.close();
+    toast(`Recorded: ${saved.description} at ${saved.american_odds}`);
+    if (!$("#page-bets").hidden) { loadBetList(); loadParlayList(); }
   } catch (error) {
-    status.textContent = `Not recorded: ${error.message}`;
-    status.className = "err-msg";
+    if (/bankroll limit/i.test(error.message)) $("#bet-override-field").hidden = false;
+    setStatus(status, `Not recorded: ${error.message}`, "err");
+  } finally {
+    updateBetSubmit();
   }
 });
 
-// ------------------------------------------------------------------ bankroll
+function setStatus(node, text, kind = "") {
+  node.textContent = text;
+  node.className = `form-status ${kind}`;
+}
 
+// ------------------------------------------------------------------ my bets
+
+let betStatusFilter = "";
+const SUBS = ["list", "bankroll", "results"];
+loaders.bets = (sub) => {
+  const name = SUBS.includes(sub) ? sub : "list";
+  for (const b of $$(".segmented[aria-label='My bets sections'] button")) b.setAttribute("aria-selected", String(b.dataset.sub === name));
+  for (const s of SUBS) $(`#sub-${s}`).hidden = s !== name;
+  if (name === "list") { loadBetList(); loadParlayList(); }
+  if (name === "bankroll") loadBankroll();
+  if (name === "results") loadPerformance();
+};
+for (const b of $$(".segmented[aria-label='My bets sections'] button")) {
+  b.addEventListener("click", () => go(b.dataset.sub === "list" ? "bets" : `bets/${b.dataset.sub}`));
+}
+for (const pill of $$("#bet-pills .pill")) {
+  pill.addEventListener("click", () => { betStatusFilter = pill.dataset.status; pressPill($("#bet-pills"), pill); loadBetList(); });
+}
+
+async function loadBetList() {
+  const box = $("#bet-list");
+  try {
+    const bets = await api(`/api/bets${betStatusFilter ? `?status=${betStatusFilter}` : ""}`);
+    if (!bets.length) {
+      const add = el("button", { type: "button", text: "Record a bet" });
+      add.addEventListener("click", () => openBetDialog());
+      box.replaceChildren(empty(betStatusFilter ? "Nothing here" : "No bets recorded yet",
+        "After you place a bet, record it here, or use Track bet on Today's games. It's graded automatically when the game ends.", add));
+      return;
+    }
+    box.replaceChildren(...bets.map(betRow));
+  } catch (error) {
+    box.replaceChildren(empty("Couldn't load your bets", error.message));
+  }
+}
+
+function betRow(b) {
+  const voidButton = el("button", { type: "button", class: "ghost small-btn", text: "Void" });
+  voidButton.addEventListener("click", async () => {
+    if (!confirm(`Void this bet? ${b.description}`)) return;
+    await api(`/api/bets/${b.id}`, { method: "PATCH", body: JSON.stringify({ void: true }) });
+    toast("Bet voided");
+    loadBetList();
+  });
+  const beliefs = b.model_probability != null
+    ? `model ${pct(b.model_probability)} vs market ${pct(b.market_probability)}` : "no model price at this line";
+  return el("div", { class: "bet-row" },
+    el("div", { class: "what" },
+      el("strong", { text: b.description }),
+      el("span", { class: "meta", text: `${b.american_odds} at ${b.sportsbook ?? "?"} · ${new Date(b.placed_at).toLocaleString()} · ${beliefs}` }),
+      b.clv != null ? el("span", { class: `meta ${signClass(b.clv)}` }, `Beat the closing price by ${signedPct(b.clv)} `, term("clv")) : null),
+    el("div", { class: "money" },
+      el("span", { text: money(b.stake) }),
+      b.profit_loss != null ? el("span", { class: signClass(b.profit_loss), text: signedMoney(b.profit_loss) }) : el("span", { class: "muted small", text: "staked" })),
+    el("div", { class: "row-actions" },
+      el("span", { class: `chip ${b.result}`, text: b.result === "PENDING" ? "waiting" : b.result.toLowerCase() }),
+      b.result === "PENDING" ? voidButton : null));
+}
+
+async function loadParlayList() {
+  const box = $("#parlay-list");
+  try {
+    const parlays = await api("/api/parlays");
+    if (!parlays.length) {
+      box.replaceChildren(el("p", { class: "empty-note", text: "No parlays recorded. Build one in the Parlay builder." }));
+      return;
+    }
+    box.replaceChildren(...parlays.map((p) => el("div", { class: "bet-row" },
+      el("div", { class: "what" },
+        el("strong", { text: `${p.legs.length}-leg parlay at ${p.sportsbook ?? "?"} (${p.american_odds ?? "?"})` }),
+        ...p.legs.map((leg) => el("span", { class: "meta", text: `${leg.result === "PENDING" ? "·" : leg.result === "WIN" ? "✓" : leg.result === "LOSS" ? "✗" : "–"} ${leg.description} ${leg.american_odds}` }))),
+      el("div", { class: "money" },
+        el("span", { text: money(p.stake) }),
+        p.profit_loss != null ? el("span", { class: signClass(p.profit_loss), text: signedMoney(p.profit_loss) }) : el("span", { class: "muted small", text: `${pct(p.joint_probability, 1)} to hit` })),
+      el("div", { class: "row-actions" }, el("span", { class: `chip ${p.result}`, text: p.result === "PENDING" ? "waiting" : p.result.toLowerCase() })))));
+  } catch (error) {
+    box.replaceChildren(el("p", { class: "empty-note", text: `Couldn't load parlays: ${error.message}` }));
+  }
+}
+
+$("#bets-settle").addEventListener("click", async () => {
+  const status = $("#bets-status");
+  try {
+    const settled = await api("/api/bets/settle", { method: "POST" });
+    const n = settled.bets.length + settled.parlays.length;
+    setStatus(status, n ? `${n} graded` : "Nothing new to grade", "ok");
+    loadBetList();
+    loadParlayList();
+  } catch (error) {
+    setStatus(status, `Couldn't grade: ${error.message}`, "err");
+  }
+});
+
+// bankroll
 const POLICY_PERCENT = ["max_stake_fraction", "max_daily_fraction", "max_open_fraction", "stop_drawdown_fraction"];
-
 async function loadBankroll() {
   const b = await api("/api/bankroll");
   const p = b.policy;
   $("#bankroll-note").textContent = b.configured
-    ? `Limits${p.saved_at ? "" : " (defaults)"}: ${p.kelly_multiplier} Kelly; max stake ${pct(p.max_stake_fraction)}, ` +
-      `per day ${pct(p.max_daily_fraction, 0)}, open ${pct(p.max_open_fraction, 0)}; ` +
-      `stop at ${pct(p.stop_drawdown_fraction, 0)} below peak. A bet over a limit needs a reason.`
-    : "No bankroll yet: add a deposit to turn on staking limits.";
+    ? `Limits${p.saved_at ? "" : " (the defaults)"}: at most ${pct(p.max_stake_fraction)} on one bet, ${pct(p.max_daily_fraction, 0)} a day and ${pct(p.max_open_fraction, 0)} riding at once; bets pause after a ${pct(p.stop_drawdown_fraction, 0)} drop from the peak. Going over a limit needs a reason.`
+    : "Not set up yet. Record a deposit with your starting amount to turn on staking limits.";
   $("#bankroll-tiles").replaceChildren(...(b.configured ? [
-    tile("Balance", b.balance.toFixed(2), `deposits ${b.net_deposits.toFixed(2)} · betting ${money(b.realized_profit)}`),
-    tile("Drawdown", signedPct(b.drawdown), `peak ${b.peak.toFixed(2)}`, b.drawdown < 0 ? "neg" : ""),
-    tile("Open", b.open_exposure.toFixed(2), `${b.open_wagers} wager(s)`),
-    tile("Staked today", b.staked_today.toFixed(2), "Eastern day"),
-    tile("Largest stake now", (b.max_allowed ?? 0).toFixed(2), "under every limit", b.max_allowed > 0 ? "" : "neg"),
+    metric("Balance", money(b.balance), `deposits ${money(b.net_deposits)} · betting ${signedMoney(b.realized_profit)}`),
+    metric("From the peak", signedPct(b.drawdown), `peak ${money(b.peak)}`, b.drawdown < 0 ? "neg" : "", "drawdown"),
+    metric("Riding now", money(b.open_exposure), `${b.open_wagers} open bet${b.open_wagers === 1 ? "" : "s"}`),
+    metric("Staked today", money(b.staked_today), "Eastern time"),
+    metric("Largest bet allowed now", money(b.max_allowed ?? 0), "under every limit", b.max_allowed > 0 ? "" : "neg"),
   ] : []));
   const form = $("#bankroll-policy");
   form.kelly_multiplier.value = p.kelly_multiplier;
   for (const name of POLICY_PERCENT) form[name].value = +(p[name] * 100).toFixed(2);
 }
-
 $("#bankroll-entry").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  const status = $("#bankroll-status");
   try {
     await api("/api/bankroll/entries", { method: "POST", body: JSON.stringify({
       kind: form.kind.value, amount: Number(form.amount.value), note: form.note.value || null,
     }) });
-    status.textContent = "Entry added";
-    status.className = "ok-msg";
     form.reset();
+    toast("Saved");
     loadBankroll();
   } catch (error) {
-    status.textContent = `Not added: ${error.message}`;
-    status.className = "err-msg";
+    setStatus($("#bankroll-status"), `Not saved: ${error.message}`, "err");
   }
 });
-
 $("#bankroll-policy").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  const status = $("#bankroll-status");
   const body = { kelly_multiplier: Number(form.kelly_multiplier.value) };
   for (const name of POLICY_PERCENT) body[name] = Number(form[name].value) / 100;
   try {
     await api("/api/bankroll/policy", { method: "PUT", body: JSON.stringify(body) });
-    status.textContent = "Limits saved";
-    status.className = "ok-msg";
+    toast("Limits saved");
     loadBankroll();
   } catch (error) {
-    status.textContent = `Not saved: ${error.message}`;
-    status.className = "err-msg";
+    setStatus($("#bankroll-status"), `Limits not saved: ${error.message}`, "err");
   }
 });
 
-async function loadBets() {
-  const filter = $("#bet-filter").value;
-  const bets = await api(`/api/bets${filter ? `?status=${filter}` : ""}`);
-  const rows = bets.map((b) => {
-    const voidButton = el("button", { class: "secondary", text: "Void" });
-    voidButton.hidden = b.result !== "PENDING";
-    voidButton.addEventListener("click", async () => {
-      if (!confirm(`Void bet ${b.id}: ${b.description}?`)) return;
-      await api(`/api/bets/${b.id}`, { method: "PATCH", body: JSON.stringify({ void: true }) });
-      loadBets();
-    });
-    const beliefs = `${pct(b.model_probability)} / ${pct(b.market_probability)}`;
-    return el("tr", {},
-      el("td", { text: new Date(b.placed_at).toLocaleString() }),
-      el("td", { text: b.description }),
-      el("td", { text: b.sportsbook ?? "" }),
-      el("td", { text: b.american_odds }),
-      el("td", { class: "num", text: b.stake?.toFixed(2) ?? "" }),
-      el("td", { text: beliefs }),
-      el("td", { class: `num ${signClass(b.expected_value)}`, text: signedPct(b.expected_value) }),
-      el("td", {}, el("span", { class: `badge ${b.result}`, text: b.result })),
-      el("td", { class: `num ${signClass(b.profit_loss)}`, text: b.profit_loss == null ? "" : money(b.profit_loss) }),
-      el("td", { class: `num ${signClass(b.clv)}`, text: signedPct(b.clv) }),
-      el("td", {}, voidButton),
-    );
-  });
-  const body = $("#bets-table tbody");
-  body.replaceChildren(...rows);
-  if (!rows.length) body.append(el("tr", {}, el("td", { colspan: "11", class: "muted", text: "No bets yet." })));
-}
-
-$("#bet-filter").addEventListener("change", loadBets);
-$("#bets-settle").addEventListener("click", async () => {
-  const status = $("#bets-status");
-  try {
-    const settled = await api("/api/bets/settle", { method: "POST" });
-    status.textContent = `${settled.bets.length} bet(s), ${settled.parlays.length} parlay(s) settled`;
-    loadBets();
-    loadParlays();
-    loadBankroll();
-  } catch (error) {
-    status.textContent = `Settle failed: ${error.message}`;
-  }
-});
-
-// ------------------------------------------------------------------ performance
-
-function tile(label, value, sub = "", cls = "") {
-  return el("div", { class: "tile" },
-    el("div", { class: "label", text: label }),
-    el("div", { class: `value ${cls}`, text: value }),
-    el("div", { class: "sub", text: sub }));
-}
-
+// results
 async function loadPerformance() {
   const params = new URLSearchParams();
   if ($("#perf-sport").value) params.set("sport", $("#perf-sport").value);
   if ($("#perf-market").value) params.set("market", $("#perf-market").value);
+  const box = $("#perf-body");
   const p = await api(`/api/performance${params.size ? `?${params}` : ""}`);
-  $("#perf-tiles").replaceChildren(
-    tile("Record", `${p.wins}-${p.losses}-${p.pushes}`, `${p.bets} settled · ${p.voids} void · ${p.pending} pending`),
-    tile("Hit rate", p.hit_rate == null ? "n/a" : pct(p.hit_rate), "wins / (wins + losses)"),
-    tile("Profit", money(p.profit), `staked ${p.staked.toFixed(2)}`, signClass(p.profit)),
-    tile("ROI", signedPct(p.roi), `n=${p.bets}`, signClass(p.roi)),
-    tile("Units", `${p.units >= 0 ? "+" : ""}${p.units.toFixed(2)}`, `unit = ${p.unit_size}`, signClass(p.units)),
-    tile("Avg CLV", signedPct(p.avg_clv), `n=${p.clv_n}`, signClass(p.avg_clv)),
-    tile("Avg edge", pts(p.avg_edge), `n=${p.edge_n}`, signClass(p.avg_edge)),
-    tile("Avg EV", signedPct(p.avg_ev), `n=${p.ev_n}`, signClass(p.avg_ev)),
-    tile("Points vs close", p.avg_points_gained == null ? "n/a" : p.avg_points_gained.toFixed(2),
-      `n=${p.points_n}`, signClass(p.avg_points_gained)),
-    tile("Max drawdown", p.max_drawdown.toFixed(2), "peak to trough", p.max_drawdown < 0 ? "neg" : ""),
-    tile("Open exposure", p.pending_stake.toFixed(2), `${p.pending} pending`),
-  );
   const pp = p.parlays;
-  $("#perf-parlay-tiles").replaceChildren(
-    tile("Record", `${pp.wins}-${pp.losses}-${pp.pushes}`, `${pp.parlays} settled · ${pp.pending} pending`),
-    tile("Profit", money(pp.profit), `staked ${pp.staked.toFixed(2)}`, signClass(pp.profit)),
-    tile("ROI", signedPct(pp.roi), `n=${pp.parlays}`, signClass(pp.roi)),
-    tile("Avg EV at placement", signedPct(pp.avg_ev), `n=${pp.ev_n}`, signClass(pp.avg_ev)),
+  if (!p.bets && !p.pending && !pp.parlays && !pp.pending) {
+    box.replaceChildren(empty("No results yet",
+      "Once your recorded bets are graded, this shows your record, profit, return and, most telling, whether you beat the closing prices."));
+    return;
+  }
+  box.replaceChildren(
+    el("div", { class: "metric-row" },
+      metric("Record", `${p.wins}-${p.losses}-${p.pushes}`, `${p.bets} graded · ${p.pending} waiting`),
+      metric("Win rate", pct(p.hit_rate), "pushes left out", "", "winrate"),
+      metric("Profit", signedMoney(p.profit), `on ${money(p.staked)} staked`, signClass(p.profit)),
+      metric("Return", signedPct(p.roi), `${p.bets} bets`, signClass(p.roi), "roi"),
+      metric("Beat the close by", signedPct(p.avg_clv), `${p.clv_n} bets`, signClass(p.avg_clv), "clv"),
+      metric("Average edge", pts(p.avg_edge), `${p.edge_n} bets`, signClass(p.avg_edge), "edge"),
+      metric("Worst drop", money(p.max_drawdown), "peak to low point", p.max_drawdown < 0 ? "neg" : ""),
+      metric("Riding now", money(p.pending_stake), `${p.pending} waiting`)),
+    el("h3", { text: "Parlays" }),
+    el("div", { class: "metric-row" },
+      metric("Record", `${pp.wins}-${pp.losses}-${pp.pushes}`, `${pp.parlays} graded · ${pp.pending} waiting`),
+      metric("Profit", signedMoney(pp.profit), `on ${money(pp.staked)} staked`, signClass(pp.profit)),
+      metric("Return", signedPct(pp.roi), `${pp.parlays} parlays`, signClass(pp.roi))),
+    el("p", { class: "muted small", text: "Every figure shows how many bets it rests on. A small sample says little; beating the closing price over many bets is the best evidence of an edge." }),
   );
 }
-
 $("#perf-sport").addEventListener("change", loadPerformance);
 $("#perf-market").addEventListener("change", loadPerformance);
 
-// ------------------------------------------------------------------ forward tests
-
-function cell(text, cls = "") {
-  return el("td", { class: cls, text });
-}
-
-async function loadForward() {
-  const sport = $("#fwd-sport").value;
-  const f = await api(`/api/forward${sport ? `?sport=${encodeURIComponent(sport)}` : ""}`);
-  $("#fwd-note").textContent = f.note;
-  const scoreRows = f.scores.map((s) => {
-    const two = s.bets.find((b) => Math.abs(b.min_edge - 0.02) < 1e-9);
-    const diff = s.paired_diff == null ? "n/a"
-      : `${s.model_log_loss.toFixed(4)} vs ${s.market_log_loss.toFixed(4)} (${s.paired_diff >= 0 ? "+" : ""}${s.paired_diff.toFixed(4)})`;
-    return el("tr", {},
-      cell(s.model),
-      cell(`${s.horizon_hours} h`),
-      cell(`${s.decided} of ${s.games}`),
-      cell(diff, signClass(s.paired_diff == null ? null : -s.paired_diff)),
-      cell(s.z == null ? (s.decided < s.min_decided_for_z ? `needs ${s.min_decided_for_z}` : "n/a")
-        : `${s.z >= 0 ? "+" : ""}${s.z.toFixed(1)}`),
-      cell(`${signedPct(s.price_clv)} (n=${s.price_clv_n})`, signClass(s.price_clv)),
-      cell(s.points_vs_close == null ? `n/a (n=0)`
-        : `${s.points_vs_close >= 0 ? "+" : ""}${s.points_vs_close.toFixed(2)} (n=${s.points_n})`,
-        signClass(s.points_vs_close)),
-      cell(two ? `${two.wins}-${two.losses}-${two.pushes}` : "n/a"),
-      cell(two ? `${signedPct(two.roi)} (n=${two.bets})` : "n/a", signClass(two ? two.roi : null)));
-  });
-  $("#fwd-scores tbody").replaceChildren(...(scoreRows.length ? scoreRows
-    : [el("tr", {}, el("td", { colspan: "9", class: "muted", text: "No finished games with forward snapshots yet." }))]));
-  $("#fwd-models").replaceChildren(...f.models.map((m) =>
-    tile(m.model, String(m.snapshots), `${m.finished} on finished games`)));
-  $("#fwd-recent tbody").replaceChildren(...f.recent.map((r) => el("tr", {},
-    cell(new Date(r.snapshot_at).toLocaleString()),
-    cell(r.model),
-    cell(`${r.sport} · ${r.matchup}`),
-    cell(`${r.horizon_hours} h`),
-    cell(r.market === "MONEYLINE" ? `ML (spread ${r.home_line >= 0 ? "+" : ""}${r.home_line})`
-      : r.market === "TOTAL" ? `total ${r.home_line}`
-      : `${r.home_line >= 0 ? "+" : ""}${r.home_line}`),
-    cell(pct(r.model_home_cover)),
-    cell(pct(r.market_home_cover)),
-    cell(pts(r.edge), signClass(r.edge)),
-    cell(r.result == null ? "pending" : r.result === "push" ? "push"
-      : r.market === "TOTAL" ? `went ${r.result}`
-      : `${r.result} ${r.market === "MONEYLINE" ? "won" : "covered"}`))));
-}
-
-$("#fwd-sport").addEventListener("change", () => { loadForward(); loadLab(""); });
-$("#fwd-refresh").addEventListener("click", () => { loadForward(); loadLab(); });
-
-// ------------------------------------------------------------------ performance lab
-
-const signedNum = (x, digits) => (x == null ? "n/a" : `${x >= 0 ? "+" : ""}${x.toFixed(digits)}`);
-const fixed = (x, digits) => (x == null ? "n/a" : x.toFixed(digits));
-
-async function loadLab(pick = $("#lab-pick").value) {
-  const params = new URLSearchParams();
-  if ($("#fwd-sport").value) params.set("sport", $("#fwd-sport").value);
-  if (pick) {
-    const [model, horizon] = JSON.parse(pick);
-    params.set("model", model);
-    params.set("horizon_hours", horizon);
-  }
-  const { choices, lab } = await api(`/api/lab?${params}`);
-  const select = $("#lab-pick");
-  select.replaceChildren(...choices.map((c) => el("option", {
-    value: JSON.stringify([c.model, c.horizon_hours]),
-    text: `${c.model} · ${c.horizon_hours} h · ${c.games} games`,
-  })));
-  for (const tbody of ["#lab-thresholds", "#lab-calibration", "#lab-weeks"]) $(`${tbody} tbody`).replaceChildren();
-  if (!lab) {
-    $("#lab-note").textContent = "No finished games with forward snapshots yet.";
-    return;
-  }
-  select.value = JSON.stringify([lab.model, lab.horizon_hours]);
-  $("#lab-note").textContent = lab.note;
-  $("#lab-thresholds tbody").replaceChildren(...lab.thresholds.map((t) => el("tr", {},
-    cell(`${(t.min_probability * 100).toFixed(0)}%`),
-    cell(String(t.bets), "num"),
-    cell(`${t.wins}-${t.losses}-${t.pushes}`),
-    cell(t.roi == null ? "n/a" : `${signedPct(t.roi)} ± ${pct(t.roi_se)}`, `num ${signClass(t.roi)}`),
-    cell(pct(t.hit_rate), "num"),
-    cell(pct(t.break_even), "num"),
-    cell(`${signedPct(t.avg_clv, 2)} (n=${t.clv_n})`, `num ${signClass(t.avg_clv)}`),
-    cell(t.enough ? "" : `too few (< ${lab.min_sample})`, "muted"))));
-  const market = lab.calibration.market;
-  $("#lab-calibration tbody").replaceChildren(...lab.calibration.model.map((b, i) => el("tr", {},
-    cell(`${b.low.toFixed(2)}–${b.high.toFixed(2)}`),
-    cell(String(b.n), "num"),
-    cell(fixed(b.mean_predicted, 3), "num"),
-    cell(fixed(b.observed, 3), "num"),
-    cell(String(market[i].n), "num"),
-    cell(fixed(market[i].mean_predicted, 3), "num"),
-    cell(fixed(market[i].observed, 3), "num"))));
-  $("#lab-weeks tbody").replaceChildren(...lab.weeks.map((w) => el("tr", {},
-    cell(w.week),
-    cell(String(w.games), "num"),
-    cell(signedNum(w.diff, 4), `num ${signClass(w.diff == null ? null : -w.diff)}`),
-    cell(signedNum(w.cumulative_diff, 4), `num ${signClass(w.cumulative_diff == null ? null : -w.cumulative_diff)}`),
-    cell(`${signedPct(w.avg_clv, 2)} (n=${w.clv_n})`, `num ${signClass(w.avg_clv)}`),
-    cell(signedPct(w.cumulative_clv, 2), `num ${signClass(w.cumulative_clv)}`))));
-}
-
-$("#lab-pick").addEventListener("change", (event) => loadLab(event.currentTarget.value));
-
-// ------------------------------------------------------------------ parlay lab
+// ------------------------------------------------------------------ parlay builder
 
 const SLIP_KEY = "ttk-slip";
 const slip = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(SLIP_KEY) || "null");
     if (saved && Array.isArray(saved.legs)) return saved;
-  } catch { /* storage unavailable: start empty */ }
+  } catch { /* start empty */ }
   return { book: null, legs: [] };
 })();
 
 function persistSlip() {
-  try { localStorage.setItem(SLIP_KEY, JSON.stringify(slip)); } catch { /* ignore */ }
+  try { localStorage.setItem(SLIP_KEY, JSON.stringify(slip)); } catch { /* not remembered */ }
   $("#slip-count").textContent = slip.legs.length ? String(slip.legs.length) : "";
 }
-
 function setSlipBook(book) {
   slip.book = book;
   $("#slip-book").value = book;
   persistSlip();
   analyze();
 }
-
 function addLeg(leg) {
-  const same = (a) => a.game_id === leg.game_id && a.market === leg.market &&
-    a.selection === leg.selection && a.line === leg.line;
+  const same = (a) => a.game_id === leg.game_id && a.market === leg.market && a.selection === leg.selection && a.line === leg.line;
   if (!slip.legs.some(same)) slip.legs.push(leg);
   persistSlip();
   renderSlip();
 }
-
 function removeLeg(index) {
   slip.legs.splice(index, 1);
   persistSlip();
@@ -617,13 +1042,10 @@ function removeLeg(index) {
 }
 
 function renderSlip() {
-  const list = $("#slip-legs");
-  list.replaceChildren(...slip.legs.map((leg, i) => {
-    const remove = el("button", { class: "secondary", text: "Remove", "aria-label": `Remove leg ${i + 1}` });
+  $("#slip-legs").replaceChildren(...slip.legs.map((leg, i) => {
+    const remove = el("button", { type: "button", class: "ghost small-btn", text: "Remove", "aria-label": `Remove leg ${i + 1}` });
     remove.addEventListener("click", () => removeLeg(i));
-    const odds = el("input", { type: "number", class: "leg-odds", placeholder: "book price",
-      "aria-label": `Odds you were offered for leg ${i + 1} (optional)`,
-      value: leg.american_odds ?? "" });
+    const odds = el("input", { type: "number", placeholder: "your odds", "aria-label": `Odds you were offered for leg ${i + 1} (optional)`, value: leg.american_odds ?? "" });
     odds.addEventListener("change", () => {
       leg.american_odds = odds.value === "" ? null : Number(odds.value);
       persistSlip();
@@ -639,59 +1061,43 @@ let analyzeSeq = 0;
 async function analyze() {
   const seq = ++analyzeSeq;
   const status = $("#lab-status");
-  const clear = () => {
-    $("#lab-summary").replaceChildren();
-    $("#lab-warnings").replaceChildren();
-    $("#lab-legs tbody").replaceChildren();
-  };
-  if (slip.legs.length < 2 || !slip.book) {
-    clear();
-    status.textContent = "Add at least two legs.";
-    return;
-  }
-  status.textContent = "Analyzing…";
+  const clear = () => { $("#lab-summary").replaceChildren(); $("#lab-warnings").replaceChildren(); $("#lab-legs").replaceChildren(); };
+  if (slip.legs.length < 2 || !slip.book) { clear(); status.textContent = "Add at least two legs."; return; }
+  status.textContent = "Working it out…";
   try {
     const body = { sportsbook: slip.book, legs: slip.legs.map(({ label, ...leg }) => leg) };
     const a = await api("/api/parlays/evaluate", { method: "POST", body: JSON.stringify(body) });
-    if (seq !== analyzeSeq) return;  // a newer slip superseded this one
-    status.textContent = `${a.legs.length} legs at ${a.sportsbook}`;
+    if (seq !== analyzeSeq) return;
+    status.textContent = `${a.legs.length} legs at ${a.sportsbook}.`;
     $("#lab-summary").replaceChildren(
-      tile("Parlay odds", american(a.american_odds), `book implied ${pct(a.book_implied_probability)}`),
-      tile("Joint probability", pct(a.joint_probability, 2),
-        a.correlations.length ? "assumes independence" : "independent legs"),
-      tile("Fair odds", american(a.fair_american_odds),
-        a.market_joint_probability == null ? "" : `market joint ${pct(a.market_joint_probability, 2)}`),
-      tile("EV", signedPct(a.ev_per_unit), "per unit staked", signClass(a.ev_per_unit)),
-      tile("Correlation", a.correlation_risk, `${a.correlations.length} same-game pair(s)`,
-        a.correlation_risk === "LOW" ? "" : "neg"),
+      metric("Parlay price", american(a.american_odds), `the book says ${pct(a.book_implied_probability)}`),
+      metric("Chance all legs win", pct(a.joint_probability, 2), a.correlations.length ? "same-game legs simulated" : "independent legs", "", "joint"),
+      metric("Fair price", american(a.fair_american_odds), a.market_joint_probability == null ? "" : `market says ${pct(a.market_joint_probability, 2)}`, "", "fair"),
+      metric("Expected value", signedPct(a.ev_per_unit), "per $1 staked", signClass(a.ev_per_unit), "ev"),
+      metric("Same-game risk", a.correlation_risk.toLowerCase(), `${a.correlations.length} linked pair${a.correlations.length === 1 ? "" : "s"}`, a.correlation_risk === "LOW" ? "" : "neg"),
     );
     $("#lab-warnings").replaceChildren(
       ...a.warnings.map((w) => el("li", { text: w })),
-      ...a.correlations.map((c) => el("li", { text: `Legs ${c.legs[0] + 1} & ${c.legs[1] + 1}: ${c.risk} - ${c.reason}` })),
+      ...a.correlations.map((c) => el("li", { text: `Legs ${c.legs[0] + 1} and ${c.legs[1] + 1} (${c.risk.toLowerCase()}): ${c.reason}` })),
     );
     const impact = Object.fromEntries(a.impacts.map((i) => [i.index, i.ev_without]));
-    $("#lab-legs tbody").replaceChildren(...a.legs.map((leg) => {
-      const tags = el("div");
-      const tag = (text, cls = "") => tags.append(el("span", { class: `tag ${cls}`, text }));
+    $("#lab-legs").replaceChildren(...a.legs.map((leg) => {
+      const tags = [];
+      const tag = (text, cls = "") => tags.push(el("span", { class: `tag ${cls}`, text }));
       if (leg.index === a.strongest_leg) tag("strongest", "good");
       if (leg.index === a.weakest_leg) tag("weakest", "bad");
-      if (leg.index === a.lowest_edge_leg && leg.edge != null) tag("lowest edge", "bad");
-      if (leg.index === a.highest_correlation_leg) tag("most correlated", "bad");
-      if (leg.index === a.reduces_ev_most) tag(`costs most EV (without: ${signedPct(impact[leg.index])})`, "bad");
-      const remove = el("button", { class: "secondary", text: "Remove" });
-      remove.addEventListener("click", () => removeLeg(leg.index));
-      const age = leg.odds_age_minutes == null ? leg.price_source : `${Math.round(leg.odds_age_minutes)} min`;
-      return el("tr", {},
-        el("td", {}, el("div", { text: leg.description }),
-          el("div", { class: "muted", text: `${leg.sport} · ${leg.matchup} · ${eastern(leg.commence_time)}` }), tags),
-        el("td", { text: `${american(leg.american_odds)} (${age})` }),
-        el("td", { text: pct(leg.probability) }),
-        el("td", { text: leg.probability_source }),
-        el("td", { class: `num ${signClass(leg.edge)}`, text: leg.edge == null ? "n/a" : pts(leg.edge) }),
-        el("td", { class: `num ${signClass(leg.ev_per_unit)}`, text: signedPct(leg.ev_per_unit) }),
-        el("td", { text: leg.correlation_risk }),
-        el("td", {}, remove),
-      );
+      if (leg.index === a.lowest_edge_leg && leg.edge != null) tag("smallest edge", "bad");
+      if (leg.index === a.highest_correlation_leg) tag("most linked", "bad");
+      if (leg.index === a.reduces_ev_most) tag(`dropping it: ${signedPct(impact[leg.index])} value`, "bad");
+      const age = leg.odds_age_minutes == null ? leg.price_source : `${Math.round(leg.odds_age_minutes)} min old`;
+      return el("div", { class: "leg" },
+        el("div", { class: "top" }, el("span", { text: leg.description }), el("span", { class: "mono", text: american(leg.american_odds) })),
+        el("div", { class: "meta" },
+          el("span", { text: `${sportName(leg.sport)} · ${leg.matchup} · ${eastern(leg.commence_time)}` }),
+          el("span", { text: `${pct(leg.probability)} to win (${leg.probability_source})` }),
+          el("span", { class: signClass(leg.ev_per_unit), text: `value ${signedPct(leg.ev_per_unit)}` }),
+          el("span", { text: `price ${age}` })),
+        tags.length ? el("div", {}, ...tags) : null);
     }));
   } catch (error) {
     if (seq !== analyzeSeq) return;
@@ -702,7 +1108,7 @@ async function analyze() {
 
 $("#slip-book").addEventListener("change", (event) => setSlipBook(event.target.value));
 $("#slip-clear").addEventListener("click", () => {
-  if (slip.legs.length && !confirm("Clear every leg from the slip?")) return;
+  if (slip.legs.length && !confirm("Remove every leg from the slip?")) return;
   slip.legs = [];
   persistSlip();
   renderSlip();
@@ -714,50 +1120,36 @@ async function loadPickGames() {
   const params = new URLSearchParams({ date: $("#pick-date").value || todayEastern() });
   if ($("#pick-sport").value) params.set("sport", $("#pick-sport").value);
   const games = await api(`/api/games?${params}`);
-  if (seq !== pickSeq) return;  // a newer date/sport choice superseded this one
+  if (seq !== pickSeq) return;
   $("#pick-game").replaceChildren(
     el("option", { value: "", text: games.length ? "Choose a game" : "No upcoming games" }),
-    ...games.map((g) => el("option", { value: g.id, text: `${g.sport} · ${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })),
+    ...games.map((g) => el("option", { value: g.id, "data-matchup": `${g.away_team} @ ${g.home_team}`, text: `${sportName(g.sport)} · ${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })),
   );
   $("#pick-offers").replaceChildren();
 }
 
-let offersSeq = 0;
-async function loadOffers() {
-  const seq = ++offersSeq;
+let pickOffersSeq = 0;
+async function loadPickOffers() {
+  const seq = ++pickOffersSeq;
   const gameId = Number($("#pick-game").value);
   const box = $("#pick-offers");
   box.replaceChildren();
   if (!gameId || !slip.book) return;
-  const option = $("#pick-game").selectedOptions[0];
-  const matchup = option ? option.textContent.split(" · ")[1] : "";
-  const [away, home] = matchup.split(" @ ");
+  const matchup = $("#pick-game").selectedOptions[0]?.dataset.matchup ?? "";
   const offers = await api(`/api/games/${gameId}/offers?book=${encodeURIComponent(slip.book)}`);
-  if (seq !== offersSeq) return;
-  if (!offers.length) {
-    box.append(el("p", { class: "muted", text: `${slip.book} has no lines for this game.` }));
-    return;
-  }
+  if (seq !== pickOffersSeq) return;
+  if (!offers.length) { box.append(el("p", { class: "empty-note", text: `${slip.book} has no lines for this game.` })); return; }
   let group = "";
-  // Group by market; within a market, the book's main lines first.
-  const sorted = [...offers].sort(
-    (a, b) => a.market.localeCompare(b.market) || Number(b.main) - Number(a.main),
-  );
+  const sorted = [...offers].sort((a, b) => a.market.localeCompare(b.market) || Number(b.main) - Number(a.main));
   for (const o of sorted) {
-    if (o.market !== group) {
-      group = o.market;
-      box.append(el("div", { class: "group", text: group }));
-    }
-    const side = o.market === "TOTAL"
-      ? o.selection.charAt(0) + o.selection.slice(1).toLowerCase()
-      : (o.selection === "HOME" ? home : away);
-    const text = o.market === "MONEYLINE" ? `${side} ML` : o.market === "TOTAL"
-      ? `${side} ${o.line}` : `${side} ${lineText(o.line)}`;
-    const button = el("button", { class: `secondary ${o.main ? "main" : ""}`,
-      text: `${text}  ${american(o.american_odds)}${o.main ? " · main" : ""}` });
-    button.addEventListener("click", () =>
-      addLeg({ game_id: gameId, market: o.market, selection: o.selection, line: o.line,
-               label: `${text} (${matchup})` }));
+    if (o.market !== group) { group = o.market; box.append(el("div", { class: "group", text: MARKET_NAMES[group] ?? group })); }
+    const text = offerLabel(o, matchup);
+    const button = el("button", { type: "button", class: `offer ${o.main ? "main" : ""}` },
+      el("span", { text }), el("span", { class: "odds", text: `${american(o.american_odds)}${o.main ? " · main line" : ""}` }));
+    button.addEventListener("click", () => {
+      addLeg({ game_id: gameId, market: o.market, selection: o.selection, line: o.line, label: `${text} (${matchup})` });
+      toast(`Added: ${text}`);
+    });
     box.append(button);
   }
 }
@@ -765,12 +1157,13 @@ async function loadOffers() {
 $("#pick-date").value = todayEastern();
 $("#pick-date").addEventListener("change", loadPickGames);
 $("#pick-sport").addEventListener("change", loadPickGames);
-$("#pick-game").addEventListener("change", loadOffers);
+$("#pick-game").addEventListener("change", loadPickOffers);
 
 $("#parlay-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const status = $("#parlay-form-status");
+  if (slip.legs.length < 2) { setStatus(status, "Add at least two legs first.", "err"); return; }
   const body = {
     sportsbook: slip.book,
     legs: slip.legs.map(({ label, ...leg }) => leg),
@@ -782,33 +1175,17 @@ $("#parlay-form").addEventListener("submit", async (event) => {
   };
   try {
     const saved = await api("/api/parlays", { method: "POST", body: JSON.stringify(body) });
-    status.textContent = `Recorded parlay ${saved.id} at ${saved.american_odds}`;
-    status.className = "ok-msg";
     form.reset();
+    $("#parlay-override-field").hidden = true;
+    setStatus(status, "");
+    toast(`Parlay recorded at ${saved.american_odds}`);
   } catch (error) {
-    status.textContent = `Not recorded: ${error.message}`;
-    status.className = "err-msg";
+    if (/bankroll limit/i.test(error.message)) $("#parlay-override-field").hidden = false;
+    setStatus(status, `Not recorded: ${error.message}`, "err");
   }
 });
 
-async function loadParlays() {
-  const parlays = await api("/api/parlays");
-  const body = $("#parlays-table tbody");
-  body.replaceChildren(...parlays.map((p) => el("tr", {},
-    el("td", { text: p.placed_at ? new Date(p.placed_at).toLocaleString() : "" }),
-    el("td", {}, ...p.legs.map((leg) => el("div", {
-      text: `${leg.result === "PENDING" ? "" : `[${leg.result}] `}${leg.description} ${leg.american_odds}` }))),
-    el("td", { text: p.sportsbook ?? "" }),
-    el("td", { text: p.american_odds ?? "" }),
-    el("td", { class: "num", text: p.stake?.toFixed(2) ?? "" }),
-    el("td", { class: "num", text: pct(p.joint_probability, 2) }),
-    el("td", { class: `num ${signClass(p.expected_value)}`, text: signedPct(p.expected_value) }),
-    el("td", { text: p.correlation_risk ?? "" }),
-    el("td", {}, el("span", { class: `badge ${p.result}`, text: p.result })),
-    el("td", { class: `num ${signClass(p.profit_loss)}`, text: p.profit_loss == null ? "" : money(p.profit_loss) }),
-  )));
-  if (!parlays.length) body.append(el("tr", {}, el("td", { colspan: "10", class: "muted", text: "No parlays yet." })));
-}
+loaders.slip = () => { renderSlip(); loadPickGames(); };
 
 // ------------------------------------------------------------------ simulator
 
@@ -816,102 +1193,219 @@ let simSeq = 0;
 async function loadSimGames(selectId = null) {
   const seq = ++simSeq;
   const sport = $("#sim-sport").value;
-  const params = new URLSearchParams({ date: $("#sim-date").value || todayEastern(), sport });
-  const games = await api(`/api/games?${params}`);
+  const games = await api(`/api/games?${new URLSearchParams({ date: $("#sim-date").value || todayEastern(), sport })}`);
   if (seq !== simSeq) return;
-  $("#sim-game").replaceChildren(
-    ...games.map((g) => el("option", { value: g.id, text: `${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })),
-  );
-  if (!games.length) $("#sim-game").append(el("option", { value: "", text: `No upcoming ${sport} games` }));
+  $("#sim-game").replaceChildren(...games.map((g) => el("option", { value: g.id, text: `${g.away_team} @ ${g.home_team} · ${eastern(g.commence_time)}` })));
+  if (!games.length) $("#sim-game").append(el("option", { value: "", text: `No upcoming ${sportName(sport)} games on this date` }));
   if (selectId != null) $("#sim-game").value = String(selectId);
 }
 
+let pendingSim = null;
 async function openSimulation(gameId, commenceIso, sport) {
   $("#sim-sport").value = sport;
-  $("#sim-date").value = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" })
-    .format(new Date(new Date(commenceIso).getTime() - 6 * 3600 * 1000));
-  showTab("sim");
-  await loadSimGames(gameId);
-  runSimulation();
+  $("#sim-date").value = easternDateOf(commenceIso);
+  pendingSim = gameId;
+  go("sim");
 }
+loaders.sim = async () => {
+  const target = pendingSim;
+  pendingSim = null;
+  await loadSimGames(target);
+  if (target != null) runSimulation();
+};
 
 function sensitivityTable(title, rows, mainLine, fmtLine) {
-  return el("div", { class: "panel" },
+  return el("div", { class: "card" },
     el("h2", { text: title }),
-    el("table", { class: "sens" },
-      el("tr", {}, ...["Line", "Win", "Push", "Win (no push)"].map((h) => el("th", { text: h }))),
-      ...rows.map((r) => el("tr", { class: r.line === mainLine ? "main" : "" },
+    el("div", { class: "table-wrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...["Line", "Wins", "Pushes", "Wins (pushes aside)"].map((h, i) => el("th", { class: i ? "num" : "", text: h })))),
+      el("tbody", {}, ...rows.map((r) => el("tr", { class: r.line === mainLine ? "main" : "" },
         el("td", { text: fmtLine(r.line) + (r.line === mainLine ? "  (market)" : "") }),
-        el("td", { text: pct(r.win) }),
-        el("td", { text: pct(r.push) }),
-        el("td", { text: pct(r.win_excluding_push) }))),
-    ));
+        el("td", { class: "num", text: pct(r.win) }),
+        el("td", { class: "num", text: pct(r.push) }),
+        el("td", { class: "num", text: pct(r.win_excluding_push) })))))));
 }
 
 async function runSimulation() {
   const gameId = Number($("#sim-game").value);
   const status = $("#sim-status");
   const out = $("#sim-result");
-  if (!gameId) { status.textContent = "Choose a game."; return; }
+  if (!gameId) { setStatus(status, "Choose a game first.", "err"); return; }
   const button = $("#sim-run");
   button.disabled = true;
-  status.textContent = "Simulating…";
+  setStatus(status, "Simulating…");
+  out.replaceChildren(el("div", { class: "skeleton-card" }));
   try {
-    const body = { game_id: gameId, preset: $("#sim-preset").value,
-                   seed: $("#sim-seed").value === "" ? null : Number($("#sim-seed").value) };
+    const body = { game_id: gameId, preset: $("#sim-preset").value, seed: $("#sim-seed").value === "" ? null : Number($("#sim-seed").value) };
     const s = await api("/api/simulations/run", { method: "POST", body: JSON.stringify(body) });
-    status.textContent = `${s.iterations.toLocaleString()} simulations${s.seed == null ? "" : `, seed ${s.seed}`}`;
-    const spreadMain = s.spread_sides[0].line;
-    const [away, home] = s.matchup.split(" @ ");
-    const q = (o) => `p5 ${o.p5} · p25 ${o.p25} · median ${o.p50} · p75 ${o.p75} · p95 ${o.p95}`;
+    setStatus(status, `${s.iterations.toLocaleString()} simulated games${s.seed == null ? "" : `, seed ${s.seed}`}`, "ok");
+    const { away, home } = splitMatchup(s.matchup);
+    const q = (o) => `middle half ${o.p25} to ${o.p75} · 9 in 10 between ${o.p5} and ${o.p95} · median ${o.p50}`;
     const sides = [...s.spread_sides, ...s.total_sides].filter((x) => x.american_odds != null);
     out.replaceChildren(
-      el("div", { class: "tiles" },
-        tile("Mean score", `${home.split(" ").pop()} ${s.home_score_mean.toFixed(1)} - ${s.away_score_mean.toFixed(1)} ${away.split(" ").pop()}`, s.matchup),
-        tile("Home win", pct(s.home_win.value), `± ${pct(s.home_win.standard_error, 2)} sampling · tie ${pct(s.tie.value)}`),
-        tile("Total centered on", String(s.total_line), s.total_line_source),
-      ),
-      el("div", { class: "panel" },
-        el("h2", { text: "Distributions (home margin, total points)" }),
-        el("p", { text: `Margin: ${q(s.margin_quantiles)}` }),
-        el("p", { text: `Total: ${q(s.total_quantiles)}` })),
+      el("div", { class: "metric-row" },
+        metric("Typical score", `${s.home_score_mean.toFixed(0)}–${s.away_score_mean.toFixed(0)}`, `${home} – ${away}`),
+        metric(`${home} win`, pct(s.home_win.value), `± ${pct(s.home_win.standard_error, 2)} from chance${s.tie.value ? ` · tie ${pct(s.tie.value)}` : ""}`),
+        metric("Total centered on", String(s.total_line), s.total_line_source)),
+      el("div", { class: "card" },
+        el("h2", { text: "How the score is spread out" }),
+        el("p", { class: "small", text: `${home} margin: ${q(s.margin_quantiles)}` }),
+        el("p", { class: "small", text: `Total points: ${q(s.total_quantiles)}` })),
       el("div", { class: "sim-grid" },
-        sensitivityTable(`${home} spread`, s.spread_sensitivity, spreadMain, lineText),
-        sensitivityTable("Over", s.total_sensitivity, s.total_line, (x) => String(x)),
-        el("div", { class: "panel" },
-          el("h2", { text: "Maximum acceptable line" }),
-          el("p", { class: "muted", text: "The worst line still +EV at today's best bettable price (price held fixed across lines)." }),
-          el("ul", {}, ...sides.map((x) => {
-            const who = x.selection === "HOME" ? home : x.selection === "AWAY" ? away : x.selection.charAt(0) + x.selection.slice(1).toLowerCase();
+        sensitivityTable(`${home} at each spread`, s.spread_sensitivity, s.spread_sides[0].line, lineText),
+        sensitivityTable("The over at each total", s.total_sensitivity, s.total_line, (x) => String(x)),
+        el("div", { class: "card" },
+          el("h2", {}, "Worst line still worth taking ", term("maxline")),
+          el("ul", { class: "notes" }, ...sides.map((x) => {
+            const who = x.selection === "HOME" ? home : x.selection === "AWAY" ? away : x.selection === "OVER" ? "Over" : "Under";
             const line = x.selection === "OVER" || x.selection === "UNDER" ? String(x.line) : lineText(x.line);
-            const worst = x.max_acceptable_line == null ? "no +EV line in range"
+            const worst = x.max_acceptable_line == null ? "no line in range is worth it"
               : x.selection === "OVER" ? `${x.max_acceptable_line} or lower`
               : x.selection === "UNDER" ? `${x.max_acceptable_line} or higher`
               : `${lineText(x.max_acceptable_line)} or better`;
             return el("li", { text: `${who} ${line} at ${american(x.american_odds)} (${x.sportsbook}): ${worst}` });
           }))),
-        el("div", { class: "panel" },
-          el("h2", { text: "Same-game joint (main lines)" }),
-          el("ul", {}, ...Object.entries(s.joint).map(([k, p]) =>
-            el("li", { text: `${k.replaceAll("_", " ")}: ${pct(p.value)}` })))),
-      ),
+        el("div", { class: "card" },
+          el("h2", { text: "Spread and total together (main lines)" }),
+          el("ul", { class: "notes" }, ...Object.entries(s.joint).map(([k, p]) =>
+            el("li", { text: `${k.replaceAll("_", " ").replace("home", home).replace("away", away)}: ${pct(p.value)}` }))))),
     );
   } catch (error) {
-    status.textContent = `Could not simulate: ${error.message}`;
+    setStatus(status, `Couldn't simulate: ${error.message}`, "err");
     out.replaceChildren();
   } finally {
     button.disabled = false;
   }
 }
-
 $("#sim-date").value = todayEastern();
 $("#sim-date").addEventListener("change", () => loadSimGames());
 $("#sim-sport").addEventListener("change", () => loadSimGames());
 $("#sim-run").addEventListener("click", runSimulation);
 
+// ------------------------------------------------------------------ model report
+
+let modelSport = "";
+let modelData = null;
+for (const pill of $$("#model-pills .pill")) {
+  pill.addEventListener("click", () => { modelSport = pill.dataset.sport; pressPill($("#model-pills"), pill); renderModels(); loadLab(""); });
+}
+
+loaders.models = async () => {
+  $("#model-cards").replaceChildren(...[1, 2, 3].map(() => el("div", { class: "skeleton-card" })));
+  try {
+    const [status, forward] = await Promise.all([api("/api/status"), api("/api/forward")]);
+    modelData = { status, forward };
+    renderModels();
+    renderRecent(forward);
+  } catch (error) {
+    $("#model-cards").replaceChildren(empty("Couldn't load the model report", error.message));
+  }
+  loadLab();
+};
+
+function renderModels() {
+  if (!modelData) return;
+  const { status, forward } = modelData;
+  const models = sortModels(status.models).filter((m) => !modelSport || m.sport === modelSport);
+  $("#model-cards").replaceChildren(...models.map((m) => {
+    const n = modelName(m.model);
+    const state = modelState(m, status);
+    const share = Math.min(1, m.decided / status.min_decided);
+    const scores = forward.scores.filter((s) => s.model === m.model);
+    const table = scores.length ? el("details", {},
+      el("summary", { text: "Details by timing" }),
+      el("div", { class: "table-wrap" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", { text: "Before kickoff" }), el("th", { class: "num", text: "Games" }),
+          el("th", { class: "num" }, "vs market ", term("vsmarket")), el("th", { class: "num" }, "CLV ", term("clv")),
+          el("th", { text: "Edge ≥ 2 pts" }))),
+        el("tbody", {}, ...scores.map((s) => {
+          const two = s.bets.find((b) => Math.abs(b.min_edge - 0.02) < 1e-9);
+          return el("tr", {},
+            el("td", { text: `${s.horizon_hours} h` }),
+            el("td", { class: "num", text: `${s.decided}` }),
+            el("td", { class: `num ${signClass(s.paired_diff == null ? null : -s.paired_diff)}`, text: s.paired_diff == null ? "–" : `${s.paired_diff >= 0 ? "+" : ""}${s.paired_diff.toFixed(4)}` }),
+            el("td", { class: `num ${signClass(s.price_clv)}`, text: signedPct(s.price_clv) }),
+            el("td", { text: two && two.bets ? `${two.wins}-${two.losses}-${two.pushes}, ${signedPct(two.roi)}` : "–" }));
+        }))))) : null;
+    return el("article", { class: "model-card" },
+      el("div", { class: "title" }, el("strong", { text: n.title }), el("span", { text: n.detail || m.model })),
+      el("div", { class: "filter-row" },
+        el("span", { class: "chip sport", text: sportName(m.sport) }),
+        el("span", { class: "chip", text: MARKET_NAMES[m.market] ?? m.market }),
+        el("span", { class: "chip warn", text: m.status === "DEVELOPMENT" ? "in testing" : m.status.toLowerCase() }), term("testing")),
+      el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${status.min_decided} games` },
+        el("div", { class: "bar-fill", style: `width:${(share * 100).toFixed(1)}%` })),
+      el("p", { class: `verdict ${state.cls}`, text: state.text }),
+      el("p", { class: "muted small", text: m.snapshots ? `${m.snapshots} prediction${m.snapshots === 1 ? "" : "s"} recorded so far.` : "No predictions recorded yet." }),
+      table);
+  }));
+  if (!models.length) $("#model-cards").replaceChildren(empty("No models for this sport", "Pick another sport."));
+}
+
+function renderRecent(f) {
+  $("#fwd-recent tbody").replaceChildren(...f.recent.map((r) => el("tr", {},
+    el("td", { text: new Date(r.snapshot_at).toLocaleString() }),
+    el("td", { text: modelName(r.model).title }),
+    el("td", { text: `${sportName(r.sport)} · ${r.matchup}` }),
+    el("td", { text: `${r.horizon_hours} h` }),
+    el("td", { text: r.market === "MONEYLINE" ? `to win (spread ${lineText(r.home_line)})` : r.market === "TOTAL" ? `total ${r.home_line}` : lineText(r.home_line) }),
+    el("td", { class: "num", text: pct(r.model_home_cover) }),
+    el("td", { class: "num", text: pct(r.market_home_cover) }),
+    el("td", { class: `num ${signClass(r.edge)}`, text: pts(r.edge) }),
+    el("td", { text: r.result == null ? "waiting" : r.result === "push" ? "push" : r.market === "TOTAL" ? `went ${r.result}` : `${r.result} ${r.market === "MONEYLINE" ? "won" : "covered"}` }))));
+  if (!f.recent.length) $("#fwd-recent tbody").replaceChildren(el("tr", {}, el("td", { colspan: "9", class: "muted", text: "No predictions recorded yet." })));
+}
+
+const fixed = (x, digits) => (x == null ? "–" : x.toFixed(digits));
+const signedNum = (x, digits) => (x == null ? "–" : `${x >= 0 ? "+" : ""}${x.toFixed(digits)}`);
+const cell = (text, cls = "") => el("td", { class: cls, text });
+
+async function loadLab(pick = $("#lab-pick").value) {
+  const params = new URLSearchParams();
+  if (modelSport) params.set("sport", modelSport);
+  if (pick) {
+    const [model, horizon] = JSON.parse(pick);
+    params.set("model", model);
+    params.set("horizon_hours", horizon);
+  }
+  let res;
+  try { res = await api(`/api/lab?${params}`); } catch { return; }
+  const { choices, lab } = res;
+  const select = $("#lab-pick");
+  select.replaceChildren(...choices.map((c) => el("option", {
+    value: JSON.stringify([c.model, c.horizon_hours]),
+    text: `${modelName(c.model).title} (${modelName(c.model).detail}) · ${c.horizon_hours} h before · ${c.games} games`,
+  })));
+  for (const t of ["#lab-thresholds", "#lab-calibration", "#lab-weeks"]) $(`${t} tbody`).replaceChildren();
+  if (!lab) { $("#lab-note").textContent = "No finished games with recorded predictions yet."; return; }
+  select.value = JSON.stringify([lab.model, lab.horizon_hours]);
+  $("#lab-note").textContent = lab.note;
+  $("#lab-thresholds tbody").replaceChildren(...lab.thresholds.map((t) => el("tr", {},
+    cell(`${(t.min_probability * 100).toFixed(0)}%`),
+    cell(String(t.bets), "num"),
+    cell(`${t.wins}-${t.losses}-${t.pushes}`),
+    cell(t.roi == null ? "–" : `${signedPct(t.roi)} ± ${pct(t.roi_se)}`, `num ${signClass(t.roi)}`),
+    cell(pct(t.hit_rate), "num"),
+    cell(pct(t.break_even), "num"),
+    cell(signedPct(t.avg_clv, 2), `num ${signClass(t.avg_clv)}`),
+    cell(t.enough ? "" : "too few to read", "muted"))));
+  const market = lab.calibration.market;
+  $("#lab-calibration tbody").replaceChildren(...lab.calibration.model.map((b, i) => el("tr", {},
+    cell(`${(b.low * 100).toFixed(0)}–${(b.high * 100).toFixed(0)}%`),
+    cell(String(b.n), "num"), cell(pct(b.mean_predicted), "num"), cell(pct(b.observed), "num"),
+    cell(String(market[i].n), "num"), cell(pct(market[i].mean_predicted), "num"), cell(pct(market[i].observed), "num"))));
+  $("#lab-weeks tbody").replaceChildren(...lab.weeks.map((w) => el("tr", {},
+    cell(w.week), cell(String(w.games), "num"),
+    cell(signedNum(w.diff, 4), `num ${signClass(w.diff == null ? null : -w.diff)}`),
+    cell(signedNum(w.cumulative_diff, 4), `num ${signClass(w.cumulative_diff == null ? null : -w.cumulative_diff)}`),
+    cell(signedPct(w.avg_clv, 2), `num ${signClass(w.avg_clv)}`),
+    cell(signedPct(w.cumulative_clv, 2), `num ${signClass(w.cumulative_clv)}`))));
+}
+$("#lab-pick").addEventListener("change", (event) => loadLab(event.currentTarget.value));
+
 // ------------------------------------------------------------------ start
 
+restoreFilters();
 persistSlip();
-
-loadBooks().catch(() => {});
-loadCard();
+loadBooks().catch(() => {}).finally(() => { if (!$("#page-slip").hidden) renderSlip(); });
+route();

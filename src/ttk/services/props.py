@@ -60,8 +60,10 @@ _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def player_key(name: str) -> str:
-    """Lowercase ASCII words without punctuation or a name suffix
-    ('Aaron Jones Sr.' and 'Aaron Jones' match)."""
+    """Lowercase ASCII words without punctuation, a name suffix, or a trailing team
+    code ('Aaron Jones Sr.' and 'Aaron Jones' match; some books send 'Dak Prescott
+    (DAL)')."""
+    name = re.sub(r"\s*\([A-Za-z]{2,4}\)\s*$", "", name)
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     words = re.sub(r"[^a-z0-9 ]", " ", s.replace("'", "").replace(".", "")).split()
     while words and words[-1] in _SUFFIXES:
