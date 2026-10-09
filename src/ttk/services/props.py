@@ -57,18 +57,24 @@ NOT_SPORTSBOOKS = frozenset(
     }
 )
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+# Curated: a book's name -> ESPN's, each checked against the ESPN roster, for
+# players a book lists under another first name.
+_ALIASES = {
+    "kenneth gainwell": "kenny gainwell",  # ESPN TB roster, 2026-10-09
+}
 
 
 def player_key(name: str) -> str:
     """Lowercase ASCII words without punctuation, a name suffix, or a trailing team
     code ('Aaron Jones Sr.' and 'Aaron Jones' match; some books send 'Dak Prescott
-    (DAL)')."""
+    (DAL)'), mapped through ``_ALIASES``."""
     name = re.sub(r"\s*\([A-Za-z]{2,4}\)\s*$", "", name)
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     words = re.sub(r"[^a-z0-9 ]", " ", s.replace("'", "").replace(".", "")).split()
     while words and words[-1] in _SUFFIXES:
         words.pop()
-    return " ".join(words)
+    key = " ".join(words)
+    return _ALIASES.get(key, key)
 
 
 def is_sportsbook(q: PropQuote) -> bool:

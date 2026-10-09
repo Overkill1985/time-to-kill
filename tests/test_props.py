@@ -27,6 +27,7 @@ def test_player_keys_and_book_filter() -> None:
     assert player_key("Ja'Marr Chase") == "jamarr chase"
     assert player_key("Dak Prescott (DAL)") == player_key("Dak Prescott") == "dak prescott"
     assert player_key("Chris Godwin Jr. (TB)") == "chris godwin"
+    assert player_key("Kenneth Gainwell (TB)") == player_key("Kenny Gainwell") == "kenny gainwell"
     quotes = parse_props(json.loads(FIXTURE.read_text("utf-8")))
     assert len(quotes) == 24
     kept = {q.book for q in quotes if is_sportsbook(q)}
