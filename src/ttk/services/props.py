@@ -77,6 +77,29 @@ def player_key(name: str) -> str:
     return _ALIASES.get(key, key)
 
 
+def _surname_match(a: str, b: str) -> bool:
+    return a == b or a.endswith(" " + b) or b.endswith(" " + a)
+
+
+def roster_sides(key: str, teams: dict[str, set[str]]) -> list[str]:
+    """The sides whose roster has this player: an exact key first; failing that,
+    one roster player with the same surname and first initial ('Cameron Ward' is
+    ESPN's 'Cam Ward', 'Chauncey Gardner-Johnson' its 'C.J. Gardner-Johnson',
+    'Kyler Cole Murray' its 'Kyler Murray'), only when exactly one player on the
+    two rosters fits."""
+    sides = [side for side, names in teams.items() if key in names]
+    if sides or " " not in key:
+        return sides
+    first, surname = key.split(" ", 1)
+    fits = [
+        side
+        for side, names in teams.items()
+        for name in names
+        if " " in name and name[0] == first[0] and _surname_match(surname, name.split(" ", 1)[1])
+    ]
+    return fits if len(fits) == 1 else []
+
+
 def is_sportsbook(q: PropQuote) -> bool:
     return q.book not in NOT_SPORTSBOOKS and q.dfs_odds_type is None and q.payout_multiplier is None
 
@@ -149,7 +172,7 @@ def pull_props(
     """Take and store one pull. Raises ProviderError (nothing stored) when the
     provider or a roster cannot be read; the next pass retries."""
     game = session.get_one(Game, due.game_id)
-    teams = {}
+    teams: dict[str, set[str]] = {}
     for side, team_id in (("HOME", game.home_team_id), ("AWAY", game.away_team_id)):
         espn_id = session.get_one(Team, team_id).espn_id
         if espn_id is None:
@@ -167,7 +190,7 @@ def pull_props(
             stats["dropped_not_a_sportsbook"] += 1
             continue
         key = player_key(q.player)
-        sides = [side for side, names in teams.items() if key in names]
+        sides = roster_sides(key, teams)
         if len(sides) != 1:
             stats["dropped_not_on_one_roster"] += 1
             off_roster[q.player] += 1

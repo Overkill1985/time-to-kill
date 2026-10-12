@@ -553,6 +553,32 @@ class WeatherForecast(Base):
     precipitation_mm: Mapped[float | None] = mapped_column(Float)
 
 
+class GameWeather(Base):
+    """Research input: the weather at a past game's kickoff hour from a reanalysis
+    archive (services/weather_history), never a forecast and never used live. One
+    row per (game, provider); an indoor game is stored with no weather."""
+
+    __tablename__ = "game_weather"
+    __table_args__ = (UniqueConstraint("game_id", "provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(50))
+    venue_source: Mapped[str] = mapped_column(String(50))
+    venue_id: Mapped[str] = mapped_column(String(20))
+    venue_name: Mapped[str] = mapped_column(String(120))
+    indoor: Mapped[bool] = mapped_column(Boolean)
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    valid_at: Mapped[datetime]
+    """The hour used (kickoff, rounded to the hour)."""
+    wind_mph: Mapped[float | None] = mapped_column(Float)
+    gust_mph: Mapped[float | None] = mapped_column(Float)
+    temperature_f: Mapped[float | None] = mapped_column(Float)
+    precipitation_mm: Mapped[float | None] = mapped_column(Float)
+    fetched_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class ForwardScore(Base):
     """Closing-line value of a forward snapshot's side, computed once its game is
     final: the closing state as of kickoff never changes, so it is stored rather

@@ -79,6 +79,7 @@ src/ttk/
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
+    weather_history.py Archive weather at past college kickoffs (CFBD venues + Open-Meteo archive), resumable, research only
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
     bankroll.py        Balance from append-only deposits + settled P/L, staking limits, Kelly guidance
@@ -104,6 +105,7 @@ migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0017: game_weather (reanalysis weather at past kickoffs; research input).
                        - 0016: weather_forecasts (append-only forecast per game and horizon).
                        - 0015: prop_pulls and prop_quotes (append-only player-prop snapshots).
                        - 0014: forward_predictions.market (SPREAD or MONEYLINE; added natively, triggers kept).

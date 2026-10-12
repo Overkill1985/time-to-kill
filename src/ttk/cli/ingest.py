@@ -304,6 +304,34 @@ def _import_cfbd(args: argparse.Namespace, settings: Settings) -> int:
     return 0 if all(r.status == "SUCCESS" for r in runs) else 1
 
 
+def _import_cfb_weather(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.cfbd import CfbdClient
+    from ttk.providers.open_meteo import OpenMeteoArchive
+    from ttk.services.weather_history import import_cfb_weather
+
+    if settings.cfbd_api_key is None:
+        print("Set TTK_CFBD_API_KEY in .env (free at collegefootballdata.com).", file=sys.stderr)
+        return 2
+    factory = make_session_factory(make_engine(settings.database_url))
+    report = import_cfb_weather(
+        factory,
+        CfbdClient(settings.cfbd_api_key.get_secret_value()),
+        OpenMeteoArchive(),
+        first=args.from_season,
+        last=args.to_season,
+        budget=args.budget,
+    )
+    print(
+        f"places requested {report.requested}; stored {report.stored} outdoor and "
+        f"{report.indoor} indoor games; skipped {dict(report.skipped)}; "
+        f"{report.remaining} outdoor games left"
+        + (f"; stopped: {report.stopped}" if report.stopped else "")
+    )
+    print(f"CFBD calls left this month: {report.cfbd_calls_remaining}")
+    return 0
+
+
 def _import_team_boxes(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn_boxscore import EspnBoxscores
@@ -439,6 +467,15 @@ def register(sub: Any) -> None:
     )
     cfbd_games.add_argument("--from-season", type=int, required=True)
     cfbd_games.add_argument("--to-season", type=int, required=True)
+    cfb_weather = sub.add_parser(
+        "import-cfb-weather",
+        help="Import archive weather at past college football kickoffs (Open-Meteo; resumable)",
+    )
+    cfb_weather.add_argument("--from-season", type=int, required=True)
+    cfb_weather.add_argument("--to-season", type=int, required=True)
+    cfb_weather.add_argument(
+        "--budget", type=int, default=9000, help="Most Open-Meteo places this run (10,000/day free)"
+    )
     box = sub.add_parser(
         "import-boxscores",
         help="Import player box scores (who played, minutes, stats) for final games, from ESPN",
@@ -472,6 +509,7 @@ HANDLERS: dict[str, Handler] = {
     "import-boxscores": _import_boxscores,
     "import-cfbd": _import_cfbd,
     "import-cfbd-games": _import_cfbd,
+    "import-cfb-weather": _import_cfb_weather,
     "repair-espn-lines": _repair_espn_lines,
     "repair-merged-games": _repair_merged_games,
 }

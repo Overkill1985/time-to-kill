@@ -12,7 +12,14 @@ from ttk.domain import GameStatus, Sport
 from ttk.providers.base import ProviderError
 from ttk.providers.espn_roster import parse_roster
 from ttk.providers.propline import parse_props
-from ttk.services.props import collect_props, coverage, due_pulls, is_sportsbook, player_key
+from ttk.services.props import (
+    collect_props,
+    coverage,
+    due_pulls,
+    is_sportsbook,
+    player_key,
+    roster_sides,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "propline_event_props_nfl.json"
 KICK = datetime(2026, 10, 11, 17, 0, tzinfo=UTC)
@@ -144,3 +151,20 @@ def test_quota_floor_duplicates_and_failures(session_factory: sessionmaker[Sessi
         s.get_one(Game, gid).status = GameStatus.DUPLICATE
         s.commit()
         assert due_pulls(s, now) == []
+
+
+def test_roster_fallback_needs_one_surname_and_initial_fit() -> None:
+    def teams(home: list[str], away: list[str]) -> dict[str, set[str]]:
+        return {"HOME": {player_key(n) for n in home}, "AWAY": {player_key(n) for n in away}}
+
+    t = teams(["Cam Ward", "C.J. Gardner-Johnson"], ["Kyler Murray", "Jacory Croskey-Merritt"])
+    assert roster_sides(player_key("Cam Ward"), t) == ["HOME"]  # exact
+    assert roster_sides(player_key("Cameron Ward (TEN)"), t) == ["HOME"]
+    assert roster_sides(player_key("Chauncey Gardner-Johnson"), t) == ["HOME"]
+    assert roster_sides(player_key("Kyler Cole Murray"), t) == ["AWAY"]
+    assert roster_sides(player_key("Jacory Merritt"), t) == ["AWAY"]
+    assert roster_sides(player_key("Devin Ward"), t) == []  # another initial
+    assert roster_sides(player_key("No Touchdown Scorer"), t) == []
+    # Two players fit: no guess.
+    two = teams(["Chris Jones"], ["Cameron Jones"])
+    assert roster_sides(player_key("Christopher Jones"), two) == []

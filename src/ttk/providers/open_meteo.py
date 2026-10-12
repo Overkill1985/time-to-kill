@@ -10,7 +10,7 @@ match to the game-time wind nflverse records (research/nfl_weather).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -86,3 +86,43 @@ class OpenMeteo:
         if response.status_code != 200:
             raise ProviderError(f"open-meteo: HTTP {response.status_code}")
         return parse_hour(response.json(), hour)
+
+
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+
+class OpenMeteoArchive:
+    """Hourly reanalysis weather for past days (``/v1/archive``), several places per
+    request (comma-separated coordinates; the response is then a list in the same
+    order). Each place counts as one request against the free limits (600 a
+    minute, 5,000 an hour, 10,000 a day)."""
+
+    name = "open-meteo-archive"
+
+    def __init__(self, client: httpx.Client | None = None) -> None:
+        self._client = client or httpx.Client(timeout=60.0)
+
+    def day(self, points: list[tuple[float, float]], day: date) -> list[dict[str, Any]]:
+        """One payload per point, for the whole UTC day."""
+        response = get_with_retries(
+            self._client,
+            ARCHIVE_URL,
+            name=self.name,
+            params={
+                "latitude": ",".join(str(lat) for lat, _ in points),
+                "longitude": ",".join(str(lon) for _, lon in points),
+                "start_date": day.isoformat(),
+                "end_date": day.isoformat(),
+                "hourly": ",".join(HOURLY),
+                "wind_speed_unit": "mph",
+                "temperature_unit": "fahrenheit",
+                "timezone": "UTC",
+            },
+        )
+        if response.status_code != 200:
+            raise ProviderError(f"open-meteo archive: HTTP {response.status_code}")
+        body = response.json()
+        payloads = body if isinstance(body, list) else [body]
+        if len(payloads) != len(points):
+            raise ProviderError("open-meteo archive: one payload per point expected")
+        return payloads

@@ -287,3 +287,39 @@ def parse_advanced(rows: Sequence[Mapping[str, Any]]) -> list[GameTeamPpa]:
             )
         )
     return out
+
+
+@dataclass(frozen=True)
+class Venue:
+    """A stadium from ``/venues`` (one call; 852 venues, 2026-10-09)."""
+
+    venue_id: int
+    name: str
+    dome: bool
+    latitude: float | None
+    longitude: float | None
+
+
+def parse_venues(rows: Sequence[Mapping[str, Any]]) -> dict[int, Venue]:
+    out = {}
+    for r in rows:
+        if r.get("id") is None:
+            continue
+        out[int(r["id"])] = Venue(
+            int(r["id"]),
+            str(r.get("name") or ""),
+            bool(r.get("dome")),
+            _float(r.get("latitude")),
+            _float(r.get("longitude")),
+        )
+    return out
+
+
+def parse_game_venues(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """ESPN event id -> CFBD venue id, from ``/games?year=Y&seasonType=both`` (one call
+    per season). CFBD game ids are ESPN's event ids."""
+    return {
+        str(r["id"]): int(r["venueId"])
+        for r in rows
+        if r.get("id") is not None and r.get("venueId") is not None
+    }
