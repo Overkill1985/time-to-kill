@@ -559,3 +559,19 @@ Unders in outdoor games with recorded wind of 10+ mph, at the reported under pri
 The training fit applied to validation: margin error 16.104 → 16.106 (z −0.24); over/under log loss against the market 0.6927 → 0.6927 (z −0.01, 2,868 priced games).
 
 **Verdict:** not adopted, and no forward test. The effect is there in the older seasons, about the size of the NFL's, but gone in 2023–2024: the college closing total now prices wind (or the archive's wind is too coarse to show it). The NFL test (`nfl-total-wind`) stays the only weather model.
+
+### NFL injury reports (measured 2026-10-12)
+
+- **Data:** nflverse injury reports 2009–2025 (final game status per player; 99.9% of timestamped reports were filed 24–72 h before kickoff, so they are known at the 24 h horizon; 11 filed after kickoff dropped) and snap counts 2012–2025. An exploratory script, not a registered model.
+- **Feature:** each listed player's expected missing snap share = P(sits | status) × his share of snaps over his last 8 earlier games (previous season's if none yet), summed per position group, home minus away. P(sits) on 2012–2017 for regulars (20%+ of snaps): Out 0.999, Doubtful 0.994, Questionable 0.337.
+- **Target:** the closing spread's miss (final margin minus `spread_line`), fitted on 2012–2017 (n=1,536), checked on 2018–2021 (n=1,040).
+
+| | Validation RMSE, line → line + adjustment | z |
+|---|---|---|
+| Eight position groups (none significant on training; DL t +1.9, LB −1.7) | 13.189 → 13.265 | −2.11, worse |
+| One number (all groups summed; −0.11 points per player-equivalent) | 13.189 → 13.189 | +0.07 |
+| One number, exploratory look at 2022–2025 | 12.360 → 12.350 | +1.80 |
+
+On training, a player-equivalent of expected missing snaps moves the final margin by −0.59 points and the market's expected margin by −0.49: **the closing line already prices about 80% of the injury report, and the rest is noise.**
+
+**Verdict:** no injury feature against the close. If injuries carry an edge, it is in timing: betting before the market reacts to a report. That needs our own timestamped odds next to the live ESPN injury feed (both collected since late September 2026), judged by closing-line value once enough NFL weeks exist.
