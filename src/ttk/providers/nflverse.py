@@ -214,3 +214,54 @@ class NflverseProvider:
             first_season=first_season,
             last_season=last_season or date.today().year,
         )
+
+
+SNAPS_URL = "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_{season}.csv"
+
+
+@dataclass(frozen=True)
+class SnapRow:
+    """One player's snaps in one game (nflverse ``snap_counts``, from 2012; columns
+    verified 2026-10-12). ``share`` is the larger of the offense and defense
+    snap shares (0-1)."""
+
+    season: int
+    week: int
+    game_type: str
+    team: str
+    """nflverse team code."""
+    player: str
+    position: str
+    share: float
+
+
+def parse_snaps(rows: Iterable[Mapping[str, str]]) -> list[SnapRow]:
+    out = []
+    for r in rows:
+        try:
+            share = max(float(r.get("offense_pct") or 0), float(r.get("defense_pct") or 0))
+            out.append(
+                SnapRow(
+                    int(r["season"]),
+                    int(r["week"]),
+                    r.get("game_type", ""),
+                    r["team"],
+                    r["player"],
+                    r.get("position", ""),
+                    share,
+                )
+            )
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
+def fetch_snaps(season: int, client: httpx.Client | None = None) -> list[SnapRow]:
+    client = client or httpx.Client(timeout=60.0, follow_redirects=True)
+    try:
+        response = client.get(SNAPS_URL.format(season=season))
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"nflverse snaps: request failed ({type(exc).__name__})") from None
+    if response.status_code != 200:
+        raise ProviderError(f"nflverse snaps: HTTP {response.status_code}")
+    return parse_snaps(csv.DictReader(io.StringIO(response.text)))

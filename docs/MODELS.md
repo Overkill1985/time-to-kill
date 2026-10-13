@@ -575,3 +575,15 @@ The training fit applied to validation: margin error 16.104 → 16.106 (z −0.2
 On training, a player-equivalent of expected missing snaps moves the final margin by −0.59 points and the market's expected margin by −0.49: **the closing line already prices about 80% of the injury report, and the rest is noise.**
 
 **Verdict:** no injury feature against the close. If injuries carry an edge, it is in timing: betting before the market reacts to a report. That needs our own timestamped odds next to the live ESPN injury feed (both collected since late September 2026), judged by closing-line value once enough NFL weeks exist.
+
+**Timing, first look (2026-10-12; `ttk injury-moves`, `services/injury_moves.py`):** every change in a regular's ESPN status (50%+ of his team's earlier 2026 snaps, nflverse snap counts) within 4 days of his team's next game, as first seen by our hourly poll, against our own consensus main spread then and at kickoff. Changes in the first 48 h after the team's previous kickoff are left out (ESPN rolls every status over to the new week then: dozens of Out → Questionable flips at one poll).
+
+| News (Sept 27 – Oct 12, 30 games) | Events | Points gained by kickoff betting against it when seen (se) | Beat / lost to the close | Move in the 6 h before |
+|---|---|---|---|---|
+| All | 401 | −0.00 (0.03) | 89 / 92 | −0.00 |
+| Bad news, out-type (Out, Doubtful, IR) | 71 | +0.05 (0.06) | 15 / 11 | +0.02 |
+| Bad news, questionable | 138 | −0.04 (0.05) | 33 / 43 | −0.01 |
+| Good news (upgraded, cleared) | 192 | +0.01 (0.04) | 41 / 38 | −0.01 |
+| Quarterbacks | 10 | +0.20 (0.15) | 2 / 0 | +0.00 |
+
+So far the line neither moves after our sighting of the news nor in the 6 h before it: for non-quarterbacks the market barely reacts to status changes at all, which is what the historical result said (the report is priced in, or barely matters). Quarterbacks are too few to read. Rerun weekly; worth a model only if the quarterback row holds a positive gain over a few dozen events.

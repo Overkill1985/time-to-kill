@@ -80,6 +80,7 @@ src/ttk/
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
+    injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
     weather_history.py Archive weather at past college kickoffs (CFBD venues + Open-Meteo archive), resumable, research only
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
@@ -99,7 +100,7 @@ src/ttk/
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
-                       - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check
+                       - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check, injury-moves
                        - forward.py: forward-freeze(-ml/-totals/-nfl-wind), forward-snapshot/run/report, lab
                        - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.

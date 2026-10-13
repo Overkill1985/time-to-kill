@@ -281,6 +281,39 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
     return 0
 
 
+def _injury_moves(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.nflverse import fetch_snaps
+    from ttk.services.injury_moves import injury_moves, snap_shares, summaries
+
+    shares = snap_shares(fetch_snaps(args.season))
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        moves = injury_moves(session, shares, min_share=args.min_share)
+    print(
+        "Points a bet against the injury news at the line when we saw it gained by kickoff "
+        "(consensus main spread); pre-move = how far it had moved that way in the 6 h before."
+    )
+    for s in summaries(moves):
+        if not s.events:
+            print(f"  {s.label}: no events")
+            continue
+        se = f" (se {s.se_gain:.2f})" if s.se_gain is not None else ""
+        pre = f"{s.mean_pre_move:+.2f}" if s.mean_pre_move is not None else "-"
+        print(
+            f"  {s.label}: {s.events} events in {s.games} games, gain {s.mean_gain:+.2f}{se}, "
+            f"beat/lost to the close {s.positive}/{s.negative}, pre-move {pre}"
+        )
+    if args.list:
+        for m in sorted(moves, key=lambda m: -abs(m.weight)):
+            print(
+                f"    {m.observed_at:%m-%d %H:%M} {m.player} ({m.position}, {m.share:.0%}) "
+                f"{m.previous or '-'} -> {m.status}: line {m.line_at:+.1f} -> close "
+                f"{m.line_close:+.1f}, gain {m.gain:+.1f}"
+            )
+    return 0
+
+
 def _backtest_cfb_wind(settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.research.cfb_weather import cfb_wind_report
@@ -492,6 +525,13 @@ def register(sub: Any) -> None:
             action="store_true",
             help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
         )
+    moves = sub.add_parser(
+        "injury-moves",
+        help="NFL: does the spread move after injury news (ESPN feed vs our odds)?",
+    )
+    moves.add_argument("--season", type=int, default=2026)
+    moves.add_argument("--min-share", type=float, default=0.5, help="Regulars only (snap share)")
+    moves.add_argument("--list", action="store_true", help="List every event")
     sub.add_parser(
         "backtest-cfb-wind",
         help="College football totals vs archive wind (needs `ttk import-cfb-weather`)",
@@ -511,6 +551,7 @@ HANDLERS: dict[str, Handler] = {
     "backtest-ncaab": lambda a, s: _backtest_espn(a, s.database_url, Sport.NCAAB),
     "backtest-totals": lambda a, s: _backtest_totals(s, a.sport),
     "backtest-cfb-wind": lambda a, s: _backtest_cfb_wind(s),
+    "injury-moves": _injury_moves,
     "score-test": _score_test,
     "injury-check": _injury_check,
 }
