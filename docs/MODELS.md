@@ -587,3 +587,19 @@ On training, a player-equivalent of expected missing snaps moves the final margi
 | Quarterbacks | 10 | +0.20 (0.15) | 2 / 0 | +0.00 |
 
 So far the line neither moves after our sighting of the news nor in the 6 h before it: for non-quarterbacks the market barely reacts to status changes at all, which is what the historical result said (the report is priced in, or barely matters). Quarterbacks are too few to read. Rerun weekly; worth a model only if the quarterback row holds a positive gain over a few dozen events.
+
+### NFL early lines: betting the opener (2023–2024, measured 2026-10-13)
+
+- **Data:** ESPN's per-book opening and closing lines (`ttk import-espn-history`'s odds step; the 2023–2024 NFL games were linked to their ESPN events through nflverse's `espn` ids first). 476 games with an opener: 192 of 285 in 2023 (several books), 284 of 285 in 2024 (ESPN BET only). Representative number per game, as for the other sports. `ttk backtest-nfl-opener`; `research/nfl_opener.py`.
+- **Models:** fitted on TRAIN (2002–2017), walk-forward state. The quarterback-change term needs kickoff starters, which aren't known at the open, so the opener-time model drops it; the full model is shown only as a reference.
+- These seasons were scored once for the frozen model (2026-10-05). This asks a different question (does the line move toward the model?) and selects nothing.
+
+| Model at the opener | Line move toward the model per point of disagreement (t) | Points gained by the close, disagreement 3+ (bets) | Record at the opener, 3+ | ROI at −110 |
+|---|---|---|---|---|
+| Elo | +0.044 (+1.5) | +0.40 (se 0.17; 130) | 71-55-4 | +7.3% |
+| EPA, no QB change | +0.061 (+2.0) | +0.46 (se 0.17; 135) | 72-57-6 | +6.3% |
+| EPA + QB change (kickoff starters; not available at the open) | +0.233 (+7.5) | +1.05 (se 0.19; 129) | - | - |
+
+All games, EPA without QB: +0.16 points (se 0.09), 231-229-16 (−4.0%).
+
+**Verdict:** a lead, not an edge. Where the model disagrees with the opener by 3+ points, the line moves its way by about half a point by kickoff (t ≈ 2.7, but the threshold is one of four). The records are within noise of break-even (55.8% on 129 decided bets, ±4.4 percentage points; 2023 27-14, 2024 45-43). Most of what moves NFL lines between open and close is quarterback news: with the kickoff starter the model "predicts" a full point of movement. The way to test it properly is a forward snapshot at the opener, judged by closing-line value.

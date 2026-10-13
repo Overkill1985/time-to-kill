@@ -50,6 +50,8 @@ Everything buildable without new data or decisions is built. What remains waits 
 
 **College football and wind (measured 2026-10-12):** an effect in 2015–2022 that is gone in 2023–2024; not adopted (docs/MODELS.md).
 
+**NFL early lines (2023–2024, measured 2026-10-13):** where the model disagrees with the opener by 3+ points, the line moves its way by about half a point by kickoff; the records are within noise of break-even. A lead for an opener-time forward snapshot (docs/MODELS.md).
+
 **NFL injury reports (measured 2026-10-12):** the closing line already prices the final report (about 80% of its effect; the rest is noise), so no injury feature against the close. The open question is timing: whether bets placed right after a report beat the close, measured by `ttk injury-moves` (first look 2026-10-12, 401 events: no move after the news, ±0.03 points; quarterbacks too few). Rerun weekly (docs/MODELS.md).
 
 **Follow-ups:** an NBA live check after the opener and an NCAAB one after its opener; review `ttk props-report` (the off-roster names) after the first weekend.

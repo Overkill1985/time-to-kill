@@ -314,6 +314,34 @@ def _injury_moves(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _backtest_nfl_opener(settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.nfl_opener import opener_report
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        report = opener_report(session)
+    print(
+        "NFL 2023-2024: bet the model's side at the ESPN opener; points = how far the line "
+        "then moved that way by the close (ESPN per-book lines, representative number)."
+    )
+    for m in report:
+        print(
+            f"\n{m.model}: {m.games} games; line move toward home per point of "
+            f"disagreement {m.slope:+.3f} (se {m.slope_se:.3f}, t {m.slope / m.slope_se:+.1f})"
+        )
+        for r in m.rows:
+            if not r.bets:
+                continue
+            se = f" (se {r.se_points:.2f})" if r.se_points is not None else ""
+            print(
+                f"  disagreement >= {r.min_disagreement:.0f}: {r.bets} bets, "
+                f"{r.mean_points:+.2f} points{se}; moved toward/away/unchanged "
+                f"{r.moved_toward}/{r.moved_away}/{r.unchanged}"
+            )
+    return 0
+
+
 def _backtest_cfb_wind(settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.research.cfb_weather import cfb_wind_report
@@ -533,6 +561,10 @@ def register(sub: Any) -> None:
     moves.add_argument("--min-share", type=float, default=0.5, help="Regulars only (snap share)")
     moves.add_argument("--list", action="store_true", help="List every event")
     sub.add_parser(
+        "backtest-nfl-opener",
+        help="NFL 2023-2024: does the model's disagreement with the opener predict the close?",
+    )
+    sub.add_parser(
         "backtest-cfb-wind",
         help="College football totals vs archive wind (needs `ttk import-cfb-weather`)",
     )
@@ -552,6 +584,7 @@ HANDLERS: dict[str, Handler] = {
     "backtest-totals": lambda a, s: _backtest_totals(s, a.sport),
     "backtest-cfb-wind": lambda a, s: _backtest_cfb_wind(s),
     "injury-moves": _injury_moves,
+    "backtest-nfl-opener": lambda a, s: _backtest_nfl_opener(s),
     "score-test": _score_test,
     "injury-check": _injury_check,
 }
