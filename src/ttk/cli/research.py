@@ -281,6 +281,33 @@ def _backtest_nfl_elo(args: argparse.Namespace, database_url: str) -> int:
     return 0
 
 
+def _backtest_cfb_wind(settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.research.cfb_weather import cfb_wind_report
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        r = cfb_wind_report(session)
+    print(f"indoor games (no wind): {r.indoor}")
+    for name, b in (("train", r.train), ("validate", r.validate)):
+        print(
+            f"{name} {b.seasons[0]}-{b.seasons[1]}: {b.games} outdoor games, mean wind "
+            f"{b.mean_wind:.1f} mph, {b.slope:+.3f} points per mph (se {b.slope_se:.3f}, "
+            f"t {b.slope / b.slope_se:+.1f})"
+        )
+        for u in b.unders:
+            roi = f"{u.roi:+.1%}" if u.roi is not None else "-"
+            print(f"  unders at {u.threshold}+ mph: {u.wins}-{u.losses}-{u.pushes}, ROI {roi}")
+    v = r.validation
+    print(
+        f"train fit on validate: error {v.rmse_line:.3f} -> {v.rmse_model:.3f} "
+        f"(z {v.rmse_z:+.2f}); "
+        f"log loss vs market on {v.priced} priced games {v.log_loss_market or 0:.4f} -> "
+        f"{v.log_loss_model or 0:.4f} (z {v.log_loss_z or 0:+.2f})"
+    )
+    return 0
+
+
 def _backtest_totals(settings: Settings, sport: Sport) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.research.espn_models import load_sport
@@ -465,6 +492,10 @@ def register(sub: Any) -> None:
             action="store_true",
             help="Also score the sealed TEST seasons. Do this once, after the model is frozen.",
         )
+    sub.add_parser(
+        "backtest-cfb-wind",
+        help="College football totals vs archive wind (needs `ttk import-cfb-weather`)",
+    )
     bt_totals = sub.add_parser(
         "backtest-totals", help="Tune and backtest a basketball totals model (pace and efficiency)"
     )
@@ -479,6 +510,7 @@ HANDLERS: dict[str, Handler] = {
     "backtest-cfb": lambda a, s: _backtest_espn(a, s.database_url, Sport.CFB),
     "backtest-ncaab": lambda a, s: _backtest_espn(a, s.database_url, Sport.NCAAB),
     "backtest-totals": lambda a, s: _backtest_totals(s, a.sport),
+    "backtest-cfb-wind": lambda a, s: _backtest_cfb_wind(s),
     "score-test": _score_test,
     "injury-check": _injury_check,
 }

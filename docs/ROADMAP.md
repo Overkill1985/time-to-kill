@@ -48,6 +48,8 @@ Everything buildable without new data or decisions is built. What remains waits 
 
 **Rest, travel and weather (NFL, measured 2026-10-09):** rest and travel add nothing to the line. Wind does (the total under-reacts to it), so `nfl-total-wind` is under forward test on forecast wind from Week 5 (docs/MODELS.md).
 
-**Not started:** weather for college football. NFL injuries are collected but not yet a model feature; NBA injuries are, through the injury model.
+**College football and wind (measured 2026-10-12):** an effect in 2015–2022 that is gone in 2023–2024; not adopted (docs/MODELS.md).
+
+**Not started:** NFL injuries are collected but not yet a model feature; NBA injuries are, through the injury model.
 
 **Follow-ups:** an NBA live check after the opener and an NCAAB one after its opener; review `ttk props-report` (the off-roster names) after the first weekend.

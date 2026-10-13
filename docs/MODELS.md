@@ -546,3 +546,16 @@ Unders in outdoor games with recorded wind of 10+ mph, at the reported under pri
 - Fitted on the 3,067 outdoor regular-season games of 2002–2017: **−0.167 points per mph** around 8.4 mph, σ 13.48. The reference centers the adjustment, so the model leans under in wind and over in calm, never one way in general.
 - Validation, 2018–2021 (728 outdoor games): margin error 13.241 → 13.195 (z +1.32); over/under log loss against the no-vig market on 718 priced games 0.6930 → 0.6914 (z −0.73). Not significant, which is why it is a forward test and nothing more.
 - Live input: Open-Meteo's forecast wind at the kickoff hour, taken once per game and horizon (24 h, 1 h) and stored append-only in `weather_forecasts` before the snapshot uses it. Trained on recorded wind, run on forecast wind: forecast error makes the live effect smaller, if anything.
+
+### College football totals and wind (measured 2026-10-12)
+
+- **Data:** wind at the kickoff hour from Open-Meteo's archive (ERA5 reanalysis, not a stadium reading) for every finished 2015–2024 game with a reported total (`ttk import-cfb-weather`; venue coordinates and dome flags from CollegeFootballData); 566 indoor games set aside. The line is the representative ESPN closing total the college models use. `ttk backtest-cfb-wind`.
+
+| Seasons | Outdoor games | Points per mph (t) | Unders at 10+ mph | 15+ mph | 20+ mph |
+|---|---|---|---|---|---|
+| Train 2015–2022 | 7,833 | −0.144 (−3.1) | 937-784-24, +4.0% | 200-153-6, +8.1% | 28-18, +16.1% |
+| Validate 2023–2024 | 2,887 | −0.045 (−0.6) | 323-287, +0.7% | 40-55, −20.4% | 4-6, −23.6% |
+
+The training fit applied to validation: margin error 16.104 → 16.106 (z −0.24); over/under log loss against the market 0.6927 → 0.6927 (z −0.01, 2,868 priced games).
+
+**Verdict:** not adopted, and no forward test. The effect is there in the older seasons, about the size of the NFL's, but gone in 2023–2024: the college closing total now prices wind (or the archive's wind is too coarse to show it). The NFL test (`nfl-total-wind`) stays the only weather model.

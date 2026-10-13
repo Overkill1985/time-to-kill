@@ -38,6 +38,7 @@ src/ttk/
   research/
     nfl_elo.py         Tuning on train, spread candidates vs market (paired z), sealed test
     nfl_weather.py     NFL totals wind model: fit on recorded wind, outdoor stadium table (Wikipedia coordinates)
+    cfb_weather.py     College totals vs archive wind (measured; not adopted)
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
     espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
     moneyline.py       Moneylines from the spread models' margin distributions; validation vs the ML market
@@ -98,7 +99,7 @@ src/ttk/
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
-                       - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals, score-test, injury-check
+                       - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check
                        - forward.py: forward-freeze(-ml/-totals/-nfl-wind), forward-snapshot/run/report, lab
                        - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.

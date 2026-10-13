@@ -255,3 +255,19 @@ def test_no_venues_means_no_forecast(session_factory: sessionmaker[Session]) -> 
         weather.refresh(s)
         assert weather.forecast(gid, 24, now) is None
         assert weather.errors == ["nflverse: HTTP 503"]
+
+
+def test_under_record_counts_windy_games_at_the_under_price() -> None:
+    from ttk.research.cfb_weather import under_record
+
+    rows = [
+        WindRow(2020, 50.5, 40.0, 15.0, -110, -110),  # under wins at -110
+        WindRow(2020, 50.5, 60.0, 16.0, -110, +120),  # under loses
+        WindRow(2020, 50.0, 50.0, 20.0, -110, -110),  # push
+        WindRow(2020, 50.5, 40.0, 5.0, -110, -110),  # calm: not bet
+        WindRow(2020, 50.5, 40.0, 25.0, -110, None),  # no price: not bet
+    ]
+    u = under_record(rows, 15)
+    assert (u.wins, u.losses, u.pushes) == (1, 1, 1)
+    assert u.roi == pytest.approx((100 / 110 - 1) / 3)
+    assert under_record(rows, 30).roi is None
