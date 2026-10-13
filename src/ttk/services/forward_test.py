@@ -64,6 +64,10 @@ class ForwardModel:
     snapshot records the moneyline market and prices alongside. TOTAL models are
     called with the main total and its no-vig P(over), and return P(over | no
     push) as ``home_cover`` and the predicted total as ``expected_margin``."""
+    horizons: tuple[int, ...] | None = None
+    """This model's own snapshot horizons (default: the pass's). An opener-time
+    model uses one long horizon: it is snapshot the first time its game has a
+    fresh line within that many hours of kickoff."""
 
 
 def register(
@@ -200,8 +204,9 @@ def snapshot(
 ) -> SnapshotStats:
     now = now or utcnow()
     stats = SnapshotStats()
-    longest = max(horizons)
     for model in models:
+        model_horizons = model.horizons or tuple(horizons)
+        longest = max(model_horizons)
         if model.refresh is not None:
             model.refresh(session)
         games = session.scalars(
@@ -215,7 +220,7 @@ def snapshot(
             )
         ).all()
         for game in games:
-            h = due_horizon(game.commence_time, now, horizons)
+            h = due_horizon(game.commence_time, now, model_horizons)
             if h is None:
                 continue
             exists = session.scalar(

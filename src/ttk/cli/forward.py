@@ -298,7 +298,7 @@ def register(sub: Any) -> None:
         "lab", help="Performance Lab: thresholds, calibration and weekly drift (forward tests)"
     )
     lab.add_argument("--model", help='"name version", as `ttk forward-report` prints it')
-    lab.add_argument("--horizon", type=int, choices=[24, 1])
+    lab.add_argument("--horizon", type=int, choices=[168, 24, 1])
 
 
 HANDLERS: dict[str, Handler] = {

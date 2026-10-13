@@ -35,6 +35,7 @@ Everything buildable without new data or decisions is built. What remains waits 
 **Waiting on games** (forward tests; a z against the market is shown at 30 decided games per horizon):
 
 - NFL spread: about 15 decided games per horizon now; 30 around Oct 19.
+- NFL opener model (`nfl-spread-key-epa-opener`): one snapshot per game, about 14 a week; 30 decided games around early November.
 - NFL totals and wind: from Sunday Oct 11, outdoor games only (about 9 a week); 30 decided games per horizon around early November.
 - College football spreads: the first full Saturday under forward test is Oct 10.
 - NBA spreads and NBA player props: from the Oct 20 opener. NBA totals about Nov 1 (both teams need 5 games).
@@ -50,7 +51,7 @@ Everything buildable without new data or decisions is built. What remains waits 
 
 **College football and wind (measured 2026-10-12):** an effect in 2015–2022 that is gone in 2023–2024; not adopted (docs/MODELS.md).
 
-**NFL early lines (2023–2024, measured 2026-10-13):** where the model disagrees with the opener by 3+ points, the line moves its way by about half a point by kickoff; the records are within noise of break-even. A lead for an opener-time forward snapshot (docs/MODELS.md).
+**NFL early lines (2023–2024, measured 2026-10-13):** where the model disagrees with the opener by 3+ points, the line moves its way by about half a point by kickoff; the records are within noise of break-even. Under forward test since 2026-10-13 as `nfl-spread-key-epa-opener` (snapshot at first sight of the line, judged by closing-line value; docs/MODELS.md).
 
 **NFL injury reports (measured 2026-10-12):** the closing line already prices the final report (about 80% of its effect; the rest is noise), so no injury feature against the close. The open question is timing: whether bets placed right after a report beat the close, measured by `ttk injury-moves` (first look 2026-10-12, 401 events: no move after the news, ±0.03 points; quarterbacks too few). Rerun weekly (docs/MODELS.md).
 

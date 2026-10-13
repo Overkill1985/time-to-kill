@@ -334,10 +334,60 @@ class InjuryState:
         )
 
 
-def _nfl_model(session: Session) -> ForwardModel | None:
+NFL_OPENER_NAME = "nfl-spread-key-epa-opener"
+NFL_OPENER_VERSION = "0.1.0"
+OPENER_HOURS = 168
+"""The opener model's one horizon: its first snapshot is the first pass with a
+fresh line within 7 days of kickoff (NFL lines appear about a week ahead)."""
+
+
+def _nfl_models(session: Session) -> list[ForwardModel]:
     nfl = NflSpreadPredictor.build(session)
     if nfl is None:
-        return None
+        return []
+    return [_nfl_model(session, nfl), _nfl_opener_model(session, nfl)]
+
+
+def _nfl_opener_model(session: Session, nfl: NflSpreadPredictor) -> ForwardModel:
+    """research/nfl_opener: where the model disagrees with the opener, does the
+    line move its way? Judged by closing-line value of its first snapshot."""
+    row = register(
+        session,
+        name=NFL_OPENER_NAME,
+        version=NFL_OPENER_VERSION,
+        sport=Sport.NFL,
+        algorithm="key-number EPA model, no QB-change term",
+        features=["elo_diff", "epa_net_diff_pts"],
+        artifact=None,
+        training_window="2002-2017",
+        validation_window="2018-2021",
+        log_loss=None,
+        brier=None,
+    )
+
+    def view(
+        game_id: int, home_line: float, market: float, at: datetime, horizon: int
+    ) -> ModelView | None:
+        v = nfl.opener_spread(game_id, home_line)
+        if v is None:
+            return None
+        return ModelView(
+            v.home_cover,
+            v.push,
+            v.expected_margin,
+            {
+                "elo_diff": v.elo_diff,
+                "epa_net_diff_pts": v.features.epa_net_diff_pts,
+                "disagreement_pts": v.expected_margin + home_line,
+            },
+        )
+
+    return ForwardModel(
+        row, Sport.NFL, view, _latest_final(session, Sport.NFL), horizons=(OPENER_HOURS,)
+    )
+
+
+def _nfl_model(session: Session, nfl: NflSpreadPredictor) -> ForwardModel:
     row = nfl.ensure_registered(session)
 
     def nfl_view(
@@ -474,9 +524,7 @@ def build_forward_models(
     venues and Open-Meteo)."""
     models: list[ForwardModel] = []
     if sports is None or Sport.NFL in sports:
-        nfl = _nfl_model(session)
-        if nfl is not None:
-            models.append(nfl)
+        models.extend(_nfl_models(session))
     frozen = session.scalars(
         select(ModelVersion).where(ModelVersion.artifact.is_not(None)).order_by(ModelVersion.id)
     ).all()

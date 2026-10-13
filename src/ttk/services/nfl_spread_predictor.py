@@ -9,7 +9,7 @@ the latest completed game, so upcoming games use everything played so far.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from numpy.typing import NDArray
@@ -122,6 +122,20 @@ class NflSpreadPredictor:
         push = self._features.key.spread_at_mean(home_line, mu).push
         home_cover = self._anchored.home_cover_probability(market_home_cover, mu + home_line)
         return SpreadView(home_cover, push, mu, f, p.elo_diff)
+
+    def opener_spread(self, game_id: int, home_line: float) -> SpreadView | None:
+        """The standalone key-number feature model without the quarterback-change
+        term (starters are known at kickoff, not when the opener is posted;
+        research/nfl_opener). Not anchored to the market: at the opener, the
+        question is whether the line moves toward the model."""
+        p = self._predictions.get(game_id)
+        f = self.report.models.game_features.get(game_id)
+        if p is None or f is None:
+            return None
+        no_qb = replace(f, qb_change_diff_pts=0.0)
+        mu = self._features.expected_margin(p, no_qb)
+        s = self._features.key.spread_at_mean(home_line, mu)
+        return SpreadView(s.home_cover_excluding_push, s.push, mu, no_qb, p.elo_diff)
 
     def _center_for(self, home_line: float, target: float) -> float:
         """The expected margin at which P(home covers | no push) at ``home_line``

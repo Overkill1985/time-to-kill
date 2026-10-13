@@ -192,3 +192,48 @@ def test_closing_snapshot_matches_closing_line_value(
             assert snap.points_gained(side, line) == old.points_gained
         assert snap.price_clv(Selection.HOME, -3.5, -105) is None
         assert snap.points_gained(Selection.HOME, -3.5) == pytest.approx(1.0)
+
+
+def test_a_model_with_its_own_long_horizon_is_snapshot_at_first_sight(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from dataclasses import replace
+
+    now = KICK - timedelta(hours=100)  # outside 24 h, inside a week
+    odds(session_factory, now - timedelta(minutes=5))
+    with session_factory() as s:
+        default = model(s)
+        opener = replace(default, horizons=(168,))
+        stats = snapshot(s, [default], now=now)
+        assert stats.written == 0  # the default horizons (24, 1) aren't due yet
+        stats = snapshot(s, [opener], now=now)
+        s.commit()
+        assert stats.written == 1
+        fp = s.scalars(select(ForwardPrediction)).one()
+        assert fp.horizon_hours == 168
+        # Once only: later passes inside the week add nothing for this horizon.
+        assert snapshot(s, [opener], now=now + timedelta(hours=1)).written == 0
+
+
+def test_registering_without_an_artifact_stores_sql_null(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.db.models import ModelVersion
+
+    with session_factory() as s:
+        register(
+            s,
+            name="nfl-spread-test-opener",
+            version="1",
+            sport=Sport.NFL,
+            algorithm="test",
+            features=["x"],
+            artifact=None,
+            training_window="2002-2017",
+            validation_window="2018-2021",
+            log_loss=None,
+            brier=None,
+        )
+        s.commit()
+        frozen = s.scalars(select(ModelVersion).where(ModelVersion.artifact.is_not(None))).all()
+        assert frozen == []

@@ -450,7 +450,9 @@ class ModelVersion(Base):
     health: Mapped[str] = mapped_column(String(20), default="HEALTHY")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     deployed_at: Mapped[datetime | None]
-    artifact: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # none_as_null: no artifact is SQL NULL (not JSON null), so `artifact IS NOT NULL`
+    # finds exactly the frozen models.
+    artifact: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     """Frozen fitted parameters (forward tests use exactly these; see
     services/forward_test.py). A changed model is a new version."""
 

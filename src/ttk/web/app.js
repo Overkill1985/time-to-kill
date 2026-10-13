@@ -90,6 +90,7 @@ function modelName(raw) {
     : name.endsWith("injury") ? "lineups and injury report"
     : name.endsWith("eff") ? "efficiency"
     : name.endsWith("wind") ? "market total and forecast wind"
+    : name.endsWith("opener") ? "EPA, at the opening line"
     : name.endsWith("pace") ? "pace and efficiency" : "";
   return { title: `${s} ${market}`, detail: [flavor, inputs].filter(Boolean).join(", ") };
 }
@@ -109,7 +110,7 @@ const TERMS = {
   vsmarket: ["Compared with the market", "How much worse (+) or better (−) the model's probabilities were than the closing market's, game by game (paired log loss)."],
   z: ["z-score", "How many standard errors the model is from the market. Within about ±2 is noise; below −2 would mean genuinely better than the market."],
   decided: ["Decided games", "Finished games that didn't push. A model needs 30 at each timing before its score is shown."],
-  timing: ["Timing", "When the prediction was recorded: 24 hours or 1 hour before kickoff."],
+  timing: ["Timing", "When the prediction was recorded: 24 hours or 1 hour before kickoff, or (168 h) the first time the line was seen, up to a week ahead."],
   kelly: ["Kelly fraction", "Kelly is the stake that grows a bankroll fastest if the edge is real. Betting a quarter of it (0.25) cuts the swings a lot for a small cost."],
   drawdown: ["Drop from the peak", "How far the bankroll is below its best point. New bets pause after the drop you set."],
   roi: ["Return", "Profit divided by the total staked."],
