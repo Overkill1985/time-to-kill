@@ -39,7 +39,7 @@ Everything buildable without new data or decisions is built. What remains waits 
 - NFL totals and wind: from Sunday Oct 11, outdoor games only (about 9 a week); 30 decided games per horizon around early November.
 - College football spreads: the first full Saturday under forward test is Oct 10.
 - NBA spreads and NBA player props: from the Oct 20 opener (spreads at 24 h and 1 h, plus `nba-spread-key-lineup-prev-opener` at the first line within 48 h). NBA totals about Nov 1 (both teams need 5 games).
-- College basketball spreads and moneylines: opening week in early November. Totals mid-November (the same 5-game rule).
+- College basketball spreads and moneylines: opening week in early November (plus `ncaab-spread-key-eff-opener` at the first line within 48 h). Totals mid-November (the same 5-game rule).
 - NFL player props: collected since 2026-10-07 (24 h and 1 h before kickoff). No prop model until there is history to validate on.
 
 **Open decisions:**

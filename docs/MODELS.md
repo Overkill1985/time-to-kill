@@ -638,3 +638,5 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **Timing:** NBA spreads usually first appear 18–45 h before tip (preseason, 2026-10); opening-week games were posted weeks ahead, so those are snapshot at 48 h.
 - **Early season:** the model starts the season on regressed Elo and last season's absences, and can't see summer roster changes; large opening-week disagreements (one of −6.7 points in a dry run) are partly that.
 - `register_opener` refuses anchored models and models with inputs known only near tip-off (the injury substitution).
+
+**College basketball (2026-10-14):** `ncaab-spread-key-eff-opener 1`, the same kind of test for the frozen adjusted-efficiency key model, whose picks at the 2023–24 openers moved toward the close by +0.11 points (n=3,579), more than any other college basketball model; its home lean is about zero since 2024. 48 h horizon; the season starts in early November. **College football gets none:** its lines moved away from every standalone model's side at the opener (−0.05 to −0.16 points).
