@@ -19,6 +19,11 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+/** replaceChildren, skipping null/undefined/false (optional parts of a card). */
+function fill(node, ...children) {
+  node.replaceChildren(...children.filter((c) => c !== null && c !== undefined && c !== false));
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -96,6 +101,18 @@ function modelName(raw) {
     : name.endsWith("pace") ? "pace and efficiency" : "";
   const timing = opener ? "at the opening line" : "";
   return { title: `${s} ${market}`, detail: [flavor, inputs, timing].filter(Boolean).join(", ") };
+}
+
+/** modelName for each of ``raws``, with the version added where two would read the same. */
+function modelNames(raws) {
+  const names = new Map(raws.map((r) => [r, modelName(r)]));
+  const seen = new Map();
+  for (const n of names.values()) seen.set(`${n.title}|${n.detail}`, (seen.get(`${n.title}|${n.detail}`) || 0) + 1);
+  for (const [raw, n] of names) {
+    const version = String(raw).replace(/\s*\(.*\)$/, "").split(" ").pop();
+    if (seen.get(`${n.title}|${n.detail}`) > 1) n.detail = [n.detail, `v${version}`].filter(Boolean).join(", ");
+  }
+  return names;
 }
 
 // ------------------------------------------------------------------ glossary
@@ -271,7 +288,7 @@ function renderHome(s) {
 
   // Collection
   const col = $("#home-collection");
-  col.replaceChildren(
+  fill(col,
     el("h2", { text: "Data collection" }),
     el("div", { class: `status-line ${fresh ? "good" : "bad"}` }, el("span", { class: "dot" }),
       el("span", { text: fresh ? "Collecting odds" : "Odds collection has stopped" })),
@@ -285,7 +302,7 @@ function renderHome(s) {
   // Bankroll
   const b = s.bankroll;
   const bank = $("#home-bankroll");
-  bank.replaceChildren(
+  fill(bank,
     el("h2", { text: "Your bankroll" }),
     ...(b.configured
       ? [el("div", {}, el("div", { class: "big-number", text: money(b.balance) }),
@@ -298,7 +315,8 @@ function renderHome(s) {
 
   // Models
   $("#home-min-decided").textContent = String(s.min_decided);
-  $("#home-model-list").replaceChildren(...sortModels(s.models).map((m) => progressRow(m, s)));
+  const names = modelNames(s.models.map((m) => m.model));
+  $("#home-model-list").replaceChildren(...sortModels(s.models).map((m) => progressRow(m, s, names)));
 }
 
 function nextKickoffText(upcoming) {
@@ -322,8 +340,8 @@ const SPORT_ORDER = ["NFL", "CFB", "NBA", "NCAAB"];
 const sortModels = (models) => [...models].sort((a, b) =>
   SPORT_ORDER.indexOf(a.sport) - SPORT_ORDER.indexOf(b.sport) || b.decided - a.decided || a.model.localeCompare(b.model));
 
-function progressRow(m, s) {
-  const n = modelName(m.model);
+function progressRow(m, s, names) {
+  const n = names.get(m.model) || modelName(m.model);
   const state = modelState(m, s);
   const share = Math.min(1, m.decided / s.min_decided);
   return el("div", { class: "progress-row" },
@@ -1312,8 +1330,9 @@ function renderModels() {
   if (!modelData) return;
   const { status, forward } = modelData;
   const models = sortModels(status.models).filter((m) => !modelSport || m.sport === modelSport);
+  const names = modelNames(status.models.map((m) => m.model));
   $("#model-cards").replaceChildren(...models.map((m) => {
-    const n = modelName(m.model);
+    const n = names.get(m.model);
     const state = modelState(m, status);
     const share = Math.min(1, m.decided / status.min_decided);
     const scores = forward.scores.filter((s) => s.model === m.model);
