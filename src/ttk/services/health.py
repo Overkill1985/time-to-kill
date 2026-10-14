@@ -153,9 +153,16 @@ def summary(
         if not s["decided"]:
             continue
         z = f"z {s['z']:+.1f}" if s["z"] is not None else f"z needs {s['min_decided_for_z']} games"
+        clv = []
+        if s["price_clv"] is not None:
+            clv.append(f"price CLV {s['price_clv']:+.1%} (n={s['price_clv_n']})")
+        if s["points_vs_close"] is not None:
+            clv.append(f"{s['points_vs_close']:+.2f} points vs close (n={s['points_n']})")
         lines.append(
             f"  - {s['model']} at {s['horizon_hours']} h: {s['decided']} decided, log loss "
-            f"{s['model_log_loss']:.4f} vs market {s['market_log_loss']:.4f} ({z})."
+            f"{s['model_log_loss']:.4f} vs market {s['market_log_loss']:.4f} ({z})"
+            + (f"; {', '.join(clv)}" if clv else "")
+            + "."
         )
     upcoming = session.scalar(
         select(func.count(func.distinct(ForwardPrediction.game_id)))

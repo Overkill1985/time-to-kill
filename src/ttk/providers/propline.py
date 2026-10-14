@@ -15,6 +15,7 @@ request each).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -49,20 +50,33 @@ class PropLineProvider:
         *,
         markets: str = "h2h,spreads,totals",
         client: httpx.Client | None = None,
+        retry_wait: float = 5.0,
     ) -> None:
         if not api_key:
             raise ValueError("PropLine needs an API key (TTK_PROPLINE_API_KEY)")
         self._markets = markets
-        self._client = client or httpx.Client(base_url=BASE_URL, timeout=30.0)
+        # 60 s: a Saturday college football poll (~85,000 quotes) timed out at 30 s
+        # about once a day (2026-10-07 to 10-14).
+        self._client = client or httpx.Client(base_url=BASE_URL, timeout=60.0)
+        self._retry_wait = retry_wait
         self._headers = {"X-API-Key": api_key}
         self.daily_remaining: int | None = None
 
     def _get(self, path: str, params: dict[str, str] | None, what: str) -> Any:
-        """One request: records the daily balance, raises on rate limits and errors."""
-        try:
-            response = self._client.get(path, params=params, headers=self._headers)
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"{self.name}: request failed ({type(exc).__name__})") from None
+        """One request (retried once on a timeout, a dropped connection or a 5xx):
+        records the daily balance, raises on rate limits and errors."""
+        for attempt in (1, 2):
+            try:
+                response = self._client.get(path, params=params, headers=self._headers)
+            except httpx.TransportError as exc:
+                if attempt == 2:
+                    raise ProviderError(
+                        f"{self.name}: request failed ({type(exc).__name__})"
+                    ) from None
+            else:
+                if response.status_code not in (500, 502, 504) or attempt == 2:
+                    break
+            time.sleep(self._retry_wait)
         remaining = response.headers.get("X-Daily-Remaining")
         if remaining is not None and remaining.isdigit():
             self.daily_remaining = int(remaining)

@@ -18,6 +18,7 @@ from ttk.providers.base import (
     NormalizedGame,
     NormalizedOddsQuote,
     OddsFetch,
+    ProviderError,
     ScheduleFetch,
     TeamRef,
 )
@@ -35,7 +36,9 @@ SECRET = "propline-test-key-not-real"
 
 
 def _propline(handler: httpx.MockTransport) -> PropLineProvider:
-    return PropLineProvider(SECRET, client=httpx.Client(base_url=BASE_URL, transport=handler))
+    return PropLineProvider(
+        SECRET, client=httpx.Client(base_url=BASE_URL, transport=handler), retry_wait=0.0
+    )
 
 
 def test_propline_sends_key_in_header_and_parses_real_payload() -> None:
@@ -317,3 +320,27 @@ def test_empty_short_schedule_does_not_idle_a_wide_window_sport(
     with session_factory() as s:
         poll_now, _ = sports_to_poll(s, [Sport.NBA], datetime.now(UTC))
     assert poll_now == [Sport.NBA]  # bootstraps rather than going quiet
+
+
+def test_propline_retries_once_on_timeouts_and_server_errors_only() -> None:
+    calls: list[int] = []
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(200, json=[])
+
+    assert _propline(httpx.MockTransport(flaky)).fetch_odds(Sport.NFL).games == []
+    assert len(calls) == 2
+
+    for status, expected_calls in ((500, 2), (400, 1)):
+        calls.clear()
+
+        def failing(request: httpx.Request, status: int = status) -> httpx.Response:
+            calls.append(1)
+            return httpx.Response(status)
+
+        with pytest.raises(ProviderError, match=f"HTTP {status}"):
+            _propline(httpx.MockTransport(failing)).fetch_odds(Sport.NFL)
+        assert len(calls) == expected_calls
