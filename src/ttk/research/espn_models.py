@@ -210,7 +210,16 @@ def load_sport(session: Session, config: SportConfig) -> SportData:
         "espn": defaultdict(list),
         "espn-open": defaultdict(list),
     }
-    for line in session.scalars(select(ReportedLine).where(ReportedLine.provider.like("espn%"))):
+    # This sport's lines only: reading every sport's (about a million rows) made each
+    # card model build several times slower (2026-10-14).
+    sport_lines = (
+        select(ReportedLine)
+        .join(Game, Game.id == ReportedLine.game_id)
+        .where(ReportedLine.provider.like("espn%"), Game.sport == config.sport)
+        # Row order breaks ties in _representative; id order is the order stored.
+        .order_by(ReportedLine.id)
+    )
+    for line in session.scalars(sport_lines):
         kind, _, book = line.provider.partition(":")
         if kind in by_game and is_market(book):  # rows stored before a book was excluded
             by_game[kind][line.game_id].append(line)
