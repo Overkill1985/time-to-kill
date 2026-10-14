@@ -616,3 +616,17 @@ All games, EPA without QB: +0.16 points (se 0.09), 231-229-16 (−4.0%).
 The market's home field fell after 2018; the model, fitted on 2002–2017, didn't. In the 2023–2024 opener study, lines also drifted toward home (+0.17 points on average) and the raw model picked home in 106 of its 135 bets at 3+ points, so part of its +0.46 was the lean riding that drift. With the mean disagreement removed: +0.08 points on every game (se 0.09), **+0.36 at 2+ points (se 0.14, 191 bets, 96 home)**, +0.28 at 3+ (se 0.19, 109). Smaller, still a lead.
 
 **`nfl-spread-key-epa-opener 0.2.0`** (2026-10-13) subtracts the lean walk-forward: the model's mean gap from the closing line over the latest 500 finished non-neutral games (`home_lean`; 1.12 points at launch). 0.1.0 (14 Week 7 snapshots) stays in the record and is scored, but takes no new snapshots.
+
+### Home lean in the other frozen models (measured 2026-10-13)
+
+Each frozen key-number model's expected home margin minus the ESPN closing line, non-neutral games (se about 0.1–0.2 per season):
+
+| Model | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 so far |
+|---|---|---|---|---|---|---|
+| `cfb-spread-key-inseason` (train 2015–2022) | +1.15 | +0.47 | +0.71 | +1.05 | +1.27 | −0.60 |
+| `nba-spread-key-lineup-prev` (train 2019–2022) | +0.71 | −0.50 | −0.87 | −0.61 | −0.09 | +0.00 |
+| `ncaab-spread-key-eff` (train 2017–2022) | +1.07 | +0.47 | +0.29 | +0.15 | −0.03 | +0.04 |
+
+- **College football** leans about a point toward the home team since 2023, like the NFL model. But college home teams beat the closing line in those seasons (actual minus market home margin: +0.20, +0.93, +0.42), so the lean has not cost it yet. The 2026 figure is pulled by early-season FCS games.
+- **NBA** leans slightly toward the away team in its validation seasons, about zero since. **College basketball:** negligible.
+- These models are frozen and under forward test; nothing is changed. The NFL opener model is the only one recentered (0.2.0), because its test is about disagreement with the line, which a constant lean inflates.
