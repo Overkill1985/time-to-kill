@@ -102,7 +102,7 @@ src/ttk/
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
                        - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check, injury-moves, backtest-nfl-opener
-                       - forward.py: forward-freeze(-ml/-totals/-nfl-wind), forward-snapshot/run/report, lab
+                       - forward.py: forward-freeze(-ml/-totals/-nfl-wind/-opener), forward-snapshot/run/report, lab
                        - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.

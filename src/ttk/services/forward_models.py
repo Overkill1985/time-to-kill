@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -343,6 +343,35 @@ OPENER_HOURS = 168
 fresh line within 7 days of kickoff (NFL lines appear about a week ahead)."""
 
 
+def register_opener(session: Session, base_name: str, hours: int) -> ModelVersion:
+    """``<base>-opener``: a frozen spread model's exact artifact, plus
+    ``opener_hours``: snapshot once per game, the first pass with a fresh line
+    within ``hours`` of tip (research: the key-number models' picks at the opener
+    moved toward the close, docs/MODELS.md "Betting the opener")."""
+    base = session.scalar(
+        select(ModelVersion).where(ModelVersion.name == base_name).order_by(ModelVersion.id.desc())
+    )
+    if base is None or not base.artifact:
+        raise ValueError(f"no frozen model named {base_name}")
+    if base.artifact.get("market", "SPREAD") != "SPREAD" or base.artifact.get("variant") != "key":
+        raise ValueError("an opener model is a key-number spread model (not anchored to the line)")
+    if base.artifact.get("live_substitution"):
+        raise ValueError("an opener model can't use inputs known only near tip-off")
+    return register(
+        session,
+        name=f"{base_name}-opener",
+        version=base.version,
+        sport=Sport(base.sport),
+        algorithm=f"{base.algorithm}, at the opener"[:50],
+        features=list(base.features or []),
+        artifact={**base.artifact, "opener_hours": hours},
+        training_window=base.training_window or "",
+        validation_window=base.validation_window or "",
+        log_loss=base.log_loss,
+        brier=base.brier_score,
+    )
+
+
 def _nfl_models(session: Session) -> list[ForwardModel]:
     nfl = NflSpreadPredictor.build(session)
     if nfl is None:
@@ -559,7 +588,9 @@ def build_forward_models(
                     team_games = load_team_games(session, str(sport))
                 models.append(_frozen_totals_model(row, data, team_games, as_of))
             else:
-                models.append(_frozen_model(row, data, as_of, injuries))
+                spread = _frozen_model(row, data, as_of, injuries)
+                opener = (row.artifact or {}).get("opener_hours")
+                models.append(replace(spread, horizons=(int(opener),)) if opener else spread)
     return models
 
 

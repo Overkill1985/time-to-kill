@@ -67,6 +67,17 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             f"(error {v.rmse:.2f} vs closing total {v.market_rmse:.2f})"
         )
         return 0
+    if args.command == "forward-freeze-opener":
+        from ttk.services.forward_models import register_opener
+
+        with factory() as session:
+            row = register_opener(session, args.model, args.hours)
+            session.commit()
+        print(
+            f"registered {row.name} {row.version} (DEVELOPMENT): snapshot once per game, the "
+            f"first fresh line within {args.hours} h of tip"
+        )
+        return 0
     if args.command == "forward-freeze-nfl-wind":
         from ttk.providers.nflverse import NflverseProvider
         from ttk.services.forward_models import freeze_nfl_wind_and_register
@@ -252,6 +263,12 @@ def register(sub: Any) -> None:
     fwd_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
+    fwd_opener = sub.add_parser(
+        "forward-freeze-opener",
+        help="Register <model>-opener: a frozen key-number spread model snapshot at the opener",
+    )
+    fwd_opener.add_argument("--model", required=True, help="e.g. nba-spread-key-lineup-prev")
+    fwd_opener.add_argument("--hours", type=int, default=48)
     sub.add_parser(
         "forward-freeze-nfl-wind",
         help="Fit, freeze and register the NFL totals wind model (downloads nflverse games.csv)",
@@ -305,6 +322,7 @@ HANDLERS: dict[str, Handler] = {
     "forward-freeze": _forward,
     "forward-freeze-ml": _forward,
     "forward-freeze-nfl-wind": _forward,
+    "forward-freeze-opener": _forward,
     "forward-freeze-totals": _forward,
     "forward-snapshot": _forward,
     "forward-run": _forward,

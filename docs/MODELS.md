@@ -630,3 +630,11 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **College football** leans about a point toward the home team since 2023, like the NFL model. But college home teams beat the closing line in those seasons (actual minus market home margin: +0.20, +0.93, +0.42), so the lean has not cost it yet. The 2026 figure is pulled by early-season FCS games.
 - **NBA** leans slightly toward the away team in its validation seasons, about zero since. **College basketball:** negligible.
 - These models are frozen and under forward test; nothing is changed. The NFL opener model is the only one recentered (0.2.0), because its test is about disagreement with the line, which a constant lean inflates.
+
+### NBA opener forward test (built 2026-10-14)
+
+`nba-spread-key-lineup-prev-opener 1`, DEVELOPMENT (`ttk forward-freeze-opener --model nba-spread-key-lineup-prev --hours 48`). The frozen `nba-spread-key-lineup-prev` artifact unchanged (the key-number model whose picks at the 2023–24 openers moved toward the close: +0.31 points, n=847; "Betting the opener" above), snapshot once per game: the first forward pass with a fresh line within 48 h of tip. Its inputs (Elo, rest, the previous game's absences) are all known when the opener is posted. No home-lean correction: this model's lean is about zero since 2025 (table above).
+
+- **Timing:** NBA spreads usually first appear 18–45 h before tip (preseason, 2026-10); opening-week games were posted weeks ahead, so those are snapshot at 48 h.
+- **Early season:** the model starts the season on regressed Elo and last season's absences, and can't see summer roster changes; large opening-week disagreements (one of −6.7 points in a dry run) are partly that.
+- `register_opener` refuses anchored models and models with inputs known only near tip-off (the injury substitution).

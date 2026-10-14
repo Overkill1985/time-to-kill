@@ -77,7 +77,9 @@ const MARKET_NAMES = { SPREAD: "Spread", MONEYLINE: "Moneyline", TOTAL: "Total" 
 
 /** A registry name like "ncaab-ml-spread-implied-eff 1" in plain words. */
 function modelName(raw) {
-  const name = String(raw).replace(/\s*\(.*\)$/, "").replace(/ [^ ]+$/, "");
+  const full = String(raw).replace(/\s*\(.*\)$/, "").replace(/ [^ ]+$/, "");
+  const opener = full.endsWith("-opener");
+  const name = opener ? full.slice(0, -"-opener".length) : full;
   const [sport] = name.split("-");
   const s = sportName(sport.toUpperCase());
   const flavor = name.includes("anchored") ? "market-anchored"
@@ -90,9 +92,10 @@ function modelName(raw) {
     : name.endsWith("injury") ? "lineups and injury report"
     : name.endsWith("eff") ? "efficiency"
     : name.endsWith("wind") ? "market total and forecast wind"
-    : name.endsWith("opener") ? "EPA, at the opening line"
+    : name.endsWith("epa") ? "EPA"
     : name.endsWith("pace") ? "pace and efficiency" : "";
-  return { title: `${s} ${market}`, detail: [flavor, inputs].filter(Boolean).join(", ") };
+  const timing = opener ? "at the opening line" : "";
+  return { title: `${s} ${market}`, detail: [flavor, inputs, timing].filter(Boolean).join(", ") };
 }
 
 // ------------------------------------------------------------------ glossary

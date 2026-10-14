@@ -237,3 +237,39 @@ def test_registering_without_an_artifact_stores_sql_null(
         s.commit()
         frozen = s.scalars(select(ModelVersion).where(ModelVersion.artifact.is_not(None))).all()
         assert frozen == []
+
+
+def test_register_opener_copies_a_key_spread_artifact_with_its_horizon(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.forward_models import register_opener
+
+    def base(name: str, artifact: dict[str, object]) -> None:
+        register(
+            s,
+            name=name,
+            version="1",
+            sport=Sport.NBA,
+            algorithm="test",
+            features=["x"],
+            artifact=artifact,
+            training_window="2019-2022",
+            validation_window="2023-2024",
+            log_loss=None,
+            brier=None,
+        )
+
+    with session_factory() as s:
+        base("nba-spread-key-test", {"artifact_version": 1, "variant": "key"})
+        base("nba-spread-anchored-test", {"artifact_version": 1, "variant": "anchored"})
+        base(
+            "nba-spread-key-injury-test",
+            {"artifact_version": 1, "variant": "key", "live_substitution": {"x": "y"}},
+        )
+        row = register_opener(s, "nba-spread-key-test", 48)
+        assert (row.name, row.version) == ("nba-spread-key-test-opener", "1")
+        assert row.artifact == {"artifact_version": 1, "variant": "key", "opener_hours": 48}
+        assert register_opener(s, "nba-spread-key-test", 48).id == row.id  # idempotent
+        for bad in ("nba-spread-anchored-test", "nba-spread-key-injury-test", "missing"):
+            with pytest.raises(ValueError):
+                register_opener(s, bad, 48)
