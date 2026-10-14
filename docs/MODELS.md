@@ -605,3 +605,14 @@ All games, EPA without QB: +0.16 points (se 0.09), 231-229-16 (−4.0%).
 **Verdict:** a lead, not an edge. Where the model disagrees with the opener by 3+ points, the line moves its way by about half a point by kickoff (t ≈ 2.7, but the threshold is one of four). The records are within noise of break-even (55.8% on 129 decided bets, ±4.4 percentage points; 2023 27-14, 2024 45-43). Most of what moves NFL lines between open and close is quarterback news: with the kickoff starter the model "predicts" a full point of movement. The way to test it properly is a forward snapshot at the opener, judged by closing-line value.
 
 **Forward test (built 2026-10-13):** `nfl-spread-key-epa-opener 0.1.0`, DEVELOPMENT. The key-number EPA model without the quarterback-change term (`NflSpreadPredictor.opener_spread`), not anchored to the market, snapshot once per game at a 168 h horizon: the first forward pass with a fresh line within 7 days of kickoff, about when NFL lines are posted. Judged by closing-line value of that snapshot (and results). Week 7 (first pass, 2026-10-13) was taken mid-week, after the lines had been up since Sunday. Watch the home side: the model favored the home team in 11 of its first 14 games. Fitted on 2002–2017, its home field may be larger than today's market prices, which would look like disagreement but carry no information.
+
+**Home lean (measured 2026-10-13):** the EPA model without the QB term, against the nflverse closing line, non-neutral games:
+
+| Seasons | Model minus market, home margin (points) | Market home margin | Actual home margin |
+|---|---|---|---|
+| 2010–2018 | +0.03 to +0.63 | +2.2 to +2.6 | +1.5 to +3.5 |
+| 2019–2025 | +0.89 to +1.58 | +1.2 to +2.0 | +0.1 to +3.0 |
+
+The market's home field fell after 2018; the model, fitted on 2002–2017, didn't. In the 2023–2024 opener study, lines also drifted toward home (+0.17 points on average) and the raw model picked home in 106 of its 135 bets at 3+ points, so part of its +0.46 was the lean riding that drift. With the mean disagreement removed: +0.08 points on every game (se 0.09), **+0.36 at 2+ points (se 0.14, 191 bets, 96 home)**, +0.28 at 3+ (se 0.19, 109). Smaller, still a lead.
+
+**`nfl-spread-key-epa-opener 0.2.0`** (2026-10-13) subtracts the lean walk-forward: the model's mean gap from the closing line over the latest 500 finished non-neutral games (`home_lean`; 1.12 points at launch). 0.1.0 (14 Week 7 snapshots) stays in the record and is scored, but takes no new snapshots.

@@ -335,7 +335,9 @@ class InjuryState:
 
 
 NFL_OPENER_NAME = "nfl-spread-key-epa-opener"
-NFL_OPENER_VERSION = "0.1.0"
+NFL_OPENER_VERSION = "0.2.0"
+"""0.2.0 (2026-10-13): the model's home lean is removed (``home_lean``); 0.1.0
+leaned about a point toward every home team."""
 OPENER_HOURS = 168
 """The opener model's one horizon: its first snapshot is the first pass with a
 fresh line within 7 days of kickoff (NFL lines appear about a week ahead)."""
@@ -356,7 +358,7 @@ def _nfl_opener_model(session: Session, nfl: NflSpreadPredictor) -> ForwardModel
         name=NFL_OPENER_NAME,
         version=NFL_OPENER_VERSION,
         sport=Sport.NFL,
-        algorithm="key-number EPA model, no QB-change term",
+        algorithm="key-number EPA, no QB term, home lean removed",
         features=["elo_diff", "epa_net_diff_pts"],
         artifact=None,
         training_window="2002-2017",
@@ -379,6 +381,7 @@ def _nfl_opener_model(session: Session, nfl: NflSpreadPredictor) -> ForwardModel
                 "elo_diff": v.elo_diff,
                 "epa_net_diff_pts": v.features.epa_net_diff_pts,
                 "disagreement_pts": v.expected_margin + home_line,
+                "home_lean_removed_pts": nfl.opener_lean,
             },
         )
 

@@ -9,6 +9,7 @@ the latest completed game, so upcoming games use everything played so far.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -16,9 +17,9 @@ from numpy.typing import NDArray
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ttk.db.models import ModelVersion
+from ttk.db.models import ModelVersion, ReportedLine
 from ttk.domain import Sport
-from ttk.models.elo import EloPrediction
+from ttk.models.elo import EloGame, EloPrediction
 from ttk.models.nfl_features import GameFeatures
 from ttk.models.simulation import PRESETS, GameSimulation, simulate_game
 from ttk.research.nfl_elo import (
@@ -33,6 +34,36 @@ from ttk.research.nfl_simulation import fit_pairs
 MODEL_NAME = "nfl-spread-market-anchored-features"
 MODEL_VERSION = "0.1.0"
 CANDIDATE = "market_anchored_features"
+
+
+HOME_LEAN_GAMES = 500
+
+
+def home_lean(
+    predictions: Sequence[EloPrediction],
+    games: dict[int, EloGame],
+    lines: dict[int, ReportedLine],
+    margin: Callable[[EloPrediction], float | None],
+    *,
+    last: int = HOME_LEAN_GAMES,
+) -> float:
+    """The model's average expected home margin minus the closing line's, over the
+    ``last`` finished non-neutral games with a reported line (most recent first).
+    Since 2019 the model, fitted on 2002-2017, sits about a point above the
+    market on the home side (the market's home field fell from ~2.5 to ~1.7):
+    a constant lean, not information about the game (docs/MODELS.md)."""
+    gaps: list[float] = []
+    for p in sorted(predictions, key=lambda p: games[p.game_id].commence_time, reverse=True):
+        g, line = games[p.game_id], lines.get(p.game_id)
+        if not g.played or g.neutral_site or line is None or line.home_spread is None:
+            continue
+        m = margin(p)
+        if m is None:
+            continue
+        gaps.append(m + line.home_spread)
+        if len(gaps) == last:
+            break
+    return sum(gaps) / len(gaps) if gaps else 0.0
 
 
 @dataclass(frozen=True)
@@ -52,8 +83,11 @@ class NflSpreadPredictor:
         predictions: dict[int, EloPrediction],
         starters: dict[tuple[int, int], str],
         pairs: NDArray[np.float64] | None = None,
+        opener_lean: float = 0.0,
     ) -> None:
         self.report = report
+        self.opener_lean = opener_lean
+        """``home_lean`` of the opener model (no QB term), subtracted from its margin."""
         self._predictions = predictions
         self.starters = starters
         self.pairs = pairs
@@ -75,7 +109,9 @@ class NflSpreadPredictor:
         ordered = report.tuned.run(games)
         by_id = {g.game_id: g for g in games}
         pairs = fit_pairs(ordered, by_id, lines, report.models, DEFAULT_SPLITS.train)
-        return cls(report, {p.game_id: p for p in ordered}, inputs.starters, pairs)
+        predictor = cls(report, {p.game_id: p for p in ordered}, inputs.starters, pairs)
+        predictor.opener_lean = home_lean(ordered, by_id, lines, predictor.opener_margin)
+        return predictor
 
     def simulate(
         self,
@@ -123,18 +159,27 @@ class NflSpreadPredictor:
         home_cover = self._anchored.home_cover_probability(market_home_cover, mu + home_line)
         return SpreadView(home_cover, push, mu, f, p.elo_diff)
 
+    def opener_margin(self, p: EloPrediction) -> float | None:
+        """Expected home margin without the quarterback-change term (starters are
+        known at kickoff, not when the opener is posted; research/nfl_opener)."""
+        f = self.report.models.game_features.get(p.game_id)
+        if f is None:
+            return None
+        return self._features.expected_margin(p, replace(f, qb_change_diff_pts=0.0))
+
     def opener_spread(self, game_id: int, home_line: float) -> SpreadView | None:
         """The standalone key-number feature model without the quarterback-change
-        term (starters are known at kickoff, not when the opener is posted;
-        research/nfl_opener). Not anchored to the market: at the opener, the
-        question is whether the line moves toward the model."""
+        term, its home lean removed (``opener_lean``). Not anchored to the market:
+        at the opener, the question is whether the line moves toward the model."""
         p = self._predictions.get(game_id)
         f = self.report.models.game_features.get(game_id)
         if p is None or f is None:
             return None
-        no_qb = replace(f, qb_change_diff_pts=0.0)
-        mu = self._features.expected_margin(p, no_qb)
+        raw = self.opener_margin(p)
+        assert raw is not None
+        mu = raw - self.opener_lean
         s = self._features.key.spread_at_mean(home_line, mu)
+        no_qb = replace(f, qb_change_diff_pts=0.0)
         return SpreadView(s.home_cover_excluding_push, s.push, mu, no_qb, p.elo_diff)
 
     def _center_for(self, home_line: float, target: float) -> float:
