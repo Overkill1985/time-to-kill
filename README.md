@@ -11,7 +11,9 @@ quality, and it is comfortable reporting **no qualified bets today**.
 ## Setup
 
 ```bash
-python -m venv .venv
+py -3.15 -m venv .venv
+# PyYAML has no Python 3.15 wheel yet; this installs its pure-Python build (no C compiler needed).
+# PowerShell: $env:PYYAML_FORCE_LIBYAML = "0"   bash: export PYYAML_FORCE_LIBYAML=0
 .venv/Scripts/python -m pip install -e ".[dev]"   # Windows; use .venv/bin on macOS/Linux
 cp .env.example .env                               # add TTK_ODDS_API_KEY if you have one
 .venv/Scripts/ttk migrate

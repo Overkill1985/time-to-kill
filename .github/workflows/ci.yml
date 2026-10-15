@@ -15,8 +15,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
+      # PyYAML (via uvicorn[standard]) has no 3.15 wheel yet: install its pure-Python build.
       - run: python -m pip install -e ".[dev]"
+        env:
+          PYYAML_FORCE_LIBYAML: "0"
       - run: ruff check src tests migrations
       - run: ruff format --check src tests migrations
       - run: mypy
