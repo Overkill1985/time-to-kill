@@ -84,6 +84,7 @@ src/ttk/
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
     player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, and the player's hit rate on it
     nfl_player_stats.py NFL player game stats from nflverse (stats_player_week), re-imports update
+    prop_pricing.py    Prop parlay legs: book price and market no-vig chance from the latest props pull; grading from player stats
     weather_history.py Archive weather at past college kickoffs (CFBD venues + Open-Meteo archive), resumable, research only
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
@@ -110,6 +111,7 @@ migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0019: bets.player, prop_market, actual_value (player-prop parlay legs).
                        - 0018: player_game_stats.fg3m/fg3a; nfl_player_game_stats.
                        - 0017: game_weather (reanalysis weather at past kickoffs; research input).
                        - 0016: weather_forecasts (append-only forecast per game and horizon).
@@ -163,6 +165,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 |---|---|---|
 | GET | `/api/health` | Status + last ingestion run |
 | GET | `/api/status` | Home page: last odds poll, PropLine quota, health alerts, last props pull, every frozen model's forward progress, next games per sport, bankroll |
+| PATCH | `/api/bets/{id}` `{"result": ...}` | Settle a pending player-prop parlay leg by hand (an NFL player with no stat line: inactive, or played without one) |
 | GET | `/api/props?date=` | Player props for a day's NFL/NBA games: main line, market no-vig P(over), best over/under prices, season and last-10 hit rates (description only; no prop model) |
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |

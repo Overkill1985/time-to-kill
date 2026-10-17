@@ -25,7 +25,7 @@ from ttk.db.models import (
     Sportsbook,
     utcnow,
 )
-from ttk.domain import Market, Selection, Sport
+from ttk.domain import GameStatus, Market, Selection, Sport
 from ttk.services.bankroll import (
     BankrollState,
     EntryKind,
@@ -158,6 +158,9 @@ class BetPatch(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     void: bool = False
     """Mark a pending bet VOID (e.g. the book voided it)."""
+    result: Literal["WIN", "LOSS", "PUSH", "VOID"] | None = None
+    """Settle a pending player-prop parlay leg by hand (the stats can't decide it)."""
+    actual_value: float | None = None
 
 
 class BetOut(BaseModel):
@@ -228,6 +231,10 @@ class LegIn(BaseModel):
     selection: Selection
     line: float | None = None
     american_odds: float | None = None
+    player: str | None = Field(default=None, max_length=100)
+    """PLAYER_PROP legs: the player as the props feed names him."""
+    prop: str | None = Field(default=None, max_length=60)
+    """PLAYER_PROP legs: the props market key (e.g. player_pass_yds)."""
 
 
 class ParlayIn(BaseModel):
@@ -299,10 +306,18 @@ def _parlay_out(session: Session, parlay: Parlay) -> dict[str, object]:
         "notes": parlay.notes,
         "legs": [
             {
+                "id": leg.id,
                 "description": leg.description,
                 "american_odds": bm.format_american(leg.american_odds),
                 "result": leg.result,
                 "clv": leg.clv,
+                "market": leg.market,
+                "actual_value": leg.actual_value,
+                "game_final": bool(
+                    leg.game_id
+                    and (g := session.get(Game, leg.game_id)) is not None
+                    and g.status == GameStatus.FINAL
+                ),
             }
             for leg in legs
         ],

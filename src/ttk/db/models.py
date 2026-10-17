@@ -723,6 +723,12 @@ class Bet(Base):
     """Bankroll when the bet was placed (None if no bankroll was set up)."""
     limit_override: Mapped[str | None] = mapped_column(Text)
     """The breached bankroll limits and the user's reason, when placed over a limit."""
+    player: Mapped[str | None] = mapped_column(String(100))
+    """PLAYER_PROP legs: the player, as the props feed names him."""
+    prop_market: Mapped[str | None] = mapped_column(String(60))
+    """PLAYER_PROP legs: the props feed's market key (e.g. player_pass_yds)."""
+    actual_value: Mapped[float | None] = mapped_column(Float)
+    """PLAYER_PROP legs: the player's stat in the game, once graded."""
 
 
 class BankrollEntry(Base):

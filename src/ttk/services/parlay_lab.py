@@ -50,6 +50,7 @@ from ttk.services.line_history import (
 from ttk.services.market import main_lines, side_markets
 from ttk.services.nfl_spread_predictor import SpreadView
 from ttk.services.odds_state import book_timelines
+from ttk.services.prop_pricing import PropResult, grade_prop, prop_label, prop_offer
 
 _RISK_ORDER = {
     CorrelationRisk.LOW: 0,
@@ -94,6 +95,10 @@ class LegInput:
     line: float | None = None
     american_odds: float | None = None
     """Override the book's price (e.g. what you were actually offered)."""
+    player: str | None = None
+    """PLAYER_PROP legs: the player as the props feed names him."""
+    prop: str | None = None
+    """PLAYER_PROP legs: the props feed's market key (e.g. player_pass_yds)."""
 
 
 @dataclass(frozen=True)
@@ -123,6 +128,8 @@ class LegAnalysis:
     ev_per_unit: float
     """This leg as a straight bet at this price."""
     correlation_risk: CorrelationRisk = CorrelationRisk.LOW
+    player: str | None = None
+    prop: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +195,22 @@ def _correlate(a: LegAnalysis, b: LegAnalysis) -> Correlation | None:
     if a.game_id != b.game_id:
         return None
     pair = (a.index, b.index)
+    if Market.PLAYER_PROP in (a.market, b.market):
+        if a.market is b.market and a.player == b.player:
+            if a.prop == b.prop:
+                if a.selection is not b.selection:
+                    raise ParlayError(
+                        f"Legs {a.index + 1} and {b.index + 1} take both sides of one prop"
+                    )
+                return Correlation(pair, CorrelationRisk.HIGH, "two lines of the same prop")
+            return Correlation(
+                pair, CorrelationRisk.HIGH, "two props on the same player move together"
+            )
+        return Correlation(
+            pair,
+            CorrelationRisk.MODERATE,
+            "a player prop and another leg in one game share its game script (not modeled)",
+        )
     if a.market is b.market:
         if a.selection is b.selection:
             return Correlation(
@@ -248,6 +271,77 @@ def _lift(sim: GameSimulation, group: Sequence[LegAnalysis]) -> float:
     return sim.joint(legs).value / each if each > 0 else 1.0
 
 
+def _prop_leg(
+    session: Session,
+    i: int,
+    leg: LegInput,
+    game: Game,
+    book: Sportsbook,
+    home: str,
+    away: str,
+    at: datetime,
+    warnings: list[str],
+) -> LegAnalysis:
+    """A player prop leg: priced from the latest props pull at or before ``at``."""
+    if not leg.player or not leg.prop or leg.line is None:
+        raise ParlayError(f"Leg {i + 1}: a player prop needs the player, the prop and its line")
+    offer = prop_offer(session, game.id, leg.player, leg.prop, leg.selection, leg.line, book.id, at)
+    side = "Over" if leg.selection is Selection.OVER else "Under"
+    description = f"{leg.player} {side} {leg.line:g} {prop_label(leg.prop)}"
+    if leg.american_odds is not None:
+        american, price_source = leg.american_odds, "manual"
+    elif offer is not None and offer.book_price is not None:
+        american, price_source = offer.book_price, "book"
+    else:
+        raise ParlayError(f"Leg {i + 1}: {book.key} does not quote {description}; enter the price")
+    try:
+        decimal = bm.american_to_decimal(american)
+    except ValueError as exc:
+        raise ParlayError(f"Leg {i + 1}: {exc}") from None
+    market_p = None
+    if offer is not None and offer.market_over is not None:
+        market_p = offer.market_over if leg.selection is Selection.OVER else 1 - offer.market_over
+    if market_p is not None:
+        probability, source = market_p, "market"
+    elif offer is not None and offer.book_price is not None and offer.book_other is not None:
+        probability = bm.no_vig_probabilities(
+            [bm.american_to_decimal(offer.book_price), bm.american_to_decimal(offer.book_other)]
+        ).probabilities[0]
+        source = "book"
+    else:
+        raise ParlayError(f"Leg {i + 1}: no two-sided market on this prop to estimate a chance")
+    odds_age = (at - offer.pulled_at) if offer is not None else None
+    if odds_age is not None and price_source == "book":
+        warnings.append(
+            f"Leg {i + 1}: prop prices are from the props pull "
+            f"{odds_age.total_seconds() / 3600:.1f} h ago; check the book's current price"
+        )
+    return LegAnalysis(
+        index=i,
+        game_id=game.id,
+        sport=Sport(game.sport),
+        matchup=f"{away} @ {home}",
+        commence_time=game.commence_time,
+        market=Market.PLAYER_PROP,
+        selection=leg.selection,
+        line=leg.line,
+        description=description,
+        american_odds=american,
+        decimal_odds=decimal,
+        price_source=price_source,
+        odds_age_minutes=None if odds_age is None else odds_age.total_seconds() / 60,
+        market_probability=market_p,
+        market_books=offer.books if offer is not None else 0,
+        probability=probability,
+        probability_source=source,
+        push_probability=0.0,
+        edge=bm.edge(probability, market_p) if market_p is not None else None,
+        ev_per_unit=bm.expected_value(probability, decimal).per_unit,
+        player=leg.player,
+        prop=leg.prop,
+    )
+
+
 def evaluate_parlay(
     session: Session,
     inputs: Sequence[LegInput],
@@ -266,7 +360,7 @@ def evaluate_parlay(
     book = session.scalar(select(Sportsbook).where(Sportsbook.key == sportsbook.lower()))
     if book is None:
         raise ParlayError(f"Unknown sportsbook {sportsbook!r}")
-    seen: set[tuple[int, Market, Selection, float | None]] = set()
+    seen: set[tuple[int, Market, Selection, float | None, str | None, str | None]] = set()
     legs: list[LegAnalysis] = []
     warnings: list[str] = []
 
@@ -281,13 +375,16 @@ def evaluate_parlay(
             raise ParlayError(f"Leg {i + 1}: {leg.market} needs a line")
         if at >= game.commence_time:
             raise ParlayError(f"Leg {i + 1}: the game has started")
-        key = (game.id, leg.market, leg.selection, line)
+        key = (game.id, leg.market, leg.selection, line, leg.player, leg.prop)
         if key in seen:
             raise ParlayError(f"Leg {i + 1} repeats an earlier leg")
         seen.add(key)
 
         home = session.get_one(Team, game.home_team_id).name
         away = session.get_one(Team, game.away_team_id).name
+        if leg.market is Market.PLAYER_PROP:
+            legs.append(_prop_leg(session, i, leg, game, book, home, away, at, warnings))
+            continue
         timeline = book_timelines(session, game.id, leg.market).get(book.id)
         state = timeline.state_at(at) if timeline else {}
         quote = state.get((leg.market, leg.selection, line))
@@ -402,8 +499,8 @@ def evaluate_parlay(
     same_game = {gid: g for gid, g in groups.items() if len(g) >= 2}
     for gid, group in same_game.items():
         simulator = by_sport.get(group[0].sport)
-        if simulator is None:
-            continue
+        if simulator is None or any(x.market is Market.PLAYER_PROP for x in group):
+            continue  # the game simulation has no players in it
         mains = {(m.market, m.selection): m for m in main_lines(side_markets(session, gid))}
         main_total = mains.get((Market.TOTAL, Selection.OVER))
         main_spread = mains.get((Market.SPREAD, Selection.HOME))
@@ -444,7 +541,15 @@ def evaluate_parlay(
             "independence and is likely wrong, and the book's same-game parlay price will "
             "differ from the product of legs."
         )
-    if any(leg.probability_source != "model" for leg in legs):
+    if any(leg.market is Market.PLAYER_PROP for leg in legs):
+        warnings.append(
+            "Player props have no tested model: each prop leg uses the market's no-vig chance "
+            "from the latest props pull (24 h or 1 h before kickoff), so it adds the book's "
+            "margin and no edge."
+        )
+    if any(
+        leg.probability_source != "model" and leg.market is not Market.PLAYER_PROP for leg in legs
+    ):
         warnings.append(
             "Legs without a validated model use the market's no-vig probability: they add "
             "the book's margin to the parlay and no edge."
@@ -614,6 +719,8 @@ def save_parlay(
                 sportsbook_id=book.id,
                 market=leg.market,
                 selection=leg.selection,
+                player=leg.player,
+                prop_market=leg.prop,
                 description=f"{leg.description} ({leg.matchup})"
                 if leg.market is not Market.TOTAL
                 else leg.description,
@@ -651,8 +758,29 @@ def settle_parlays(session: Session, *, now: datetime | None = None) -> list[Par
             g is None or g.status not in (GameStatus.FINAL, GameStatus.CANCELED) for g in games
         ):
             continue
+        props: dict[int, PropResult] = {}
+        for leg, game in zip(legs, games, strict=True):
+            if leg.market != Market.PLAYER_PROP or game is None:
+                continue
+            if leg.result != BetResult.PENDING:  # settled by hand
+                props[leg.id] = PropResult(BetResult(leg.result), leg.actual_value)
+            elif game.status == GameStatus.CANCELED:
+                props[leg.id] = PropResult(BetResult.VOID, None)
+            elif leg.player is None or leg.prop_market is None or leg.line is None:
+                props[leg.id] = PropResult(None, None)
+            else:
+                props[leg.id] = grade_prop(
+                    session, game, leg.player, leg.prop_market, Selection(leg.selection), leg.line
+                )
+        if any(r.result is None for r in props.values()):
+            continue  # a prop's stats aren't in yet (or it needs settling by hand)
         for leg, game in zip(legs, games, strict=True):
             assert game is not None
+            if leg.id in props:
+                leg.result = props[leg.id].result or BetResult.VOID
+                leg.actual_value = props[leg.id].actual
+                leg.settled_at = now
+                continue
             if game.status == GameStatus.CANCELED:
                 leg.result = BetResult.VOID
             else:

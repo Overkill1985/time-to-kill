@@ -59,6 +59,13 @@ def update_bet(bet_id: int, body: BetPatch, session: SessionDep) -> BetOut:
         if bet.result != BetResult.PENDING:
             raise HTTPException(409, "Only a pending bet can be voided")
         bet.result, bet.profit_loss, bet.settled_at = BetResult.VOID, 0.0, utcnow()
+    if body.result is not None:
+        if bet.market != Market.PLAYER_PROP or bet.parlay_id is None:
+            raise HTTPException(409, "Only a player-prop parlay leg is settled by hand")
+        if bet.result != BetResult.PENDING:
+            raise HTTPException(409, "This leg is already settled")
+        bet.result, bet.settled_at = BetResult(body.result), utcnow()
+        bet.actual_value = body.actual_value
     if body.notes is not None:
         bet.notes = body.notes
     session.commit()

@@ -30,6 +30,8 @@ class Market(StrEnum):
     SPREAD = "SPREAD"
     TOTAL = "TOTAL"
     TEAM_TOTAL = "TEAM_TOTAL"
+    PLAYER_PROP = "PLAYER_PROP"
+    """A player's stat over/under a line (parlay legs; priced from props pulls)."""
 
 
 class Selection(StrEnum):

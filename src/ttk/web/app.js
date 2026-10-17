@@ -917,6 +917,30 @@ function betRow(b) {
       b.result === "PENDING" ? voidButton : null));
 }
 
+function parlayLegLine(leg) {
+  const mark = leg.result === "PENDING" ? "·" : leg.result === "WIN" ? "✓" : leg.result === "LOSS" ? "✗" : "–";
+  const actual = leg.actual_value != null ? ` (had ${leg.actual_value})` : "";
+  const line = el("span", { class: "meta", text: `${mark} ${leg.description} ${leg.american_odds}${actual}` });
+  if (leg.market !== "PLAYER_PROP" || leg.result !== "PENDING" || !leg.game_final) return line;
+  // A finished prop the stats couldn't decide (an NFL player with no stat line).
+  const settle = (result) => async () => {
+    if (!confirm(`Settle "${leg.description}" as ${result.toLowerCase()}?`)) return;
+    try {
+      await api(`/api/bets/${leg.id}`, { method: "PATCH", body: JSON.stringify({ result }) });
+      await api("/api/bets/settle", { method: "POST" });
+      toast("Leg settled.");
+      loadParlayList();
+    } catch (error) { toast(error.message); }
+  };
+  const buttons = ["WIN", "LOSS", "PUSH", "VOID"].map((r) => {
+    const b = el("button", { type: "button", class: "ghost small-btn", text: r.toLowerCase() });
+    b.addEventListener("click", settle(r));
+    return b;
+  });
+  return el("span", { class: "meta" }, line,
+    el("span", { class: "muted small", text: " needs settling by hand: " }), ...buttons);
+}
+
 async function loadParlayList() {
   const box = $("#parlay-list");
   try {
@@ -928,7 +952,7 @@ async function loadParlayList() {
     box.replaceChildren(...parlays.map((p) => el("div", { class: "bet-row" },
       el("div", { class: "what" },
         el("strong", { text: `${p.legs.length}-leg parlay at ${p.sportsbook ?? "?"} (${p.american_odds ?? "?"})` }),
-        ...p.legs.map((leg) => el("span", { class: "meta", text: `${leg.result === "PENDING" ? "·" : leg.result === "WIN" ? "✓" : leg.result === "LOSS" ? "✗" : "–"} ${leg.description} ${leg.american_odds}` }))),
+        ...p.legs.map(parlayLegLine)),
       el("div", { class: "money" },
         el("span", { text: money(p.stake) }),
         p.profit_loss != null ? el("span", { class: signClass(p.profit_loss), text: signedMoney(p.profit_loss) }) : el("span", { class: "muted small", text: `${pct(p.joint_probability, 1)} to hit` })),
@@ -1089,8 +1113,23 @@ function recentDots(p) {
     })));
 }
 
+function addPropLeg(p, selection) {
+  const side = selection === "OVER" ? "Over" : "Under";
+  addLeg({
+    game_id: p.game_id, market: "PLAYER_PROP", selection, line: p.line, player: p.player, prop: p.market,
+    american_odds: null, label: `${p.player} ${side} ${p.line} ${propName(p.market)} (${p.matchup})`,
+  });
+  toast(`Added ${p.player} ${side.toLowerCase()} ${p.line} to the parlay builder.`);
+}
+
 function propRow(p) {
   const share = p.last10_over_share;
+  const add = (selection, text) => {
+    const b = el("button", { type: "button", class: "ghost small-btn", text, "aria-label": `Add ${p.player} ${text.toLowerCase()} ${p.line} ${propName(p.market)} to the parlay` });
+    b.addEventListener("click", () => addPropLeg(p, selection));
+    return b;
+  };
+  const started = new Date(p.commence_time) <= new Date();
   return el("tr", {},
     el("td", {}, el("div", { class: "strong", text: p.player }), el("div", { class: "muted small", text: p.team })),
     el("td", { text: propName(p.market) }),
@@ -1103,7 +1142,9 @@ function propRow(p) {
     el("td", { class: "num" }, p.best_over ? el("span", { text: american(p.best_over.american) }) : "–",
       p.best_over ? el("div", { class: "muted small", text: p.best_over.book }) : null),
     el("td", { class: "num" }, p.best_under ? el("span", { text: american(p.best_under.american) }) : "–",
-      p.best_under ? el("div", { class: "muted small", text: p.best_under.book }) : null));
+      p.best_under ? el("div", { class: "muted small", text: p.best_under.book }) : null),
+    el("td", {}, started ? el("span", { class: "muted small", text: "started" })
+      : el("span", { class: "row-actions" }, add("OVER", "Over"), add("UNDER", "Under"))));
 }
 
 function renderProps() {
@@ -1132,7 +1173,7 @@ function renderProps() {
     el("th", { class: "num" }, "Market over ", term("nvp")), el("th", { class: "num", text: "Season O–U" }),
     el("th", { class: "num", text: "Last 10 O–U" }), el("th", { text: "Last 10 games" }),
     el("th", { class: "num", text: "L10 avg" }), el("th", { class: "num", text: "Best over" }),
-    el("th", { class: "num", text: "Best under" })));
+    el("th", { class: "num", text: "Best under" }), el("th", { text: "Parlay" })));
   const byGame = new Map();
   for (const p of rows) {
     if (!byGame.has(p.game_id)) byGame.set(p.game_id, []);
@@ -1185,7 +1226,7 @@ function setSlipBook(book) {
   analyze();
 }
 function addLeg(leg) {
-  const same = (a) => a.game_id === leg.game_id && a.market === leg.market && a.selection === leg.selection && a.line === leg.line;
+  const same = (a) => a.game_id === leg.game_id && a.market === leg.market && a.selection === leg.selection && a.line === leg.line && (a.player ?? null) === (leg.player ?? null) && (a.prop ?? null) === (leg.prop ?? null);
   if (!slip.legs.some(same)) slip.legs.push(leg);
   persistSlip();
   renderSlip();

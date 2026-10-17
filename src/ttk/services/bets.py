@@ -36,6 +36,7 @@ VALID_SIDES = {
     Market.MONEYLINE: {Selection.HOME, Selection.AWAY},
     Market.SPREAD: {Selection.HOME, Selection.AWAY},
     Market.TOTAL: {Selection.OVER, Selection.UNDER},
+    Market.PLAYER_PROP: {Selection.OVER, Selection.UNDER},
 }
 
 
@@ -75,6 +76,8 @@ def record_bet(session: Session, new: NewBet, *, now: datetime | None = None) ->
     game = session.get(Game, new.game_id)
     if game is None:
         raise BetError(f"Game {new.game_id} not found")
+    if new.market is Market.PLAYER_PROP:
+        raise BetError("Player props can be bet as parlay legs only, for now")
     if new.selection not in VALID_SIDES.get(new.market, set()):
         raise BetError(f"{new.selection} is not a side of {new.market}")
     if new.market is Market.MONEYLINE:
