@@ -30,6 +30,9 @@
         <li><a href="#today" data-page="today">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 10h16M9 3v4M15 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           <span>Today's games</span></a></li>
+        <li><a href="#players" data-page="players">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Player props</span></a></li>
         <li><a href="#slip" data-page="slip">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-3-2-3 2-3-2-3 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           <span>Parlay builder</span><span id="slip-count" class="count"></span></a></li>
@@ -128,6 +131,32 @@
       </section>
 
       <!-- PARLAY BUILDER -->
+      <section class="page" id="page-players" aria-labelledby="players-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow">NFL and NBA</p>
+          <h1 id="players-title">Player props</h1>
+          <p class="lede">Each prop's line from the books, next to how often the player went over it before. Hit rates describe the past: there is no tested prop model, so nothing here is a recommendation.</p>
+        </header>
+        <div class="filter-row">
+          <label class="field inline">Date <input type="date" id="props-date"></label>
+          <div class="pills" role="group" aria-label="Sport" id="props-pills">
+            <button type="button" class="pill" data-sport="" aria-pressed="true">All</button>
+            <button type="button" class="pill" data-sport="NFL" aria-pressed="false">NFL</button>
+            <button type="button" class="pill" data-sport="NBA" aria-pressed="false">NBA</button>
+          </div>
+          <input type="search" id="props-search" class="search" placeholder="Find a player or team" aria-label="Find a player or team">
+          <label class="field inline">Prop <select id="props-market"><option value="">All props</option></select></label>
+          <label class="field inline">Sort <select id="props-sort">
+            <option value="time">Game time</option>
+            <option value="last10">Last 10: most overs</option>
+            <option value="last10-under">Last 10: most unders</option>
+            <option value="player">Player</option>
+          </select></label>
+        </div>
+        <p id="props-status" class="muted small" role="status"></p>
+        <div id="props-list"></div>
+      </section>
+
       <section class="page" id="page-slip" aria-labelledby="slip-title" hidden>
         <header class="page-head">
           <p class="eyebrow">Parlays</p>

@@ -11,7 +11,7 @@ from ttk.db.models import PlayerGameStat
 from ttk.domain import GameStatus, Sport
 from ttk.providers.base import NormalizedGame, TeamRef
 from ttk.providers.espn_boxscore import EspnBoxscores, parse_boxscore
-from ttk.services.boxscore_import import import_boxscores
+from ttk.services.boxscore_import import backfill_threes, import_boxscores
 from ttk.services.identity import resolve_game
 
 # Real ESPN summary (trimmed), Cavaliers at Pacers, 2024-02-10: IND 121, CLE 116.
@@ -36,6 +36,13 @@ def test_parse_boxscore() -> None:
         6,
     )
     assert (allen.ftm, allen.fta, allen.plus_minus) == (2, 3, -1)
+    assert (allen.fg3m, allen.fg3a) == (0, 0)
+    # 3-pointers are read right if every player's points add up from his makes.
+    played = [x for x in lines if x.played]
+    assert any(x.fg3m for x in played)
+    for x in played:
+        assert x.fgm is not None and x.fg3m is not None and x.ftm is not None
+        assert x.points == 2 * x.fgm + x.fg3m + x.ftm, x.player_name
     scratch = next(x for x in lines if x.player_name == "Sam Merrill")
     assert not scratch.played and scratch.dnp_reason == "COACH'S DECISION"
     assert scratch.minutes is None and scratch.points is None
@@ -80,3 +87,30 @@ def test_import_boxscores_is_resumable(session_factory: sessionmaker[Session]) -
         assert {r.game_id for r in rows} == {game_id} and len(rows) == 28
     again = import_boxscores(session_factory, Sport.NBA, (2024, 2024), boxscores=box, delay=0)
     assert again.records_written == 0 and len(calls) == 1  # finished games are skipped
+
+
+def test_backfill_threes_fills_rows_imported_without_them(
+    session_factory: sessionmaker[Session],
+) -> None:
+    seed(session_factory)
+    calls: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json=BOX)
+
+    box = EspnBoxscores(client=httpx.Client(transport=httpx.MockTransport(handle)))
+    import_boxscores(session_factory, Sport.NBA, (2024, 2024), boxscores=box, delay=0)
+    with session_factory() as session:  # as rows imported before 3-pointers were kept
+        for row in session.scalars(select(PlayerGameStat)):
+            row.fg3m = row.fg3a = None
+        session.commit()
+    run = backfill_threes(session_factory, Sport.NBA, (2024, 2024), boxscores=box, delay=0)
+    # 19 who played; the 9 scratches have no shooting line to fill.
+    assert run.status == "SUCCESS" and run.records_written == 19
+    with session_factory() as session:
+        played = session.scalars(select(PlayerGameStat).where(PlayerGameStat.played)).all()
+        assert all(r.fg3m is not None for r in played)
+        assert all(r.points == 2 * (r.fgm or 0) + (r.fg3m or 0) + (r.ftm or 0) for r in played)
+    again = backfill_threes(session_factory, Sport.NBA, (2024, 2024), boxscores=box, delay=0)
+    assert again.records_written == 0 and len(calls) == 2  # nothing left to fill

@@ -126,6 +126,7 @@ const TERMS = {
   data: ["Data quality", "How complete and fresh the inputs are: odds age, how many books, the model's inputs."],
   oddsage: ["Odds age", "Minutes since the books' prices were last confirmed. Stale prices can't qualify."],
   linemove: ["Line move", "The main line when first seen, and now. A move toward a side means money came in on it."],
+  nvp: ["Market chance of the over", "The books' own probability that the player goes over the line, with their cut removed (the median across books quoting both sides). A hit rate well above it isn't proof of value: past games don't know about tonight's matchup or minutes."],
   clv: ["Closing-line value", "How your price compares with the final price before kickoff. Beating the close again and again is the best early sign of real skill, long before wins and losses settle it."],
   vsmarket: ["Compared with the market", "How much worse (+) or better (−) the model's probabilities were than the closing market's, game by game (paired log loss)."],
   z: ["z-score", "How many standard errors the model is from the market. Within about ±2 is noise; below −2 would mean genuinely better than the market."],
@@ -197,7 +198,7 @@ $("#theme-label").textContent = `Theme: ${currentTheme()}`;
 
 // ------------------------------------------------------------------ routing
 
-const PAGES = ["home", "today", "slip", "bets", "sim", "models"];
+const PAGES = ["home", "today", "players", "slip", "bets", "sim", "models"];
 const loaders = {};
 
 function route() {
@@ -1030,6 +1031,137 @@ async function loadPerformance() {
 }
 $("#perf-sport").addEventListener("change", loadPerformance);
 $("#perf-market").addEventListener("change", loadPerformance);
+
+// ------------------------------------------------------------------ player props
+
+const PROP_NAMES = {
+  player_pass_yds: "Passing yards", player_pass_tds: "Passing TDs", player_pass_completions: "Completions",
+  player_pass_attempts: "Pass attempts", player_pass_interceptions: "Interceptions",
+  player_pass_rush_yds: "Pass + rush yards", player_rush_yds: "Rushing yards", player_rush_attempts: "Rush attempts",
+  player_rush_tds: "Rushing TDs", player_receptions: "Receptions", player_reception_yds: "Receiving yards",
+  player_reception_tds: "Receiving TDs", player_rush_reception_yds: "Rush + receiving yards",
+  player_anytime_td: "Anytime TD", player_reception_longest: "Longest reception", player_rush_longest: "Longest rush",
+  player_longest_completion: "Longest completion", player_1st_td: "First TD", player_last_td: "Last TD",
+  player_field_goals_made: "Field goals made", player_kicking_points: "Kicking points",
+  player_extra_points_made: "Extra points made", player_sacks: "Sacks", player_solo_tackles: "Solo tackles",
+  player_tackles_assists: "Tackles + assists", player_points: "Points", player_rebounds: "Rebounds",
+  player_assists: "Assists", player_threes: "3-pointers made", player_steals: "Steals", player_blocks: "Blocks",
+  player_turnovers: "Turnovers", player_points_rebounds_assists: "Pts + reb + ast",
+  player_points_rebounds: "Pts + reb", player_points_assists: "Pts + ast", player_rebounds_assists: "Reb + ast",
+  player_blocks_steals: "Blocks + steals",
+};
+const propName = (m) => PROP_NAMES[m] ?? m.replace(/^player_/, "").replace(/_/g, " ");
+
+let propsData = null;
+let propsSport = "";
+const propsDate = $("#props-date");
+propsDate.value = todayEastern();
+
+async function loadProps() {
+  const status = $("#props-status");
+  status.textContent = "Loading props…";
+  $("#props-list").replaceChildren();
+  try {
+    propsData = await api(`/api/props?date=${propsDate.value}`);
+  } catch (error) {
+    status.textContent = error.message;
+    return;
+  }
+  const markets = [...new Set(propsData.props.map((p) => p.market))].sort((a, b) => propName(a).localeCompare(propName(b)));
+  const select = $("#props-market");
+  const keep = select.value;
+  select.replaceChildren(el("option", { value: "", text: "All props" }),
+    ...markets.map((m) => el("option", { value: m, text: propName(m) })));
+  select.value = markets.includes(keep) ? keep : "";
+  renderProps();
+}
+
+function hitText(h) {
+  if (!h || !h.games) return "–";
+  return `${h.over}–${h.under}${h.push ? `–${h.push}` : ""}`;
+}
+
+function recentDots(p) {
+  if (!p.recent.length) return el("span", { class: "muted", text: "no games" });
+  return el("span", { class: "dots", role: "img", "aria-label": `Last ${p.recent.length}: ${p.recent.join(", ")}` },
+    ...p.recent.slice().reverse().map((v) => el("span", {
+      class: `dot-hit ${v > p.line ? "over" : v < p.line ? "under" : "push"}`, title: String(v),
+    })));
+}
+
+function propRow(p) {
+  const share = p.last10_over_share;
+  return el("tr", {},
+    el("td", {}, el("div", { class: "strong", text: p.player }), el("div", { class: "muted small", text: p.team })),
+    el("td", { text: propName(p.market) }),
+    el("td", { class: "num", text: String(p.line) }),
+    el("td", { class: "num", text: pct(p.over_probability, 0) }),
+    el("td", { class: "num", text: hitText(p.season) }),
+    el("td", { class: `num ${share == null ? "" : share >= 0.5 ? "pos" : "neg"}`, text: hitText(p.last10) }),
+    el("td", {}, recentDots(p)),
+    el("td", { class: "num", text: p.last10?.average == null ? "–" : p.last10.average.toFixed(1) }),
+    el("td", { class: "num" }, p.best_over ? el("span", { text: american(p.best_over.american) }) : "–",
+      p.best_over ? el("div", { class: "muted small", text: p.best_over.book }) : null),
+    el("td", { class: "num" }, p.best_under ? el("span", { text: american(p.best_under.american) }) : "–",
+      p.best_under ? el("div", { class: "muted small", text: p.best_under.book }) : null));
+}
+
+function renderProps() {
+  if (!propsData) return;
+  const q = $("#props-search").value.trim().toLowerCase();
+  const market = $("#props-market").value;
+  const sort = $("#props-sort").value;
+  let rows = propsData.props.filter((p) =>
+    (!propsSport || p.sport === propsSport) && (!market || p.market === market) &&
+    (!q || p.player.toLowerCase().includes(q) || p.team.toLowerCase().includes(q) || p.matchup.toLowerCase().includes(q)));
+  const over = (p) => p.last10_over_share ?? -1;
+  if (sort === "last10") rows.sort((a, b) => over(b) - over(a) || (b.last10?.games ?? 0) - (a.last10?.games ?? 0));
+  else if (sort === "last10-under") rows.sort((a, b) => (a.last10_over_share ?? 2) - (b.last10_over_share ?? 2));
+  else if (sort === "player") rows.sort((a, b) => a.player.localeCompare(b.player));
+  const status = $("#props-status");
+  if (!propsData.props.length) {
+    status.textContent = propsData.games
+      ? "No props were pulled for these games."
+      : "No NFL or NBA games with props on this date. Props are pulled 24 hours and 1 hour before kickoff.";
+    $("#props-list").replaceChildren();
+    return;
+  }
+  status.textContent = `${rows.length} of ${propsData.props.length} props · ${propsData.note}`;
+  const head = el("thead", {}, el("tr", {},
+    el("th", { text: "Player" }), el("th", { text: "Prop" }), el("th", { class: "num", text: "Line" }),
+    el("th", { class: "num" }, "Market over ", term("nvp")), el("th", { class: "num", text: "Season O–U" }),
+    el("th", { class: "num", text: "Last 10 O–U" }), el("th", { text: "Last 10 games" }),
+    el("th", { class: "num", text: "L10 avg" }), el("th", { class: "num", text: "Best over" }),
+    el("th", { class: "num", text: "Best under" })));
+  const byGame = new Map();
+  for (const p of rows) {
+    if (!byGame.has(p.game_id)) byGame.set(p.game_id, []);
+    byGame.get(p.game_id).push(p);
+  }
+  const groups = sort === "time"
+    ? [...byGame.values()].sort((a, b) => new Date(a[0].commence_time) - new Date(b[0].commence_time))
+    : [[...rows]];
+  $("#props-list").replaceChildren(...groups.map((ps) => {
+    const first = ps[0];
+    const title = sort === "time"
+      ? el("div", { class: "card-head" },
+          el("h2", { class: "inline-h", text: `${sportName(first.sport)} · ${first.matchup}` }),
+          el("span", { class: "muted small", text: `${eastern(first.commence_time)} · lines from ${first.hours_before} h before kickoff` }))
+      : null;
+    return el("section", { class: "card" }, title,
+      el("div", { class: "table-wrap" }, el("table", { class: "props-table" }, head.cloneNode(true),
+        el("tbody", {}, ...ps.map(propRow)))));
+  }));
+}
+
+for (const b of $$("#props-pills .pill")) {
+  b.addEventListener("click", () => { propsSport = b.dataset.sport; pressPill($("#props-pills"), b); renderProps(); });
+}
+propsDate.addEventListener("change", loadProps);
+$("#props-search").addEventListener("input", renderProps);
+$("#props-market").addEventListener("change", renderProps);
+$("#props-sort").addEventListener("change", renderProps);
+loaders.players = () => { if (!propsData || propsData.date !== propsDate.value) loadProps(); };
 
 // ------------------------------------------------------------------ parlay builder
 

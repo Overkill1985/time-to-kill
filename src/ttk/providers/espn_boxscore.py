@@ -50,6 +50,8 @@ class PlayerLine:
     tov: int | None = None
     pf: int | None = None
     plus_minus: int | None = None
+    fg3m: int | None = None
+    fg3a: int | None = None
 
 
 def _int(value: str | None) -> int | None:
@@ -86,6 +88,7 @@ def parse_boxscore(summary: Mapping[str, Any]) -> list[PlayerLine]:
             played = not entry.get("didNotPlay") and bool(minutes)
             fgm, fga = _made_attempted(stats.get("FG"))
             ftm, fta = _made_attempted(stats.get("FT"))
+            fg3m, fg3a = _made_attempted(stats.get("3PT"))
             lines.append(
                 PlayerLine(
                     team_espn_id=team_id,
@@ -108,6 +111,8 @@ def parse_boxscore(summary: Mapping[str, Any]) -> list[PlayerLine]:
                     tov=_int(stats.get("TO")),
                     pf=_int(stats.get("PF")),
                     plus_minus=_int(stats.get("+/-")),
+                    fg3m=fg3m,
+                    fg3a=fg3a,
                 )
             )
     return lines

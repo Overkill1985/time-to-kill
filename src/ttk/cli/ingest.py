@@ -91,11 +91,13 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.providers.espn_boxscore import EspnBoxscores
     from ttk.providers.espn_injuries import EspnInjuries
     from ttk.providers.espn_roster import EspnRosters
+    from ttk.providers.nflverse import fetch_player_weeks
     from ttk.services.bets import settle_bets
     from ttk.services.collector import (
         collect_once,
         refresh_boxscores,
         refresh_injuries,
+        refresh_nfl_player_stats,
         refresh_schedules,
         refresh_team_boxes,
     )
@@ -148,6 +150,11 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         for run in refresh_boxscores(factory, boxscores):
             emit(
                 f"{run.sport} box scores: {run.status} {run.records_written} player rows, "
+                f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+            )
+        for run in refresh_nfl_player_stats(factory, fetch_player_weeks):
+            emit(
+                f"NFL player stats: {run.status} {run.records_written} rows, "
                 f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
             )
         for run in refresh_team_boxes(factory, boxscores):
@@ -332,6 +339,37 @@ def _import_cfb_weather(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _import_nfl_player_stats(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.nflverse import fetch_player_weeks
+    from ttk.services.nfl_player_stats import import_nfl_player_stats
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    runs = import_nfl_player_stats(factory, fetch_player_weeks, (args.from_season, args.to_season))
+    for run in runs:
+        print(
+            f"{(run.stats or {}).get('season', '?')}: {run.status} {run.records_written} rows, "
+            f"stats={run.stats}" + (f", error={run.error}" if run.error else "")
+        )
+    return 0 if all(r.status == "SUCCESS" for r in runs) else 1
+
+
+def _backfill_threes(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.providers.espn_boxscore import EspnBoxscores
+    from ttk.services.boxscore_import import backfill_threes
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    run = backfill_threes(
+        factory, Sport.NBA, (args.from_season, args.to_season), boxscores=EspnBoxscores()
+    )
+    print(
+        f"{run.status}: {run.records_written} player rows filled, stats={run.stats}"
+        + (f", error={run.error}" if run.error else "")
+    )
+    return 0 if run.status == "SUCCESS" else 1
+
+
 def _import_team_boxes(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn_boxscore import EspnBoxscores
@@ -467,6 +505,18 @@ def register(sub: Any) -> None:
     )
     cfbd_games.add_argument("--from-season", type=int, required=True)
     cfbd_games.add_argument("--to-season", type=int, required=True)
+    nfl_players = sub.add_parser(
+        "import-nfl-player-stats",
+        help="Import NFL player game stats from nflverse (one CSV per season; re-runs update)",
+    )
+    nfl_players.add_argument("--from-season", type=int, required=True)
+    nfl_players.add_argument("--to-season", type=int, required=True)
+    threes = sub.add_parser(
+        "backfill-threes",
+        help="Fill NBA 3-pointers on box-score rows imported before they were kept (ESPN)",
+    )
+    threes.add_argument("--from-season", type=int, required=True, help="ESPN season year")
+    threes.add_argument("--to-season", type=int, required=True)
     cfb_weather = sub.add_parser(
         "import-cfb-weather",
         help="Import archive weather at past college football kickoffs (Open-Meteo; resumable)",
@@ -510,6 +560,8 @@ HANDLERS: dict[str, Handler] = {
     "import-cfbd": _import_cfbd,
     "import-cfbd-games": _import_cfbd,
     "import-cfb-weather": _import_cfb_weather,
+    "import-nfl-player-stats": _import_nfl_player_stats,
+    "backfill-threes": _backfill_threes,
     "repair-espn-lines": _repair_espn_lines,
     "repair-merged-games": _repair_merged_games,
 }

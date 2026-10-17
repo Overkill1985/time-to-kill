@@ -363,6 +363,38 @@ class PlayerGameStat(Base):
     tov: Mapped[int | None] = mapped_column(Integer)
     pf: Mapped[int | None] = mapped_column(Integer)
     plus_minus: Mapped[int | None] = mapped_column(Integer)
+    fg3m: Mapped[int | None] = mapped_column(Integer)
+    """3-pointers made (added 2026-10-17; None on rows imported before)."""
+    fg3a: Mapped[int | None] = mapped_column(Integer)
+    imported_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class NflPlayerGameStat(Base):
+    """One NFL player's offensive line in one game (nflverse ``stats_player_week``).
+    Re-imports replace a row's values: upstream revises stats after games."""
+
+    __tablename__ = "nfl_player_game_stats"
+    __table_args__ = (UniqueConstraint("game_id", "player_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
+    player_id: Mapped[str] = mapped_column(String(20))
+    """nflverse (GSIS) player id."""
+    player_name: Mapped[str] = mapped_column(String(100))
+    position: Mapped[str | None] = mapped_column(String(10))
+    completions: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    passing_yards: Mapped[int] = mapped_column(Integer, default=0)
+    passing_tds: Mapped[int] = mapped_column(Integer, default=0)
+    interceptions: Mapped[int] = mapped_column(Integer, default=0)
+    carries: Mapped[int] = mapped_column(Integer, default=0)
+    rushing_yards: Mapped[int] = mapped_column(Integer, default=0)
+    rushing_tds: Mapped[int] = mapped_column(Integer, default=0)
+    targets: Mapped[int] = mapped_column(Integer, default=0)
+    receptions: Mapped[int] = mapped_column(Integer, default=0)
+    receiving_yards: Mapped[int] = mapped_column(Integer, default=0)
+    receiving_tds: Mapped[int] = mapped_column(Integer, default=0)
     imported_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 

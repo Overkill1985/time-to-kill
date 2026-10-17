@@ -14,7 +14,7 @@ provider reports fewer remaining requests than ``min_remaining``.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -26,8 +26,10 @@ from ttk.domain import Sport
 from ttk.providers.base import OddsProvider, ScheduleProvider
 from ttk.providers.espn_boxscore import EspnBoxscores
 from ttk.providers.espn_injuries import EspnInjuries
+from ttk.providers.nflverse import PlayerWeek
 from ttk.services.boxscore_import import import_boxscores, import_team_boxes
 from ttk.services.injury_ingest import ingest_injuries
+from ttk.services.nfl_player_stats import import_nfl_player_stats
 from ttk.services.odds_ingest import run_odds_ingestion
 from ttk.services.schedule_ingest import run_schedule_ingestion
 
@@ -151,6 +153,30 @@ def refresh_boxscores(
             import_boxscores(session_factory, sport, (now.year, now.year + 1), boxscores=source)
         )
     return runs
+
+
+NFL_PLAYER_STATS_REFRESH = timedelta(hours=12)
+
+
+def refresh_nfl_player_stats(
+    session_factory: sessionmaker[Session],
+    fetch: Callable[[int], list[PlayerWeek]],
+    *,
+    now: datetime | None = None,
+    every: timedelta = NFL_PLAYER_STATS_REFRESH,
+) -> list[IngestionRun]:
+    """The current NFL season's player game stats from nflverse (one CSV), at most
+    every ``every``, September through February (nflverse posts a week's stats
+    within a day or two of its games)."""
+    now = now or utcnow()
+    if now.month not in (9, 10, 11, 12, 1, 2):
+        return []
+    with session_factory() as session:
+        last = _last_run(session, Sport.NFL, "player-stats")
+    if last is not None and now - last < every:
+        return []
+    season = now.year if now.month >= 9 else now.year - 1
+    return import_nfl_player_stats(session_factory, fetch, (season, season))
 
 
 TEAM_BOX_SPORTS = (Sport.NCAAB,)

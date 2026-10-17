@@ -265,3 +265,74 @@ def fetch_snaps(season: int, client: httpx.Client | None = None) -> list[SnapRow
     if response.status_code != 200:
         raise ProviderError(f"nflverse snaps: HTTP {response.status_code}")
     return parse_snaps(csv.DictReader(io.StringIO(response.text)))
+
+
+PLAYER_WEEK_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/stats_player/"
+    "stats_player_week_{season}.csv"
+)
+PLAYER_COUNTS = (
+    "completions",
+    "attempts",
+    "passing_yards",
+    "passing_tds",
+    "passing_interceptions",
+    "carries",
+    "rushing_yards",
+    "rushing_tds",
+    "targets",
+    "receptions",
+    "receiving_yards",
+    "receiving_tds",
+)
+
+
+@dataclass(frozen=True)
+class PlayerWeek:
+    """One player's offensive line in one game (nflverse ``stats_player_week``;
+    columns verified 2026-10-17). ``game_id`` is nflverse's (games.csv) id."""
+
+    game_id: str
+    team: str
+    player_id: str
+    player_name: str
+    position: str
+    counts: dict[str, int]
+
+
+def parse_player_weeks(rows: Iterable[Mapping[str, str]]) -> list[PlayerWeek]:
+    out = []
+    for r in rows:
+        if not r.get("game_id") or not r.get("player_id") or r.get("team") not in TEAMS:
+            continue
+        counts = {}
+        for name in PLAYER_COUNTS:
+            raw = r.get(name) or "0"
+            try:
+                counts[name] = int(float(raw)) if raw not in ("NA", "") else 0
+            except ValueError:
+                counts[name] = 0
+        out.append(
+            PlayerWeek(
+                r["game_id"],
+                r["team"],
+                r["player_id"],
+                r.get("player_display_name") or r.get("player_name") or r["player_id"],
+                r.get("position") or "",
+                counts,
+            )
+        )
+    return out
+
+
+def fetch_player_weeks(season: int, client: httpx.Client | None = None) -> list[PlayerWeek]:
+    client = client or httpx.Client(timeout=120.0, follow_redirects=True)
+    try:
+        response = client.get(PLAYER_WEEK_URL.format(season=season))
+    except httpx.HTTPError as exc:
+        raise ProviderError(
+            f"nflverse player stats: request failed ({type(exc).__name__})"
+        ) from None
+    if response.status_code != 200:
+        raise ProviderError(f"nflverse player stats: HTTP {response.status_code} for {season}")
+    return parse_player_weeks(csv.DictReader(io.StringIO(response.text)))

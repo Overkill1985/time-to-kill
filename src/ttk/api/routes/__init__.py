@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from ttk.api.routes import bankroll, bets, card, forward, games, parlays, status, tools
+from ttk.api.routes import bankroll, bets, card, forward, games, parlays, props, status, tools
 
 ROUTERS: tuple[APIRouter, ...] = (
     games.router,
@@ -11,6 +11,7 @@ ROUTERS: tuple[APIRouter, ...] = (
     bankroll.router,
     forward.router,
     parlays.router,
+    props.router,
     tools.router,
     status.router,
 )

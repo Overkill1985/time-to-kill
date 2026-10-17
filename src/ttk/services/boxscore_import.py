@@ -91,6 +91,8 @@ def import_boxscores(
                             tov=line.tov,
                             pf=line.pf,
                             plus_minus=line.plus_minus,
+                            fg3m=line.fg3m,
+                            fg3a=line.fg3a,
                         )
                     )
                 written += len(seen)
@@ -174,4 +176,59 @@ def import_team_boxes(
 
     return audited_run(
         session_factory, provider="espn-summary", kind="team-boxes", sport=sport, work=work
+    )
+
+
+def backfill_threes(
+    session_factory: sessionmaker[Session],
+    sport: Sport,
+    seasons: tuple[int, int],
+    *,
+    boxscores: EspnBoxscores,
+    delay: float = 0.25,
+    batch: int = 50,
+) -> IngestionRun:
+    """3-pointers made/attempted for box-score rows imported before they were kept
+    (2026-10-17): re-reads each such game's box score and fills ``fg3m``/``fg3a``
+    by ESPN athlete id. Resumable: a game whose rows all have them is skipped."""
+
+    def work(session: Session, run: IngestionRun) -> RunResult:
+        pending = session.execute(
+            select(Game.id, GameSourceId.source_identifier)
+            .join(
+                GameSourceId, (GameSourceId.game_id == Game.id) & (GameSourceId.provider == "espn")
+            )
+            .where(
+                Game.sport == sport,
+                Game.season.between(*seasons),
+                Game.id.in_(
+                    select(PlayerGameStat.game_id).where(
+                        PlayerGameStat.played.is_(True), PlayerGameStat.fg3m.is_(None)
+                    )
+                ),
+            )
+            .order_by(Game.commence_time)
+        ).all()
+        stats: Counter[str] = Counter({"games_pending": len(pending)})
+        updated = 0
+        for i, (game_id, event_id) in enumerate(pending, start=1):
+            by_player = {line.player_id: line for line in boxscores.fetch(sport, event_id)}
+            if not by_player:
+                stats["games_without_boxscore"] += 1
+            for row in session.scalars(
+                select(PlayerGameStat).where(PlayerGameStat.game_id == game_id)
+            ):
+                line = by_player.get(row.player_id)
+                if line is None or line.fg3m is None:
+                    continue
+                row.fg3m, row.fg3a = line.fg3m, line.fg3a
+                updated += 1
+            stats["games_done"] += 1
+            if i % batch == 0:
+                session.commit()
+            time.sleep(delay)
+        return RunResult(updated, {}, stats)
+
+    return audited_run(
+        session_factory, provider="espn-summary", kind="boxscore-threes", sport=sport, work=work
     )

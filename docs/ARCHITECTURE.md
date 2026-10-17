@@ -82,6 +82,8 @@ src/ttk/
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
+    player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, and the player's hit rate on it
+    nfl_player_stats.py NFL player game stats from nflverse (stats_player_week), re-imports update
     weather_history.py Archive weather at past college kickoffs (CFBD venues + Open-Meteo archive), resumable, research only
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
     bets.py            Bet tracker: record (beliefs as of bet time), settle, CLV, performance
@@ -108,6 +110,7 @@ migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0018: player_game_stats.fg3m/fg3a; nfl_player_game_stats.
                        - 0017: game_weather (reanalysis weather at past kickoffs; research input).
                        - 0016: weather_forecasts (append-only forecast per game and horizon).
                        - 0015: prop_pulls and prop_quotes (append-only player-prop snapshots).
@@ -160,6 +163,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 |---|---|---|
 | GET | `/api/health` | Status + last ingestion run |
 | GET | `/api/status` | Home page: last odds poll, PropLine quota, health alerts, last props pull, every frozen model's forward progress, next games per sport, bankroll |
+| GET | `/api/props?date=` | Player props for a day's NFL/NBA games: main line, market no-vig P(over), best over/under prices, season and last-10 hit rates (description only; no prop model) |
 | GET | `/api/games?sport=&include_started=` | Upcoming games |
 | GET | `/api/games/{id}/market?all_lines=` | Consensus, best price and freshness per side |
 | GET | `/api/games/{id}/line-history?market=&selection=` | Opening, previous, current and closing per book |

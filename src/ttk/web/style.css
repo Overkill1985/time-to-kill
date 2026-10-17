@@ -431,3 +431,13 @@ dialog form { display: grid; grid-template-rows: auto 1fr auto; max-height: calc
   padding: .65rem 1rem; border-radius: 10px; font-weight: 600; box-shadow: var(--shadow); max-width: calc(100vw - 32px);
 }
 @media (max-width: 860px) { .toast { bottom: 5.5rem; } }
+
+/* Player props */
+.props-table td { white-space: nowrap; }
+.props-table .strong { font-weight: 700; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4rem 1rem; margin-bottom: .5rem; }
+.dots { display: inline-flex; gap: 3px; align-items: center; }
+.dot-hit { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.dot-hit.over { background: var(--good); }
+.dot-hit.under { background: var(--bad); }
+.dot-hit.push { background: var(--muted); }
