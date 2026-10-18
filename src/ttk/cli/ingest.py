@@ -102,6 +102,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         refresh_team_boxes,
     )
     from ttk.services.parlay_lab import settle_parlays
+    from ttk.services.prop_forward import snapshot_due
     from ttk.services.props import PropsProvider, collect_props
 
     log_file = None
@@ -186,6 +187,9 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         if hasattr(provider, "event_props"):
             # Player-prop snapshots at 24 h / 1 h before kickoff (services/props).
             for line in collect_props(factory, cast(PropsProvider, provider), rosters.fetch):
+                emit(line)
+            # The prop model's forward-test records, on each new pull before kickoff.
+            for line in snapshot_due(factory):
                 emit(line)
             remaining = getattr(provider, "daily_remaining", remaining)
         emit(f"quota remaining: {remaining}")

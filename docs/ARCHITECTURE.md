@@ -40,6 +40,7 @@ src/ttk/
     nfl_weather.py     NFL totals wind model: fit on recorded wind, outdoor stadium table (Wikipedia coordinates)
     cfb_weather.py     College totals vs archive wind (measured; not adopted)
     nfl_opener.py      NFL 2023-2024: does the model's disagreement with the opener predict the close?
+    prop_model.py      NFL prop model v0.1: weighted recent usage; negative binomial / gamma per stat
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
     espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
     moneyline.py       Moneylines from the spread models' margin distributions; validation vs the ML market
@@ -84,6 +85,7 @@ src/ttk/
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
     player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, and the player's hit rate on it
     nfl_player_stats.py NFL player game stats from nflverse (stats_player_week), re-imports update
+    prop_forward.py    Prop model forward test: records each pull's main lines before kickoff, scores after stats
     prop_pricing.py    Prop parlay legs (main lines and N+ milestones): book price, market no-vig or implied chance from the latest props pull; grading from player stats
     weather_history.py Archive weather at past college kickoffs (CFBD venues + Open-Meteo archive), resumable, research only
     team_review.py     Unmatched teams: review, and link to ESPN (provider links move, copies DUPLICATE)
@@ -105,12 +107,13 @@ src/ttk/
                        - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
                        - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check, injury-moves, backtest-nfl-opener
-                       - forward.py: forward-freeze(-ml/-totals/-nfl-wind/-opener), forward-snapshot/run/report, lab
+                       - forward.py: forward-freeze(-ml/-totals/-nfl-wind/-opener), prop-model-freeze, prop-report, forward-snapshot/run/report, lab
                        - betting.py: card, bets, bankroll, simulate
 migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0020: prop_predictions (append-only prop-model forward-test records).
                        - 0019: bets.player, prop_market, actual_value (player-prop parlay legs).
                        - 0018: player_game_stats.fg3m/fg3a; nfl_player_game_stats.
                        - 0017: game_weather (reanalysis weather at past kickoffs; research input).

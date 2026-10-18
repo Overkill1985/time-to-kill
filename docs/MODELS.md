@@ -640,3 +640,25 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - `register_opener` refuses anchored models and models with inputs known only near tip-off (the injury substitution).
 
 **College basketball (2026-10-14):** `ncaab-spread-key-eff-opener 1`, the same kind of test for the frozen adjusted-efficiency key model, whose picks at the 2023–24 openers moved toward the close by +0.11 points (n=3,579), more than any other college basketball model; its home lean is about zero since 2024. 48 h horizon; the season starts in early November. **College football gets none:** its lines moved away from every standalone model's side at the opener (−0.05 to −0.16 points).
+
+## NFL player props (2026-10-18)
+
+`nfl-prop-usage 0.1.0`, DEVELOPMENT (`research/prop_model.py`, `services/prop_forward.py`; `ttk prop-model-freeze`, `ttk prop-report`).
+
+- **Model:** each player's expected stat is an exponentially weighted mean of his earlier games (half-life 4 games; last season's games weigh 0.25), from nflverse player stats. No opponent, injuries or game script: a baseline. Around it, a negative binomial for counts (attempts, completions, carries, receptions, rushing + receiving TDs) and, for yards, a gamma with a chance of zero that falls as usage rises. A player needs 3 earlier games.
+- **Fitted on 2023–2024** (half-life and carryover from a grid, each stat's distribution by maximum likelihood). **Validation, 2025**, mean log-likelihood per player-game against a season-to-date average with the same distributions (per-game scores capped at −20):
+
+| Stat | Player-games | Model | Season average | z |
+|---|---|---|---|---|
+| Passing yards | 608 | −5.887 | −5.933 | +3.8 |
+| Pass attempts | 598 | −4.101 | −4.164 | +3.9 |
+| Completions | 602 | −3.638 | −3.711 | +3.8 |
+| Rushing yards | 1,899 | −4.065 | −4.100 | +5.7 |
+| Rush attempts | 1,682 | −2.782 | −2.824 | +5.3 |
+| Receptions | 4,012 | −1.883 | −1.913 | +7.9 |
+| Receiving yards | 3,813 | −4.119 | −4.149 | +7.0 |
+| Rush + receiving TDs | 3,874 | −0.682 | −0.704 | +5.6 |
+
+- **Against the market** (props stored 2026-10-07 to 10-18, games final with stats; main lines with 3+ books two-sided; model fitted on 2023–2024 only): 1,104 props, log loss **0.723 vs the market's 0.685 (z +3.6, worse)**, at 24 h and at 1 h alike. When the model was 10+ points below the market it said 31% where the market said 50%: they went over 48%. It leans under: its yardage distributions are too skewed for lines set near the median, and recent usage alone knows less than the books.
+- **Verdict:** a baseline, not an edge; forward-tested so every later version is measured against it on the same props. Next: calibrate the over/under split against the stored lines as they accumulate, then opponent and game-script features (v0.2), and the same for the NBA once its season has a few games.
+- **Forward test:** the collector records the model on every props pull (24 h and 1 h before kickoff) for each main line with 2+ books on both sides: 457 props from the 24 h pulls and the first 1 h pulls on 2026-10-18. Scored once the players' stats are in (no stat line: left out); a z from 100 decided props; and whether the line moved from 24 h to 1 h toward the model.

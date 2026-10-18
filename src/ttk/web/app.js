@@ -90,7 +90,8 @@ function modelName(raw) {
   const flavor = name.includes("anchored") ? "market-anchored"
     : name.includes("spread-implied") ? "spread-implied"
     : name.includes("standalone") || name.includes("-key-") ? "standalone" : "";
-  const market = name.includes("-ml-") ? "moneyline" : name.includes("-total-") ? "total" : "spread";
+  const market = name.includes("-ml-") ? "moneyline" : name.includes("-total-") ? "total"
+    : name.includes("-prop-") ? "player props" : "spread";
   const inputs = name.endsWith("features") ? "EPA and QB"
     : name.endsWith("inseason") ? "in-season efficiency"
     : name.endsWith("lineup-prev") ? "lineups"
@@ -98,6 +99,7 @@ function modelName(raw) {
     : name.endsWith("eff") ? "efficiency"
     : name.endsWith("wind") ? "market total and forecast wind"
     : name.endsWith("epa") ? "EPA"
+    : name.endsWith("prop-usage") ? "recent usage"
     : name.endsWith("pace") ? "pace and efficiency" : "";
   const timing = opener ? "at the opening line" : "";
   return { title: `${s} ${market}`, detail: [flavor, inputs, timing].filter(Boolean).join(", ") };

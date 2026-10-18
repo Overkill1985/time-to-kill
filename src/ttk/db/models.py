@@ -613,6 +613,38 @@ class GameWeather(Base):
     fetched_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class PropPrediction(Base):
+    """A prop model's chance for one player prop's main line in one props pull, taken
+    before kickoff (services/prop_forward). Append-only: a forward test's record."""
+
+    __tablename__ = "prop_predictions"
+    __table_args__ = (UniqueConstraint("model_version_id", "pull_id", "player_id", "market"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_version_id: Mapped[int] = mapped_column(ForeignKey("model_versions.id"), index=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    pull_id: Mapped[int] = mapped_column(ForeignKey("prop_pulls.id"))
+    horizon_hours: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    player: Mapped[str] = mapped_column(String(100))
+    """As the books name him (most common spelling)."""
+    player_id: Mapped[str] = mapped_column(String(20))
+    """nflverse player id the model used."""
+    market: Mapped[str] = mapped_column(String(60))
+    line: Mapped[float] = mapped_column(Float)
+    p_over: Mapped[float] = mapped_column(Float)
+    mean: Mapped[float] = mapped_column(Float)
+    games: Mapped[int] = mapped_column(Integer)
+    """Games behind the model's mean."""
+    market_over: Mapped[float] = mapped_column(Float)
+    """Median no-vig P(over) across books quoting both sides at the line."""
+    books: Mapped[int] = mapped_column(Integer)
+    best_over: Mapped[float | None] = mapped_column(Float)
+    best_over_book: Mapped[str | None] = mapped_column(String(50))
+    best_under: Mapped[float | None] = mapped_column(Float)
+    best_under_book: Mapped[str | None] = mapped_column(String(50))
+
+
 class ForwardScore(Base):
     """Closing-line value of a forward snapshot's side, computed once its game is
     final: the closing state as of kickoff never changes, so it is stored rather

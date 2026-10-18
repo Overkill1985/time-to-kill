@@ -36,6 +36,7 @@ Everything buildable without new data or decisions is built. What remains waits 
 
 - NFL spread: about 15 decided games per horizon now; 30 around Oct 19.
 - NFL opener model (`nfl-spread-key-epa-opener`): one snapshot per game, about 14 a week; 30 decided games around early November.
+- NFL player props (`nfl-prop-usage 0.1.0`): about 900 props a Sunday; 100 decided for a z after the first weekend. v0.1 trails the market on the October props (z +3.6); it is the baseline v0.2 must beat.
 - NFL totals and wind: from Sunday Oct 11, outdoor games only (about 9 a week); 30 decided games per horizon around early November.
 - College football spreads: the first full Saturday under forward test is Oct 10.
 - NBA spreads and NBA player props: from the Oct 20 opener (spreads at 24 h and 1 h, plus `nba-spread-key-lineup-prev-opener` at the first line within 48 h). NBA totals about Nov 1 (both teams need 5 games).

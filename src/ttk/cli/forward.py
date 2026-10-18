@@ -67,6 +67,49 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             f"(error {v.rmse:.2f} vs closing total {v.market_rmse:.2f})"
         )
         return 0
+    if args.command == "prop-model-freeze":
+        from ttk.services.prop_forward import freeze_and_register as freeze_props
+        from ttk.services.prop_forward import snapshot_pulls
+
+        with factory() as session:
+            prop_row, prop_fit = freeze_props(session)
+            session.commit()
+            print(
+                f"fitted on {prop_fit.params}; "
+                f"registered {prop_row.name} {prop_row.version} (DEVELOPMENT)"
+            )
+            for pv in prop_fit.validate:
+                print(
+                    f"  {pv.market:26s} validation n={pv.games:5d}: "
+                    f"log-likelihood {pv.log_lik:.4f} "
+                    f"vs season average {pv.baseline_log_lik:.4f} (z {pv.z:+.1f})"
+                )
+            for line in snapshot_pulls(session):
+                print(line)
+            session.commit()
+        return 0
+    if args.command == "prop-report":
+        from ttk.services.prop_forward import prop_report, prop_versions
+
+        with factory() as session:
+            for version in prop_versions(session):
+                r = prop_report(session, version)
+                print(f"{r.model}: {r.recorded} props recorded, {r.decided} decided")
+                for ps in r.scores:
+                    if not ps.decided:
+                        continue
+                    z = f"z {ps.z:+.1f}" if ps.z is not None else "z needs 100"
+                    print(
+                        f"  {ps.label:26s} {ps.decided:5d}: model {ps.model_log_loss:.4f} vs "
+                        f"market {ps.market_log_loss:.4f} ({ps.paired_diff:+.4f}, {z})"
+                    )
+                moved = r.moved_toward + r.moved_away
+                if moved:
+                    print(
+                        f"  lines that moved 24 h -> 1 h: {r.moved_toward} toward the model, "
+                        f"{r.moved_away} away"
+                    )
+        return 0
     if args.command == "forward-freeze-opener":
         from ttk.services.forward_models import register_opener
 
@@ -263,6 +306,11 @@ def register(sub: Any) -> None:
     fwd_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
+    sub.add_parser(
+        "prop-model-freeze",
+        help="Fit, freeze and register the NFL prop model, and record it on today's pulls",
+    )
+    sub.add_parser("prop-report", help="Score the prop model's forward test against the market")
     fwd_opener = sub.add_parser(
         "forward-freeze-opener",
         help="Register <model>-opener: a frozen key-number spread model snapshot at the opener",
@@ -323,6 +371,8 @@ HANDLERS: dict[str, Handler] = {
     "forward-freeze-ml": _forward,
     "forward-freeze-nfl-wind": _forward,
     "forward-freeze-opener": _forward,
+    "prop-model-freeze": _forward,
+    "prop-report": _forward,
     "forward-freeze-totals": _forward,
     "forward-snapshot": _forward,
     "forward-run": _forward,
