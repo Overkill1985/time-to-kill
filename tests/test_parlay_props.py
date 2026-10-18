@@ -234,3 +234,34 @@ def test_api_settles_a_prop_leg_by_hand_and_lists_props(
     assert listed[1]["result"] == "LOSS" and listed[1]["game_final"] is False
     props = client.get("/api/props", params={"date": "2026-10-18"}).json()
     assert {p["player"] for p in props["props"]} == {HURTS, BROWN}
+
+
+def test_a_prop_leg_matches_the_player_however_a_book_spells_him(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # The books in seed() list "Jalen Hurts (PHI)"; others write "Jalen Hurts" or
+    # "Jalen Hurts Jr." - a leg added under any spelling prices against all of them.
+    game_id = seed(session_factory)
+    add_brown(session_factory, game_id)
+    spelled = [
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.OVER,
+            245.5,
+            player="Jalen Hurts",
+            prop="player_pass_yds",
+        ),
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.UNDER,
+            5.5,
+            player="AJ Brown",
+            prop="player_receptions",
+        ),
+    ]
+    with session_factory() as s:
+        a = evaluate_parlay(s, spelled, "draftkings", at=AT)
+    assert [leg.american_odds for leg in a.legs] == [-110, -100]
+    assert a.legs[0].market_books == 3 and a.legs[1].market_books == 2

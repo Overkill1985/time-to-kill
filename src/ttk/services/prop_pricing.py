@@ -78,11 +78,13 @@ def prop_offer(
     if pull is None:
         return None
     by_book: dict[int, dict[str, float]] = {}
+    # Books spell a player differently ("C.J. Stroud", "C.J Stroud (HOU)"): match the key.
+    key = player_key(player)
     for q in session.scalars(
-        select(PropQuote).where(
-            PropQuote.pull_id == pull.id, PropQuote.player == player, PropQuote.market == market
-        )
+        select(PropQuote).where(PropQuote.pull_id == pull.id, PropQuote.market == market)
     ):
+        if player_key(q.player) != key:
+            continue
         side = YES_NO.get(q.selection, q.selection)
         if side not in ("Over", "Under") or _point(q) != line:
             continue
