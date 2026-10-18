@@ -662,3 +662,39 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **Against the market** (props stored 2026-10-07 to 10-18, games final with stats; main lines with 3+ books two-sided; model fitted on 2023–2024 only): 1,104 props, log loss **0.723 vs the market's 0.685 (z +3.6, worse)**, at 24 h and at 1 h alike. When the model was 10+ points below the market it said 31% where the market said 50%: they went over 48%. It leans under: its yardage distributions are too skewed for lines set near the median, and recent usage alone knows less than the books.
 - **Verdict:** a baseline, not an edge; forward-tested so every later version is measured against it on the same props. Next: calibrate the over/under split against the stored lines as they accumulate, then opponent and game-script features (v0.2), and the same for the NBA once its season has a few games.
 - **Forward test:** the collector records the model on every props pull (24 h and 1 h before kickoff) for each main line with 2+ books on both sides: 457 props from the 24 h pulls and the first 1 h pulls on 2026-10-18. Scored once the players' stats are in (no stat line: left out); a z from 100 decided props; and whether the line moved from 24 h to 1 h toward the model.
+
+### Matchups: v0.2 and v0.3 (2026-10-18)
+
+`nfl-prop-matchup 0.2.0` and `0.3.0`, DEVELOPMENT (`research/prop_matchup.py`; `ttk prop-model-freeze --model matchup` / `--model shrunk`). Both are recorded on every pull beside v0.1, and the Player props page shows the newest one (Model column; "Model" sorts).
+
+- **v0.2 = v0.1 x the opposing defense.** For each defense, an exponentially weighted average of what it allowed each position group (QB, RB/FB, WR, TE) per stat, over its earlier games only (half-life 8 games, last season at 0.5), shrunk toward the league average by 2 pseudo-games and turned into a factor (allowed / league, clamped 0.25 to 4). The player's mean is multiplied by factor^beta; beta per stat from a grid on TRAIN (0.25 to 0.5; passing uses what the defense allowed to QBs). A defense that has allowed 12% more receiving yards to WRs than average raises a WR's mean about 3%.
+- **v0.3 = v0.2 with each player's usage shrunk toward his position's average** (TRAIN average per player-game) by k pseudo-games per stat, with beta refitted beside it: k = 1 (rush attempts, receptions), 2 (yards), 4 (pass attempts, completions), 8 (TDs, where TD beta goes to 0). A player with 3 games is mostly his position; one with 17 is mostly himself. It is aimed at the noise: v0.2's biggest leans were low-sample players, e.g. a backup at 65% for an anytime TD the market priced at 9%.
+- **Validation, 2025**, mean log-likelihood per player-game, each against the version before:
+
+| Stat | v0.2 vs v0.1 z | v0.3 vs v0.2 z |
+|---|---|---|
+| Passing yards | +2.8 | −0.2 |
+| Pass attempts | +2.6 | −1.6 |
+| Completions | +3.9 | +0.1 |
+| Rushing yards | +2.5 | +0.7 |
+| Rush attempts | +0.8 | +1.8 |
+| Receptions | +1.9 | +3.8 |
+| Receiving yards | +2.1 | +3.0 |
+| Rush + receiving TDs | −0.8 | +7.0 |
+
+- **Against the market** (the same 1,104 October props as v0.1, fitted on 2023–2024 only), log loss:
+
+| Stat | Props | Market | v0.1 | v0.2 | v0.3 | v0.3 vs market z |
+|---|---|---|---|---|---|---|
+| All | 1,104 | 0.685 | 0.723 | 0.718 | 0.708 | +2.4 (worse) |
+| Passing yards | 62 | 0.692 | | 0.803 | 0.793 | +2.2 |
+| Pass attempts | 62 | 0.690 | | 0.776 | 0.748 | +1.1 |
+| Completions | 62 | 0.687 | | 0.774 | 0.747 | +1.3 |
+| Rushing yards | 160 | 0.693 | | 0.702 | 0.698 | +0.2 |
+| Rush attempts | 109 | 0.679 | | 0.724 | 0.731 | +1.2 |
+| Receptions | 333 | 0.675 | | 0.696 | 0.688 | +0.9 |
+| Receiving yards | 316 | 0.693 | | 0.709 | 0.696 | +0.2 |
+
+- Does the matchup add anything the market lacks? A logistic of the outcome on the market's log-odds plus v0.2's disagreement gives the disagreement +0.15 (t +1.5): not significant.
+- **Verdict:** each version improves on the one before (v0.2 on v0.1 z −3.9 against the market props; v0.3 on v0.2 by 0.010 log loss), and none beats the market. Receiving and rushing yards are now close (z +0.2); quarterback stats are well behind. The matchups are worth seeing when building a parlay, but a model lean is something to check, not value. The page's model sorts use only props with 2+ books quoting both sides: a lone book's line can be mislabeled (one listed 0.5- and 1.5-yard receiving lines).
+- **Next:** the forward test decides; 100 decided props per version for a z. Then game script (team totals and spreads from the stored odds), and quarterback-specific work.

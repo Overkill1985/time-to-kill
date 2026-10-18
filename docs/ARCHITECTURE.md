@@ -41,6 +41,7 @@ src/ttk/
     cfb_weather.py     College totals vs archive wind (measured; not adopted)
     nfl_opener.py      NFL 2023-2024: does the model's disagreement with the opener predict the close?
     prop_model.py      NFL prop model v0.1: weighted recent usage; negative binomial / gamma per stat
+    prop_matchup.py    NFL prop models v0.2/v0.3: usage x what the opposing defense allowed the position; v0.3 shrinks usage toward the position average
     nfl_simulation.py  Copula pairs (train) and joint validation vs independence (shared core: SimRow)
     espn_simulation.py Same for the frozen CFB/NBA/NCAAB models: no-tie margins, per-sport dependence
     moneyline.py       Moneylines from the spread models' margin distributions; validation vs the ML market
@@ -83,7 +84,7 @@ src/ttk/
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
-    player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, and the player's hit rate on it
+    player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, the player's hit rate on it, and the newest matchup model's chance (in testing)
     nfl_player_stats.py NFL player game stats from nflverse (stats_player_week), re-imports update
     prop_forward.py    Prop model forward test: records each pull's main lines before kickoff, scores after stats
     prop_pricing.py    Prop parlay legs (main lines and N+ milestones): book price, market no-vig or implied chance from the latest props pull; grading from player stats

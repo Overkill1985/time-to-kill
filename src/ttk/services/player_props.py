@@ -204,6 +204,16 @@ class PropRow:
     implied_over: float | None = None
     """Median of the books' implied P(over) at the line, their cut still in: the only
     market chance a one-sided milestone has (it overstates the real chance)."""
+    player_id: str | None = None
+    """The stats provider's id the player was matched to (None: unmatched)."""
+    opponent_id: int | None = None
+    model_name: str | None = None
+    model_over: float | None = None
+    """A prop model's P(over) at the line (DEVELOPMENT: in testing, not a value call)."""
+    model_mean: float | None = None
+    defense_factor: float | None = None
+    two_sided_books: int = 0
+    """Books quoting both sides at the line (one lone book can mislabel a line)."""
 
 
 Points = dict[float, dict[str, dict[str, float]]]
@@ -402,6 +412,9 @@ def props_for_games(
                     _best(book_prices, "Under"),
                     milestone=int(line + 0.5) if milestones else None,
                     implied_over=statistics.median(implied) if implied else None,
+                    player_id=player_id,
+                    opponent_id=away.id if team is home else home.id,
+                    two_sided_books=len(over_ps),
                 )
                 if player_id is not None:
                     this_season = [v for season, v in past if season == game.season]

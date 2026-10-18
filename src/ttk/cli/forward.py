@@ -69,20 +69,36 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
         return 0
     if args.command == "prop-model-freeze":
         from ttk.services.prop_forward import freeze_and_register as freeze_props
-        from ttk.services.prop_forward import snapshot_pulls
+        from ttk.services.prop_forward import (
+            freeze_matchup_and_register,
+            freeze_shrunk_and_register,
+            snapshot_pulls,
+        )
 
         with factory() as session:
-            prop_row, prop_fit = freeze_props(session)
-            session.commit()
+            if args.model == "shrunk":
+                prop_row, matchup_fit = freeze_shrunk_and_register(session)
+                session.commit()
+                fitted = f"shrink {matchup_fit.shrink}, beta {matchup_fit.beta}"
+                validation, against = matchup_fit.validate, "v0.2"
+            elif args.model == "matchup":
+                prop_row, matchup_fit = freeze_matchup_and_register(session)
+                session.commit()
+                fitted = f"{matchup_fit.defense}, beta {matchup_fit.beta}"
+                validation, against = matchup_fit.validate, "v0.1"
+            else:
+                prop_row, usage_fit = freeze_props(session)
+                session.commit()
+                fitted = str(usage_fit.params)
+                validation, against = usage_fit.validate, "season average"
             print(
-                f"fitted on {prop_fit.params}; "
-                f"registered {prop_row.name} {prop_row.version} (DEVELOPMENT)"
+                f"fitted on {fitted}; registered {prop_row.name} {prop_row.version} (DEVELOPMENT)"
             )
-            for pv in prop_fit.validate:
+            for pv in validation:
                 print(
                     f"  {pv.market:26s} validation n={pv.games:5d}: "
                     f"log-likelihood {pv.log_lik:.4f} "
-                    f"vs season average {pv.baseline_log_lik:.4f} (z {pv.z:+.1f})"
+                    f"vs {against} {pv.baseline_log_lik:.4f} (z {pv.z:+.1f})"
                 )
             for line in snapshot_pulls(session):
                 print(line)
@@ -306,9 +322,18 @@ def register(sub: Any) -> None:
     fwd_totals.add_argument(
         "--sport", type=Sport, choices=[Sport.NCAAB, Sport.NBA], default=Sport.NCAAB
     )
-    sub.add_parser(
+    prop_freeze = sub.add_parser(
         "prop-model-freeze",
-        help="Fit, freeze and register the NFL prop model, and record it on today's pulls",
+        help="Fit, freeze and register an NFL prop model, and record it on today's pulls",
+    )
+    prop_freeze.add_argument(
+        "--model",
+        choices=["usage", "matchup", "shrunk"],
+        default="usage",
+        help=(
+            "usage = v0.1 (recent usage); matchup = v0.2 (adds the opposing defense); "
+            "shrunk = v0.3 (v0.2 with usage shrunk toward the position average)"
+        ),
     )
     sub.add_parser("prop-report", help="Score the prop model's forward test against the market")
     fwd_opener = sub.add_parser(

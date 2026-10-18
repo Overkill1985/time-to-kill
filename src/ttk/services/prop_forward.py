@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -37,6 +38,7 @@ from ttk.db.models import (
     utcnow,
 )
 from ttk.domain import GameStatus, Sport
+from ttk.research import prop_matchup as mu
 from ttk.research import prop_model as pm
 from ttk.research.moneyline import no_vig
 from ttk.services import player_props as pp
@@ -44,8 +46,30 @@ from ttk.services.forward_test import register
 
 MODEL_NAME = "nfl-prop-usage"
 MODEL_VERSION = "0.1.0"
+MATCHUP_NAME = "nfl-prop-matchup"
+MATCHUP_VERSION = "0.2.0"
+SHRUNK_VERSION = "0.3.0"
+KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup"})
 MIN_BOOKS = 2
 MIN_FOR_Z = 100
+
+PropModel = pm.FrozenPropModel | mu.FrozenMatchupModel
+
+
+def load_model(artifact: Mapping[str, Any], games: Sequence[pm.PlayerGame]) -> PropModel:
+    if artifact.get("kind") == "nfl_prop_matchup":
+        return mu.FrozenMatchupModel(artifact, games)
+    return pm.FrozenPropModel(artifact, games)
+
+
+def model_view(
+    model: PropModel, player_id: str, market: str, line: float, game: Game, opponent_id: int
+) -> pm.PropView | mu.MatchupView | None:
+    if isinstance(model, mu.FrozenMatchupModel):
+        return model.view(
+            player_id, market, line, game.commence_time, game.season or 0, opponent_id
+        )
+    return model.view(player_id, market, line, game.commence_time, game.season or 0)
 
 
 def freeze_and_register(session: Session) -> tuple[ModelVersion, pm.PropBacktest]:
@@ -66,13 +90,61 @@ def freeze_and_register(session: Session) -> tuple[ModelVersion, pm.PropBacktest
     return row, result
 
 
+def freeze_matchup_and_register(session: Session) -> tuple[ModelVersion, mu.MatchupBacktest]:
+    """v0.2: v0.1's usage settings (TRAIN), plus the opposing defense (TRAIN)."""
+    games = pm.load_player_games(session)
+    usage = pm.backtest(games).params
+    result = mu.backtest(games, usage)
+    row = register(
+        session,
+        name=MATCHUP_NAME,
+        version=MATCHUP_VERSION,
+        sport=Sport.NFL,
+        algorithm="recent usage x opposing defense; nbinom / gamma",
+        features=[*pm.STATS, "defense_allowed_by_position"],
+        artifact=mu.freeze(result),
+        training_window=f"{pm.TRAIN[0]}-{pm.TRAIN[1]}",
+        validation_window=f"{pm.VALIDATE[0]}-{pm.VALIDATE[1]}",
+        log_loss=None,
+        brier=None,
+    )
+    return row, result
+
+
+def freeze_shrunk_and_register(session: Session) -> tuple[ModelVersion, mu.MatchupBacktest]:
+    """v0.3: the registered v0.2, plus each player's usage shrunk toward his position's
+    average (shrink and beta per stat chosen on TRAIN; validated against v0.2)."""
+    previous = session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.name == MATCHUP_NAME, ModelVersion.version == MATCHUP_VERSION
+        )
+    ).first()
+    if previous is None or not previous.artifact:
+        raise ValueError(f"register {MATCHUP_NAME} {MATCHUP_VERSION} first (--model matchup)")
+    result = mu.backtest_v03(pm.load_player_games(session), mu.from_artifact(previous.artifact))
+    row = register(
+        session,
+        name=MATCHUP_NAME,
+        version=SHRUNK_VERSION,
+        sport=Sport.NFL,
+        algorithm="recent usage shrunk to position x opposing defense; nbinom / gamma",
+        features=[*pm.STATS, "defense_allowed_by_position", "position_prior"],
+        artifact=mu.freeze(result),
+        training_window=f"{pm.TRAIN[0]}-{pm.TRAIN[1]}",
+        validation_window=f"{pm.VALIDATE[0]}-{pm.VALIDATE[1]}",
+        log_loss=None,
+        brier=None,
+    )
+    return row, result
+
+
 def prop_versions(session: Session) -> list[ModelVersion]:
     return [
         row
         for row in session.scalars(
             select(ModelVersion).where(ModelVersion.artifact.is_not(None)).order_by(ModelVersion.id)
         )
-        if (row.artifact or {}).get("kind") == "nfl_prop_usage"
+        if (row.artifact or {}).get("kind") in KINDS
     ]
 
 
@@ -107,7 +179,7 @@ def snapshot_pulls(
         if not due:
             continue
         games = pm.load_player_games(session)
-        model = pm.FrozenPropModel(version.artifact or {}, games)
+        model = load_model(version.artifact or {}, games)
         teams = {t.id: t for t in session.scalars(select(Team).where(Team.sport == Sport.NFL))}
         history = pp._history(session, Sport.NFL, list(teams), now + timedelta(days=1))
         books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
@@ -124,7 +196,7 @@ def snapshot_pulls(
 def _snapshot(
     session: Session,
     version: ModelVersion,
-    model: pm.FrozenPropModel,
+    model: PropModel,
     history: pp._History,
     books: dict[int, str],
     pull: PropPull,
@@ -149,10 +221,11 @@ def _snapshot(
         if len(no_vigs) < MIN_BOOKS:
             continue
         team_id = game.home_team_id if side == "HOME" else game.away_team_id
+        opponent_id = game.away_team_id if side == "HOME" else game.home_team_id
         player_id = pp._match(history, team_id, prop.name)
         if player_id is None or (player_id, market) in seen:
             continue
-        view = model.view(player_id, market, line, game.commence_time, game.season or 0)
+        view = model_view(model, player_id, market, line, game, opponent_id)
         if view is None:
             continue
         seen.add((player_id, market))

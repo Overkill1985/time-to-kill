@@ -565,7 +565,7 @@ def build_forward_models(
         sport = Sport(row.sport)
         if sports is not None and sport not in sports:
             continue
-        if (row.artifact or {}).get("kind") == "nfl_prop_usage":
+        if (row.artifact or {}).get("kind") in ("nfl_prop_usage", "nfl_prop_matchup"):
             continue  # a prop model: forward-tested by services/prop_forward, not here
         if (row.artifact or {}).get("kind") == "nfl_wind":
             if weather is None:

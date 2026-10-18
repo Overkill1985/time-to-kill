@@ -135,7 +135,7 @@
         <header class="page-head">
           <p class="eyebrow">NFL and NBA</p>
           <h1 id="players-title">Player props</h1>
-          <p class="lede">Each prop's line from the books, next to how often the player went over it before. Hit rates describe the past: there is no tested prop model, so nothing here is a recommendation.</p>
+          <p class="lede">Each prop's line from the books, next to how often the player went over it before. Hit rates describe the past, and the matchup model (usage x the opposing defense) is in testing: it has not beaten the market, so nothing here is a recommendation.</p>
         </header>
         <div class="filter-row">
           <label class="field inline">Date <input type="date" id="props-date"></label>
@@ -154,6 +154,9 @@
             <option value="time">Game time</option>
             <option value="last10">Last 10: most overs</option>
             <option value="last10-under">Last 10: most unders</option>
+            <option value="model-over">Model leans over most vs market</option>
+            <option value="model-under">Model leans under most vs market</option>
+            <option value="model-likely">Model: most likely over</option>
             <option value="player">Player</option>
           </select></label>
         </div>

@@ -81,11 +81,21 @@ class PlayerGame:
     season: int
     kickoff: datetime
     values: dict[str, float]
+    team_id: int = 0
+    opponent_id: int = 0
+    position: str = ""
+    """nflverse position (QB, RB, WR, TE, FB, ...); the matchup model groups by it."""
 
 
 def load_player_games(session: Session) -> list[PlayerGame]:
     rows = session.execute(
-        select(NflPlayerGameStat, Game.season, Game.commence_time)
+        select(
+            NflPlayerGameStat,
+            Game.season,
+            Game.commence_time,
+            Game.home_team_id,
+            Game.away_team_id,
+        )
         .join(Game, Game.id == NflPlayerGameStat.game_id)
         .where(Game.sport == Sport.NFL, Game.status == GameStatus.FINAL)
         .order_by(Game.commence_time)
@@ -97,8 +107,11 @@ def load_player_games(session: Session) -> list[PlayerGame]:
             int(season or 0),
             kick,
             {m: float(f(r)) for m, f in STATS.items()},
+            r.team_id,
+            away if r.team_id == home else home,
+            r.position or "",
         )
-        for r, season, kick in rows
+        for r, season, kick, home, away in rows
     ]
 
 

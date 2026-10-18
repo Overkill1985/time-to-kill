@@ -128,6 +128,7 @@ const TERMS = {
   data: ["Data quality", "How complete and fresh the inputs are: odds age, how many books, the model's inputs."],
   oddsage: ["Odds age", "Minutes since the books' prices were last confirmed. Stale prices can't qualify."],
   linemove: ["Line move", "The main line when first seen, and now. A move toward a side means money came in on it."],
+  propmodel: ["Matchup model (in testing)", "The prop model's chance of the over: the player's recent usage, adjusted for how much this defense has allowed his position (def x1.12 = 12% more than average). It is being forward-tested and has not beaten the market yet, so a lean is something to check, not value."],
   nvp: ["Market chance of the over", "The books' own probability that the player goes over the line, with their cut removed (the median across books quoting both sides). A hit rate well above it isn't proof of value: past games don't know about tonight's matchup or minutes."],
   clv: ["Closing-line value", "How your price compares with the final price before kickoff. Beating the close again and again is the best early sign of real skill, long before wins and losses settle it."],
   vsmarket: ["Compared with the market", "How much worse (+) or better (−) the model's probabilities were than the closing market's, game by game (paired log loss)."],
@@ -1131,6 +1132,17 @@ function marketChance(p) {
   return el("span", { title: "One-sided: the books' implied chance, their cut still in (it runs a little high)", text: `${pct(p.implied_over, 0)}*` });
 }
 
+const marketOver = (p) => p.over_probability ?? p.implied_over;
+const MODEL_MIN_BOOKS = 2;
+
+function modelCell(p) {
+  if (p.model_over == null) return el("td", { class: "num muted", text: "–" });
+  const lean = marketOver(p) == null ? null : p.model_over - marketOver(p);
+  return el("td", { class: "num" },
+    el("span", { class: lean == null ? "" : lean > 0.03 ? "pos" : lean < -0.03 ? "neg" : "", text: pct(p.model_over, 0) }),
+    p.defense_factor != null ? el("div", { class: "muted small", text: `def ×${p.defense_factor.toFixed(2)}` }) : null);
+}
+
 function propRow(p) {
   const share = p.last10_over_share;
   const add = (selection, text) => {
@@ -1144,6 +1156,7 @@ function propRow(p) {
     el("td", { text: propName(p.market) }),
     el("td", { class: "num", text: p.milestone != null ? `${p.milestone}+` : String(p.line) }),
     el("td", { class: "num" }, marketChance(p)),
+    modelCell(p),
     el("td", { class: "num", text: hitText(p.season) }),
     el("td", { class: `num ${share == null ? "" : share >= 0.5 ? "pos" : "neg"}`, text: hitText(p.last10) }),
     el("td", {}, recentDots(p)),
@@ -1170,6 +1183,14 @@ function renderProps() {
   if (sort === "last10") rows.sort((a, b) => over(b) - over(a) || (b.last10?.games ?? 0) - (a.last10?.games ?? 0));
   else if (sort === "last10-under") rows.sort((a, b) => (a.last10_over_share ?? 2) - (b.last10_over_share ?? 2));
   else if (sort === "player") rows.sort((a, b) => a.player.localeCompare(b.player));
+  else if (sort.startsWith("model")) {
+    const lean = (p) => (p.model_over == null || marketOver(p) == null ? null : p.model_over - marketOver(p));
+    // Model sorts need 2+ books quoting both sides: a lone book's line can be mislabeled.
+    rows = rows.filter((p) => p.model_over != null && (p.two_sided_books ?? 0) >= MODEL_MIN_BOOKS);
+    if (sort === "model-over") rows.sort((a, b) => (lean(b) ?? -9) - (lean(a) ?? -9));
+    else if (sort === "model-under") rows.sort((a, b) => (lean(a) ?? 9) - (lean(b) ?? 9));
+    else rows.sort((a, b) => b.model_over - a.model_over);
+  }
   const status = $("#props-status");
   if (!propsData.props.length) {
     status.textContent = propsData.games
@@ -1186,7 +1207,8 @@ function renderProps() {
   status.textContent = `${total} of ${propsData.props.length} ${propsData.kind === "milestones" ? "milestones" : "props"} · ${propsData.note}${starNote}`;
   const head = el("thead", {}, el("tr", {},
     el("th", { text: "Player" }), el("th", { text: "Prop" }), el("th", { class: "num", text: "Line" }),
-    el("th", { class: "num" }, "Market over ", term("nvp")), el("th", { class: "num", text: "Season O–U" }),
+    el("th", { class: "num" }, "Market over ", term("nvp")), el("th", { class: "num" }, "Model ", term("propmodel")),
+    el("th", { class: "num", text: "Season O–U" }),
     el("th", { class: "num", text: "Last 10 O–U" }), el("th", { text: "Last 10 games" }),
     el("th", { class: "num", text: "L10 avg" }), el("th", { class: "num", text: "Best over" }),
     el("th", { class: "num", text: "Best under" }), el("th", { text: "Parlay" })));
