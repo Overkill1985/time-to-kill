@@ -308,6 +308,13 @@ def _prop_leg(
             [bm.american_to_decimal(offer.book_price), bm.american_to_decimal(offer.book_other)]
         ).probabilities[0]
         source = "book"
+    elif offer is not None and offer.implied_over is not None and leg.selection is Selection.OVER:
+        # A one-sided milestone: no under to take the book's cut out against.
+        probability, source = offer.implied_over, "implied"
+        warnings.append(
+            f"Leg {i + 1}: books post this milestone one-sided, so its chance is the books' "
+            "implied one with their cut still in: it overstates the real chance a little"
+        )
     else:
         raise ParlayError(f"Leg {i + 1}: no two-sided market on this prop to estimate a chance")
     odds_age = (at - offer.pulled_at) if offer is not None else None

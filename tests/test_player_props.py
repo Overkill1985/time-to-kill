@@ -112,7 +112,7 @@ def test_main_line_market_and_hit_rates(session_factory: sessionmaker[Session]) 
     assert len(rows) == 1
     r = rows[0]
     assert (r.player, r.team, r.market, r.line, r.books) == (
-        "Jalen Hurts (PHI)",
+        "Jalen Hurts",  # the books' "Jalen Hurts (PHI)", team code dropped
         "PHI",
         "player_pass_yds",
         245.5,

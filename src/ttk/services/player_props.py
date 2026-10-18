@@ -6,6 +6,13 @@ before kickoff) gives each (player, market) a main line: the number the most boo
 quote on both sides. At it: the median no-vig P(over) across those books, and the
 best over and under prices. Anytime-TD Yes/No is treated as over/under 0.5.
 
+Milestones ("200+ passing yards", ``milestones=True``): every rung a ladder quote
+lists ("N+ ..." with no line) is an over at N - 0.5. Books post most of them one-sided,
+so their market chance is often only the books' implied one (their cut still in).
+
+A player is grouped by props.player_key: books spell him differently ("C.J. Stroud",
+"C.J Stroud (HOU)"), and each spelling would otherwise be its own row.
+
 Hit rate: the player's games before this one with the market's stat known
 (NFL: nflverse player stats; NBA: ESPN box scores) - this season's, and his last
 10 across seasons - counted over, under and push against today's line. The player
@@ -18,8 +25,9 @@ here is a recommendation (docs/MODEL-GOVERNANCE.md).
 
 from __future__ import annotations
 
+import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -109,6 +117,9 @@ shown without a hit rate."""
 
 YES_NO = {"Yes": "Over", "No": "Under"}
 LAST_N = 10
+LADDER = re.compile(r"^(\d+)\+ ")
+"""A milestone rung: "200+ Passing Yards" = an over at 199.5."""
+MIN_MILESTONE_BOOKS = 2
 
 
 @dataclass(frozen=True)
@@ -152,35 +163,63 @@ class PropRow:
     last10: HitRate | None = None
     recent: list[float] = field(default_factory=list)
     """The last 10 values, most recent first."""
+    milestone: int | None = None
+    """For a milestone row: N in "N+" (the line is N - 0.5)."""
+    implied_over: float | None = None
+    """Median of the books' implied P(over) at the line, their cut still in: the only
+    market chance a one-sided milestone has (it overstates the real chance)."""
 
 
-def _main_lines(
-    quotes: Sequence[tuple[PropQuote, str]],
-) -> dict[tuple[str, str, str], tuple[float, dict[str, dict[str, float]]]]:
-    """(player, team side, market) -> (main line, book -> {Over, Under: price})."""
-    by: dict[tuple[str, str, str], dict[float, dict[str, dict[str, float]]]] = defaultdict(
-        lambda: defaultdict(dict)
-    )
+Points = dict[float, dict[str, dict[str, float]]]
+"""line -> book -> {Over, Under: price}."""
+
+
+@dataclass
+class _Prop:
+    names: Counter[str] = field(default_factory=Counter)
+    points: Points = field(default_factory=lambda: defaultdict(dict))
+    rungs: set[float] = field(default_factory=set)
+    """Lines a ladder ("N+") quote lists."""
+
+    @property
+    def name(self) -> str:
+        """The spelling most books use, without a team code."""
+        return re.sub(r"\s*\([A-Za-z]{2,4}\)\s*$", "", self.names.most_common(1)[0][0])
+
+
+def _props(quotes: Sequence[tuple[PropQuote, str]]) -> dict[tuple[str, str, str], _Prop]:
+    """(player key, team side, market) -> every book's prices at every line."""
+    by: dict[tuple[str, str, str], _Prop] = defaultdict(_Prop)
     for q, book in quotes:
-        side = YES_NO.get(q.selection, q.selection)
-        if side not in ("Over", "Under"):
+        point: float | None
+        rung = LADDER.match(q.selection) if q.point is None else None
+        if rung:
+            side, point = "Over", int(rung.group(1)) - 0.5
+        else:
+            side = YES_NO.get(q.selection, q.selection)
+            point = q.point if q.point is not None else (0.5 if q.selection in YES_NO else None)
+        if side not in ("Over", "Under") or point is None:
             continue
-        point = q.point if q.point is not None else (0.5 if q.selection in YES_NO else None)
-        if point is None:
-            continue
-        book_sides = by[(q.player, q.team_side, q.market)][point].setdefault(book, {})
+        prop = by[(player_key(q.player), q.team_side, q.market)]
+        prop.names[q.player] += 1
+        if rung:
+            prop.rungs.add(point)
+        book_sides = prop.points[point].setdefault(book, {})
         # A book listing the same outcome twice: keep its better price.
         if side not in book_sides or q.american_odds > book_sides[side]:
             book_sides[side] = q.american_odds
-    out = {}
-    for key, points in by.items():
+    return by
 
-        def both(point: float, points: Mapping[float, dict[str, dict[str, float]]] = points) -> int:
-            return sum(1 for sides in points[point].values() if len(sides) == 2)
 
-        main = max(points, key=lambda pt: (both(pt), len(points[pt]), -abs(pt)))
-        out[key] = (main, points[main])
-    return out
+def _main_line(points: Points) -> float:
+    def both(point: float) -> int:
+        return sum(1 for sides in points[point].values() if len(sides) == 2)
+
+    return max(points, key=lambda pt: (both(pt), len(points[pt]), -abs(pt)))
+
+
+def _implied(american: float) -> float:
+    return 100 / (american + 100) if american > 0 else -american / (-american + 100)
 
 
 def _best(books: Mapping[str, Mapping[str, float]], side: str) -> Price | None:
@@ -251,8 +290,12 @@ def _match(history: _History, team_id: int, name: str) -> str | None:
     return roster[fits[0]] if len(fits) == 1 else None
 
 
-def props_for_games(session: Session, games: Sequence[Game]) -> list[PropRow]:
-    """Props of these games from each game's latest pull, with hit rates."""
+def props_for_games(
+    session: Session, games: Sequence[Game], *, milestones: bool = False
+) -> list[PropRow]:
+    """Props of these games from each game's latest pull, with hit rates: each prop's
+    main line, or with ``milestones`` every ladder rung (N+) at least
+    ``MIN_MILESTONE_BOOKS`` books price."""
     books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
     teams = {t.id: t for t in session.scalars(select(Team))}
     out: list[PropRow] = []
@@ -283,43 +326,60 @@ def props_for_games(session: Session, games: Sequence[Game]) -> list[PropRow]:
             )
         history = histories[sport]
         home, away = teams[game.home_team_id], teams[game.away_team_id]
-        for (player, side, market), (line, book_prices) in _main_lines(quotes).items():
+        for (_, side, market), prop in _props(quotes).items():
             team = home if side == "HOME" else away
-            over_ps = [
-                p
-                for sides in book_prices.values()
-                if len(sides) == 2 and (p := no_vig(sides["Over"], sides["Under"])) is not None
-            ]
-            row = PropRow(
-                game.id,
-                sport,
-                f"{away.name} @ {home.name}",
-                game.commence_time,
-                pull.pulled_at,
-                pull.horizon_hours,
-                player,
-                team.abbreviation or team.name,
-                market,
-                line,
-                len(book_prices),
-                statistics.median(over_ps) if over_ps else None,
-                _best(book_prices, "Over"),
-                _best(book_prices, "Under"),
-            )
+            player = prop.name
+            if milestones:
+                lines = sorted(
+                    pt
+                    for pt in prop.rungs
+                    if sum(1 for s in prop.points[pt].values() if "Over" in s)
+                    >= MIN_MILESTONE_BOOKS
+                )
+            else:
+                lines = [_main_line(prop.points)]
             fn = stat_fns.get(market)
             player_id = _match(history, team.id, player) if fn is not None else None
+            past: list[tuple[int, float]] = []
             if fn is not None and player_id is not None:
                 past = [
                     (season, v)
                     for kick, season, r in history.games.get(player_id, [])
                     if kick < game.commence_time and (v := fn(r)) is not None
                 ]
-                this_season = [v for season, v in past if season == game.season]
-                last = [v for _, v in past[:LAST_N]]
-                row.season = _hit(this_season, line)
-                row.last10 = _hit(last, line)
-                row.recent = last
-            out.append(row)
+            for line in lines:
+                book_prices = prop.points[line]
+                over_ps = [
+                    p
+                    for sides in book_prices.values()
+                    if len(sides) == 2 and (p := no_vig(sides["Over"], sides["Under"])) is not None
+                ]
+                implied = [_implied(s["Over"]) for s in book_prices.values() if "Over" in s]
+                row = PropRow(
+                    game.id,
+                    sport,
+                    f"{away.name} @ {home.name}",
+                    game.commence_time,
+                    pull.pulled_at,
+                    pull.horizon_hours,
+                    player,
+                    team.abbreviation or team.name,
+                    market,
+                    line,
+                    len(book_prices),
+                    statistics.median(over_ps) if over_ps else None,
+                    _best(book_prices, "Over"),
+                    _best(book_prices, "Under"),
+                    milestone=int(line + 0.5) if milestones else None,
+                    implied_over=statistics.median(implied) if implied else None,
+                )
+                if player_id is not None:
+                    this_season = [v for season, v in past if season == game.season]
+                    last = [v for _, v in past[:LAST_N]]
+                    row.season = _hit(this_season, line)
+                    row.last10 = _hit(last, line)
+                    row.recent = last
+                out.append(row)
     return out
 
 

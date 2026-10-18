@@ -233,7 +233,7 @@ def test_api_settles_a_prop_leg_by_hand_and_lists_props(
     assert [leg["market"] for leg in listed] == ["PLAYER_PROP", "PLAYER_PROP"]
     assert listed[1]["result"] == "LOSS" and listed[1]["game_final"] is False
     props = client.get("/api/props", params={"date": "2026-10-18"}).json()
-    assert {p["player"] for p in props["props"]} == {HURTS, BROWN}
+    assert {p["player"] for p in props["props"]} == {"Jalen Hurts", "A.J. Brown"}
 
 
 def test_a_prop_leg_matches_the_player_however_a_book_spells_him(
@@ -265,3 +265,108 @@ def test_a_prop_leg_matches_the_player_however_a_book_spells_him(
         a = evaluate_parlay(s, spelled, "draftkings", at=AT)
     assert [leg.american_odds for leg in a.legs] == [-110, -100]
     assert a.legs[0].market_books == 3 and a.legs[1].market_books == 2
+
+
+def add_milestones(sf: sessionmaker[Session], game_id: int) -> None:
+    """Hurts' 200+ and 250+ passing-yard rungs: one-sided ladders at three books, plus
+    one book's two-sided 199.5 line (spelled without the team code)."""
+    with sf() as s:
+        pull = s.scalars(select(PropPull).where(PropPull.game_id == game_id)).one()
+        books = {b.key: b for b in s.scalars(select(Sportsbook))}
+
+        def q(
+            book: str, sel: str, odds: float, point: float | None = None, name: str = HURTS
+        ) -> PropQuote:
+            return PropQuote(
+                pull_id=pull.id,
+                sportsbook_id=books[book].id,
+                market="player_pass_yds",
+                player=name,
+                team_side="HOME",
+                selection=sel,
+                point=point,
+                american_odds=odds,
+            )
+
+        s.add_all(
+            [
+                q("draftkings", "200+ Passing Yards", -400),
+                q("fanduel", "200+ Passing Yards", -350),
+                q("betmgm", "200+ Passing Yards", -500),
+                q("draftkings", "250+ Passing Yards", +105),
+                q("fanduel", "250+ Passing Yards", +110),
+                q("betmgm", "300+ Passing Yards", +300),  # one book only: not listed
+                q("fanduel", "Under", +250, 199.5, "Jalen Hurts"),
+            ]
+        )
+        s.commit()
+
+
+def test_milestone_rows_have_rungs_hit_rates_and_implied_chance(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.player_props import props_for_games, upcoming_games
+
+    game_id = seed(session_factory)
+    add_milestones(session_factory, game_id)
+    with session_factory() as s:
+        games = upcoming_games(s, KICK - timedelta(days=1), KICK + timedelta(days=1))
+        rows = props_for_games(s, games, milestones=True)
+    by = {(r.player, r.milestone): r for r in rows}
+    assert set(by) == {("Jalen Hurts", 200), ("Jalen Hurts", 250)}
+    two_hundred = by[("Jalen Hurts", 200)]
+    assert two_hundred.line == 199.5 and two_hundred.books == 3
+    assert two_hundred.best_over is not None and two_hundred.best_over.american == -350
+    assert two_hundred.implied_over == pytest.approx(0.8, abs=0.001)  # median of 80/78/83%
+    assert two_hundred.over_probability is not None  # fanduel posts both sides at 199.5
+    # His last 10 (310 down to 220) all cleared 200; 7 of 10 cleared 250.
+    assert two_hundred.last10 is not None and two_hundred.last10.over == 10
+    assert by[("Jalen Hurts", 250)].last10.over == 7  # type: ignore[union-attr]
+    assert by[("Jalen Hurts", 250)].over_probability is None  # one-sided: implied only
+
+
+def test_a_milestone_leg_prices_off_the_ladder(session_factory: sessionmaker[Session]) -> None:
+    game_id = seed(session_factory)
+    add_brown(session_factory, game_id)
+    add_milestones(session_factory, game_id)
+    legs_ = [
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.OVER,
+            249.5,
+            player="Jalen Hurts",
+            prop="player_pass_yds",
+        ),
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.UNDER,
+            5.5,
+            player=BROWN,
+            prop="player_receptions",
+        ),
+    ]
+    with session_factory() as s:
+        a = evaluate_parlay(s, legs_, "draftkings", at=AT)
+        hurts = a.legs[0]
+        assert (hurts.american_odds, hurts.probability_source) == (105, "implied")
+        assert hurts.probability == pytest.approx((100 / 205 + 100 / 210) / 2, abs=0.001)
+        assert any("one-sided" in w for w in a.warnings)
+        with pytest.raises(ParlayError, match="does not quote"):  # no under on a milestone
+            evaluate_parlay(
+                s,
+                [
+                    LegInput(
+                        game_id,
+                        Market.PLAYER_PROP,
+                        Selection.UNDER,
+                        249.5,
+                        player="Jalen Hurts",
+                        prop="player_pass_yds",
+                    ),
+                    legs_[1],
+                ],
+                "draftkings",
+                at=AT,
+            )

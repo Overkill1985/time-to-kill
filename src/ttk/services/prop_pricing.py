@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from ttk.db.models import Game, NflPlayerGameStat, PlayerGameStat, PropPull, PropQuote, Sportsbook
 from ttk.domain import BetResult, Selection, Sport
 from ttk.research.moneyline import no_vig
-from ttk.services.player_props import NBA_STATS, NFL_STATS, YES_NO
+from ttk.services.player_props import LADDER, NBA_STATS, NFL_STATS, YES_NO, _implied
 from ttk.services.props import player_key, roster_sides
 
 SIDE = {Selection.OVER: "Over", Selection.UNDER: "Under"}
@@ -50,6 +50,9 @@ class PropOffer:
     market_over: float | None
     """Median no-vig P(over) across books quoting both sides at the line."""
     books: int
+    implied_over: float | None = None
+    """Median implied P(over) of every book's over price, cut included: the only chance
+    a one-sided milestone has."""
 
 
 def _point(q: PropQuote) -> float | None:
@@ -85,8 +88,13 @@ def prop_offer(
     ):
         if player_key(q.player) != key:
             continue
-        side = YES_NO.get(q.selection, q.selection)
-        if side not in ("Over", "Under") or _point(q) != line:
+        point: float | None
+        rung = LADDER.match(q.selection) if q.point is None else None
+        if rung:  # a milestone ("200+ Passing Yards") is an over at 199.5
+            side, point = "Over", int(rung.group(1)) - 0.5
+        else:
+            side, point = YES_NO.get(q.selection, q.selection), _point(q)
+        if side not in ("Over", "Under") or point != line:
             continue
         sides = by_book.setdefault(q.sportsbook_id, {})
         if side not in sides or q.american_odds > sides[side]:
@@ -101,12 +109,14 @@ def prop_offer(
     mine = by_book.get(sportsbook_id, {})
     want = SIDE[selection]
     other = SIDE[Selection.UNDER if selection is Selection.OVER else Selection.OVER]
+    implied = [_implied(sides["Over"]) for sides in by_book.values() if "Over" in sides]
     return PropOffer(
         pull.pulled_at,
         mine.get(want),
         mine.get(other),
         statistics.median(overs) if overs else None,
         sum(1 for sides in by_book.values() if len(sides) == 2),
+        statistics.median(implied) if implied else None,
     )
 
 

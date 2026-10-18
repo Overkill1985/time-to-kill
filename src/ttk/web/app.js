@@ -1086,7 +1086,7 @@ async function loadProps() {
   status.textContent = "Loading props…";
   $("#props-list").replaceChildren();
   try {
-    propsData = await api(`/api/props?date=${propsDate.value}`);
+    propsData = await api(`/api/props?date=${propsDate.value}&kind=${$("#props-kind").value}`);
   } catch (error) {
     status.textContent = error.message;
     return;
@@ -1115,11 +1115,18 @@ function recentDots(p) {
 
 function addPropLeg(p, selection) {
   const side = selection === "OVER" ? "Over" : "Under";
+  const what = p.milestone != null ? `${p.milestone}+` : `${side} ${p.line}`;
   addLeg({
     game_id: p.game_id, market: "PLAYER_PROP", selection, line: p.line, player: p.player, prop: p.market,
-    american_odds: null, label: `${p.player} ${side} ${p.line} ${propName(p.market)} (${p.matchup})`,
+    american_odds: null, label: `${p.player} ${what} ${propName(p.market)} (${p.matchup})`,
   });
-  toast(`Added ${p.player} ${side.toLowerCase()} ${p.line} to the parlay builder.`);
+  toast(`Added ${p.player} ${what} ${propName(p.market).toLowerCase()} to the parlay builder.`);
+}
+
+function marketChance(p) {
+  if (p.over_probability != null) return el("span", { text: pct(p.over_probability, 0) });
+  if (p.implied_over == null) return el("span", { text: "–" });
+  return el("span", { title: "One-sided: the books' implied chance, their cut still in (it runs a little high)", text: `${pct(p.implied_over, 0)}*` });
 }
 
 function propRow(p) {
@@ -1133,8 +1140,8 @@ function propRow(p) {
   return el("tr", {},
     el("td", {}, el("div", { class: "strong", text: p.player }), el("div", { class: "muted small", text: p.team })),
     el("td", { text: propName(p.market) }),
-    el("td", { class: "num", text: String(p.line) }),
-    el("td", { class: "num", text: pct(p.over_probability, 0) }),
+    el("td", { class: "num", text: p.milestone != null ? `${p.milestone}+` : String(p.line) }),
+    el("td", { class: "num" }, marketChance(p)),
     el("td", { class: "num", text: hitText(p.season) }),
     el("td", { class: `num ${share == null ? "" : share >= 0.5 ? "pos" : "neg"}`, text: hitText(p.last10) }),
     el("td", {}, recentDots(p)),
@@ -1144,7 +1151,9 @@ function propRow(p) {
     el("td", { class: "num" }, p.best_under ? el("span", { text: american(p.best_under.american) }) : "–",
       p.best_under ? el("div", { class: "muted small", text: p.best_under.book }) : null),
     el("td", {}, started ? el("span", { class: "muted small", text: "started" })
-      : el("span", { class: "row-actions" }, add("OVER", "Over"), add("UNDER", "Under"))));
+      : p.milestone != null
+        ? el("span", { class: "row-actions" }, add("OVER", `Add ${p.milestone}+`))
+        : el("span", { class: "row-actions" }, add("OVER", "Over"), add("UNDER", "Under"))));
 }
 
 function renderProps() {
@@ -1167,7 +1176,12 @@ function renderProps() {
     $("#props-list").replaceChildren();
     return;
   }
-  status.textContent = `${rows.length} of ${propsData.props.length} props · ${propsData.note}`;
+  const MAX_ROWS = 600;
+  const total = rows.length;
+  if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS);
+  const capNote = total > MAX_ROWS ? ` Showing the first ${MAX_ROWS} of ${total}: narrow it with a player, team or prop.` : "";
+  const starNote = (propsData.kind === "milestones" ? " * = one-sided: the books' implied chance, cut still in." : "") + capNote;
+  status.textContent = `${total} of ${propsData.props.length} ${propsData.kind === "milestones" ? "milestones" : "props"} · ${propsData.note}${starNote}`;
   const head = el("thead", {}, el("tr", {},
     el("th", { text: "Player" }), el("th", { text: "Prop" }), el("th", { class: "num", text: "Line" }),
     el("th", { class: "num" }, "Market over ", term("nvp")), el("th", { class: "num", text: "Season O–U" }),
@@ -1199,10 +1213,13 @@ for (const b of $$("#props-pills .pill")) {
   b.addEventListener("click", () => { propsSport = b.dataset.sport; pressPill($("#props-pills"), b); renderProps(); });
 }
 propsDate.addEventListener("change", loadProps);
+$("#props-kind").addEventListener("change", loadProps);
 $("#props-search").addEventListener("input", renderProps);
 $("#props-market").addEventListener("change", renderProps);
 $("#props-sort").addEventListener("change", renderProps);
-loaders.players = () => { if (!propsData || propsData.date !== propsDate.value) loadProps(); };
+loaders.players = () => {
+  if (!propsData || propsData.date !== propsDate.value || propsData.kind !== $("#props-kind").value) loadProps();
+};
 
 // ------------------------------------------------------------------ parlay builder
 
