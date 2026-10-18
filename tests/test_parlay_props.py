@@ -370,3 +370,73 @@ def test_a_milestone_leg_prices_off_the_ladder(session_factory: sessionmaker[Ses
                 "draftkings",
                 at=AT,
             )
+
+
+def test_touchdown_props_are_milestones_and_price_as_legs(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.player_props import props_for_games, upcoming_games
+
+    game_id = seed(session_factory)
+    add_brown(session_factory, game_id)
+    with session_factory() as s:
+        pull = s.scalars(select(PropPull).where(PropPull.game_id == game_id)).one()
+        books = {b.key: b for b in s.scalars(select(Sportsbook))}
+
+        def q(
+            book: str, market: str, sel: str, odds: float, point: float | None = None
+        ) -> PropQuote:
+            return PropQuote(
+                pull_id=pull.id,
+                sportsbook_id=books[book].id,
+                market=market,
+                player=HURTS,
+                team_side="HOME",
+                selection=sel,
+                point=point,
+                american_odds=odds,
+            )
+
+        s.add_all(
+            [
+                q("draftkings", "player_anytime_td", "Yes", +110),
+                q("draftkings", "player_anytime_td", "No", -140),
+                q("fanduel", "player_anytime_td", HURTS, +120),  # theScore-style "yes"
+                q("betmgm", "player_anytime_td", "Over", +115, 0.5),
+                q("draftkings", "player_2plus_td", "Yes", +450),
+                q("fanduel", "player_2plus_td", HURTS, +500),
+            ]
+        )
+        s.commit()
+        games = upcoming_games(s, KICK - timedelta(days=1), KICK + timedelta(days=1))
+        rungs = {
+            (r.market, r.milestone): r
+            for r in props_for_games(s, games, milestones=True)
+            if r.market == "player_anytime_td"
+        }
+        main = next(r for r in props_for_games(s, games) if r.market == "player_anytime_td")
+    assert set(rungs) == {("player_anytime_td", 1), ("player_anytime_td", 2)}
+    assert rungs[("player_anytime_td", 1)].books == 3  # all three spellings of "yes"
+    assert rungs[("player_anytime_td", 2)].best_over.american == 500  # type: ignore[union-attr]
+    assert main.line == 0.5 and main.over_probability is not None  # draftkings yes/no
+    two_tds = [
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.OVER,
+            1.5,
+            player="Jalen Hurts",
+            prop="player_anytime_td",
+        ),
+        LegInput(
+            game_id,
+            Market.PLAYER_PROP,
+            Selection.UNDER,
+            5.5,
+            player=BROWN,
+            prop="player_receptions",
+        ),
+    ]
+    with session_factory() as s:
+        a = evaluate_parlay(s, two_tds, "draftkings", at=AT)
+    assert a.legs[0].american_odds == 450 and a.legs[0].probability_source == "implied"

@@ -1064,7 +1064,7 @@ const PROP_NAMES = {
   player_pass_rush_yds: "Pass + rush yards", player_rush_yds: "Rushing yards", player_rush_attempts: "Rush attempts",
   player_rush_tds: "Rushing TDs", player_receptions: "Receptions", player_reception_yds: "Receiving yards",
   player_reception_tds: "Receiving TDs", player_rush_reception_yds: "Rush + receiving yards",
-  player_anytime_td: "Anytime TD", player_reception_longest: "Longest reception", player_rush_longest: "Longest rush",
+  player_anytime_td: "Touchdowns (rush + rec)", player_reception_longest: "Longest reception", player_rush_longest: "Longest rush",
   player_longest_completion: "Longest completion", player_1st_td: "First TD", player_last_td: "Last TD",
   player_field_goals_made: "Field goals made", player_kicking_points: "Kicking points",
   player_extra_points_made: "Extra points made", player_sacks: "Sacks", player_solo_tackles: "Solo tackles",

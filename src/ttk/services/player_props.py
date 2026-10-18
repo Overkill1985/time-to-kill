@@ -120,6 +120,42 @@ LAST_N = 10
 LADDER = re.compile(r"^(\d+)\+ ")
 """A milestone rung: "200+ Passing Yards" = an over at 199.5."""
 MIN_MILESTONE_BOOKS = 2
+TD_MARKETS = {"player_anytime_td": 1, "player_2plus_td": 2, "player_3plus_td": 3}
+"""Touchdown markets are rungs of one stat (rushing + receiving TDs): anytime = 1+."""
+ANYTIME_TD = "player_anytime_td"
+
+
+@dataclass(frozen=True)
+class Outcome:
+    market: str
+    side: str
+    """Over or Under."""
+    point: float
+    rung: bool
+    """A milestone rung ("N+")."""
+
+
+def outcome(q: PropQuote) -> Outcome | None:
+    """A quote as (market, over/under, line). A ladder "200+ Passing Yards" is an over
+    at 199.5. Touchdown markets fold into anytime TD at 0.5 / 1.5 / 2.5: their "yes"
+    is "Yes", "Over", or (theScore Bet) the player's own name; their "no" is "No" or
+    "Under"."""
+    if q.market in TD_MARKETS:
+        if q.selection in ("Yes", "Over") or q.selection == q.player:
+            side = "Over"
+        elif q.selection in ("No", "Under"):
+            side = "Under"
+        else:
+            return None
+        return Outcome(ANYTIME_TD, side, TD_MARKETS[q.market] - 0.5, True)
+    rung = LADDER.match(q.selection) if q.point is None else None
+    if rung:
+        return Outcome(q.market, "Over", int(rung.group(1)) - 0.5, True)
+    side = YES_NO.get(q.selection, q.selection)
+    point = q.point if q.point is not None else (0.5 if q.selection in YES_NO else None)
+    if side not in ("Over", "Under") or point is None:
+        return None
+    return Outcome(q.market, side, point, False)
 
 
 @dataclass(frozen=True)
@@ -191,23 +227,17 @@ def _props(quotes: Sequence[tuple[PropQuote, str]]) -> dict[tuple[str, str, str]
     """(player key, team side, market) -> every book's prices at every line."""
     by: dict[tuple[str, str, str], _Prop] = defaultdict(_Prop)
     for q, book in quotes:
-        point: float | None
-        rung = LADDER.match(q.selection) if q.point is None else None
-        if rung:
-            side, point = "Over", int(rung.group(1)) - 0.5
-        else:
-            side = YES_NO.get(q.selection, q.selection)
-            point = q.point if q.point is not None else (0.5 if q.selection in YES_NO else None)
-        if side not in ("Over", "Under") or point is None:
+        o = outcome(q)
+        if o is None:
             continue
-        prop = by[(player_key(q.player), q.team_side, q.market)]
+        prop = by[(player_key(q.player), q.team_side, o.market)]
         prop.names[q.player] += 1
-        if rung:
-            prop.rungs.add(point)
-        book_sides = prop.points[point].setdefault(book, {})
+        if o.rung:
+            prop.rungs.add(o.point)
+        book_sides = prop.points[o.point].setdefault(book, {})
         # A book listing the same outcome twice: keep its better price.
-        if side not in book_sides or q.american_odds > book_sides[side]:
-            book_sides[side] = q.american_odds
+        if o.side not in book_sides or q.american_odds > book_sides[o.side]:
+            book_sides[o.side] = q.american_odds
     return by
 
 

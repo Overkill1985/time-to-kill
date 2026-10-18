@@ -30,7 +30,14 @@ from sqlalchemy.orm import Session
 from ttk.db.models import Game, NflPlayerGameStat, PlayerGameStat, PropPull, PropQuote, Sportsbook
 from ttk.domain import BetResult, Selection, Sport
 from ttk.research.moneyline import no_vig
-from ttk.services.player_props import LADDER, NBA_STATS, NFL_STATS, YES_NO, _implied
+from ttk.services.player_props import (
+    ANYTIME_TD,
+    NBA_STATS,
+    NFL_STATS,
+    TD_MARKETS,
+    _implied,
+    outcome,
+)
 from ttk.services.props import player_key, roster_sides
 
 SIDE = {Selection.OVER: "Over", Selection.UNDER: "Under"}
@@ -55,12 +62,6 @@ class PropOffer:
     a one-sided milestone has."""
 
 
-def _point(q: PropQuote) -> float | None:
-    if q.point is not None:
-        return q.point
-    return 0.5 if q.selection in YES_NO else None
-
-
 def prop_offer(
     session: Session,
     game_id: int,
@@ -83,22 +84,19 @@ def prop_offer(
     by_book: dict[int, dict[str, float]] = {}
     # Books spell a player differently ("C.J. Stroud", "C.J Stroud (HOU)"): match the key.
     key = player_key(player)
+    # Anytime TD at 1.5 / 2.5 is quoted under the 2+ / 3+ TD markets.
+    markets = list(TD_MARKETS) if market == ANYTIME_TD else [market]
     for q in session.scalars(
-        select(PropQuote).where(PropQuote.pull_id == pull.id, PropQuote.market == market)
+        select(PropQuote).where(PropQuote.pull_id == pull.id, PropQuote.market.in_(markets))
     ):
         if player_key(q.player) != key:
             continue
-        point: float | None
-        rung = LADDER.match(q.selection) if q.point is None else None
-        if rung:  # a milestone ("200+ Passing Yards") is an over at 199.5
-            side, point = "Over", int(rung.group(1)) - 0.5
-        else:
-            side, point = YES_NO.get(q.selection, q.selection), _point(q)
-        if side not in ("Over", "Under") or point != line:
+        o = outcome(q)  # a ladder ("200+ Passing Yards") is an over at 199.5
+        if o is None or o.market != market or o.point != line:
             continue
         sides = by_book.setdefault(q.sportsbook_id, {})
-        if side not in sides or q.american_odds > sides[side]:
-            sides[side] = q.american_odds
+        if o.side not in sides or q.american_odds > sides[o.side]:
+            sides[o.side] = q.american_odds
     if not by_book:
         return None
     overs = [
