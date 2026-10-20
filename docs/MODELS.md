@@ -698,3 +698,34 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - Does the matchup add anything the market lacks? A logistic of the outcome on the market's log-odds plus v0.2's disagreement gives the disagreement +0.15 (t +1.5): not significant.
 - **Verdict:** each version improves on the one before (v0.2 on v0.1 z −3.9 against the market props; v0.3 on v0.2 by 0.010 log loss), and none beats the market. Receiving and rushing yards are now close (z +0.2); quarterback stats are well behind. The matchups are worth seeing when building a parlay, but a model lean is something to check, not value. The page's model sorts use only props with 2+ books quoting both sides: a lone book's line can be mislabeled (one listed 0.5- and 1.5-yard receiving lines).
 - **Next:** the forward test decides; 100 decided props per version for a z. Then game script (team totals and spreads from the stored odds), and quarterback-specific work.
+
+## NBA player props (2026-10-20)
+
+`nba-prop-usage 0.1.0`, DEVELOPMENT (`research/nba_props.py`; `ttk prop-model-freeze --model nba`, `ttk prop-report`). Recorded on every NBA props pull (24 h and 1 h before tip) from the 2026-27 opener, and shown on the Player props page.
+
+- **Data:** ESPN box scores of regular-season and playoff games a player played (minutes > 0), 2021-22 on (preseason left out: its rotations aren't real). 3-pointers made were back-filled for 2022-23 to 2024-25 on 2026-10-20 (`ttk backfill-threes`, 90,719 rows).
+- **Model**, per stat (points, rebounds, assists, threes, steals, blocks, and the four combined markets):
+  - usage: an exponentially weighted mean of the player's earlier games (half-life 20 games; at a new season earlier weights x 0.5);
+  - shrunk toward a role prior (the league's rate per minute x his weighted minutes) by k pseudo-games: 0 for points and the points combos, 2 for most, 10 for steals;
+  - x the opponent's factor^beta: what that team allowed per game in the stat (all its opponents' players, so pace is in it), weighted over its earlier games (half-life 20, shrunk to the league by 5 games, clamped 0.5-2), over the league average; beta 1 for points and combos, 0.75 for rebounds, assists, steals, blocks, 0.5 for threes;
+  - a negative binomial with variance = phi x mean (phi 1.1 for steals up to 4.5 for points + rebounds + assists). It fitted better than variance = mean + mean^2/k for every stat, and a model with both put the squared term at zero.
+  - It assumes the player plays: props of a player who doesn't are void, and left out when scoring.
+- **Fitted on 2022-23 to 2024-25** (ESPN seasons 2023-2025; grids on TRAIN log-likelihood). **Validation, 2025-26**, mean log-likelihood per player-game:
+
+| Stat | Player-games | vs season-to-date average z | Opponent's contribution z |
+|---|---|---|---|
+| Points | 24,232 | +10.7 | +10.4 |
+| Rebounds | 23,838 | +11.4 | +9.4 |
+| Assists | 22,380 | +11.9 | +9.8 |
+| Threes | 21,802 | +10.9 | +5.4 |
+| Steals | 24,084 | +12.5 | +4.7 |
+| Blocks | 18,337 | +10.0 | +5.0 |
+| Points + rebounds + assists | 24,580 | +12.1 | +12.9 |
+| Points + rebounds | 24,809 | +12.0 | +12.0 |
+| Points + assists | 23,944 | +11.6 | +11.9 |
+| Rebounds + assists | 24,693 | +12.4 | +11.2 |
+
+  ("Opponent's contribution": the model against itself with beta 0, refitted. The matchup matters much more in the NBA than in the NFL, where it was +2 to +4.)
+- **Against the market:** not yet. No NBA prop had been pulled on a finished game, so the forward test is the first check (212 props recorded at 24 h for the opener's late games; a z from 100 decided).
+- **Known gaps:** it knows nothing about roster changes beyond the games played. A player on a new team carries his old team's usage (on opening night it leaned over on most of the reshuffled 76ers), and teammates' absences don't raise anyone's usage. Injuries, rest and blowouts (minutes) are not modeled. Expect it to trail the market until those are in.
+- **Next:** score the first weeks forward; then minutes from the injury report (who is out, and their usage redistributed), and early-season weighting of a new team's games.

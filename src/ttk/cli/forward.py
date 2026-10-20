@@ -71,12 +71,27 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
         from ttk.services.prop_forward import freeze_and_register as freeze_props
         from ttk.services.prop_forward import (
             freeze_matchup_and_register,
+            freeze_nba_and_register,
             freeze_shrunk_and_register,
             snapshot_pulls,
         )
 
         with factory() as session:
-            if args.model == "shrunk":
+            if args.model == "nba":
+                prop_row, nba_fit = freeze_nba_and_register(session)
+                session.commit()
+                fitted = f"{nba_fit.usage}, {nba_fit.defense}, " + ", ".join(
+                    f"{m.removeprefix('player_')} shrink {f.shrink:g} beta {f.beta:g} "
+                    f"phi {f.dist.phi:.2f}"
+                    for m, f in nba_fit.fits.items()
+                )
+                for pv in nba_fit.validate_matchup:
+                    print(
+                        f"  {pv.market:32s} vs no opponent n={pv.games:6d}: "
+                        f"{pv.log_lik:.4f} vs {pv.baseline_log_lik:.4f} (z {pv.z:+.1f})"
+                    )
+                validation, against = nba_fit.validate, "season average"
+            elif args.model == "shrunk":
                 prop_row, matchup_fit = freeze_shrunk_and_register(session)
                 session.commit()
                 fitted = f"shrink {matchup_fit.shrink}, beta {matchup_fit.beta}"
@@ -328,11 +343,12 @@ def register(sub: Any) -> None:
     )
     prop_freeze.add_argument(
         "--model",
-        choices=["usage", "matchup", "shrunk"],
+        choices=["usage", "matchup", "shrunk", "nba"],
         default="usage",
         help=(
             "usage = v0.1 (recent usage); matchup = v0.2 (adds the opposing defense); "
-            "shrunk = v0.3 (v0.2 with usage shrunk toward the position average)"
+            "shrunk = v0.3 (v0.2 with usage shrunk toward the position average); "
+            "nba = NBA v0.1 (usage shrunk to role x the opponent)"
         ),
     )
     sub.add_parser("prop-report", help="Score the prop model's forward test against the market")

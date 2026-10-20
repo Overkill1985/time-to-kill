@@ -1,6 +1,6 @@
-"""Forward test of the NFL prop model (research/prop_model): record its chance for
-every prop main line in each props pull before kickoff, and score it once the
-players' stats are in.
+"""Forward test of the prop models (NFL: research/prop_model, prop_matchup; NBA:
+research/nba_props): record each one's chance for every prop main line in each props
+pull of its sport before kickoff, and score it once the players' stats are in.
 
 A record per (model version, pull, player, prop): the main line (most books on both
 sides), the model's P(over) and mean, the market's median no-vig P(over) (two or more
@@ -30,6 +30,7 @@ from ttk.db.models import (
     Game,
     ModelVersion,
     NflPlayerGameStat,
+    PlayerGameStat,
     PropPrediction,
     PropPull,
     PropQuote,
@@ -38,6 +39,7 @@ from ttk.db.models import (
     utcnow,
 )
 from ttk.domain import GameStatus, Sport
+from ttk.research import nba_props as nb
 from ttk.research import prop_matchup as mu
 from ttk.research import prop_model as pm
 from ttk.research.moneyline import no_vig
@@ -48,24 +50,39 @@ MODEL_NAME = "nfl-prop-usage"
 MODEL_VERSION = "0.1.0"
 MATCHUP_NAME = "nfl-prop-matchup"
 MATCHUP_VERSION = "0.2.0"
+NBA_NAME = "nba-prop-usage"
+NBA_VERSION = "0.1.0"
 SHRUNK_VERSION = "0.3.0"
-KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup"})
+KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup", nb.KIND})
 MIN_BOOKS = 2
 MIN_FOR_Z = 100
 
-PropModel = pm.FrozenPropModel | mu.FrozenMatchupModel
+PropModel = pm.FrozenPropModel | mu.FrozenMatchupModel | nb.FrozenNbaPropModel
 
 
-def load_model(artifact: Mapping[str, Any], games: Sequence[pm.PlayerGame]) -> PropModel:
+def sport_of(artifact: Mapping[str, Any]) -> Sport:
+    return Sport(artifact.get("sport") or "NFL")
+
+
+def load_model(artifact: Mapping[str, Any], games: Sequence[Any]) -> PropModel:
+    """``games``: the sport's player games (``load_games``)."""
+    if artifact.get("kind") == nb.KIND:
+        return nb.FrozenNbaPropModel(artifact, games)
     if artifact.get("kind") == "nfl_prop_matchup":
         return mu.FrozenMatchupModel(artifact, games)
     return pm.FrozenPropModel(artifact, games)
 
 
+def load_games(session: Session, sport: Sport) -> Sequence[Any]:
+    if sport == Sport.NBA:
+        return nb.load_player_games(session, since_season=nb.VALIDATE[0] - 1)
+    return pm.load_player_games(session)
+
+
 def model_view(
     model: PropModel, player_id: str, market: str, line: float, game: Game, opponent_id: int
-) -> pm.PropView | mu.MatchupView | None:
-    if isinstance(model, mu.FrozenMatchupModel):
+) -> pm.PropView | mu.MatchupView | nb.NbaView | None:
+    if isinstance(model, (mu.FrozenMatchupModel, nb.FrozenNbaPropModel)):
         return model.view(
             player_id, market, line, game.commence_time, game.season or 0, opponent_id
         )
@@ -138,6 +155,25 @@ def freeze_shrunk_and_register(session: Session) -> tuple[ModelVersion, mu.Match
     return row, result
 
 
+def freeze_nba_and_register(session: Session) -> tuple[ModelVersion, nb.NbaBacktest]:
+    """NBA v0.1: usage x the opponent, shrunk to a minutes-based role (TRAIN)."""
+    result = nb.backtest(nb.load_player_games(session))
+    row = register(
+        session,
+        name=NBA_NAME,
+        version=NBA_VERSION,
+        sport=Sport.NBA,
+        algorithm="usage shrunk to role x opponent allowed; negative binomial (var = phi x mean)",
+        features=[*nb.STATS, "minutes", "opponent_allowed"],
+        artifact=nb.freeze(result),
+        training_window=f"{nb.TRAIN[0]}-{nb.TRAIN[1]}",
+        validation_window=f"{nb.VALIDATE[0]}-{nb.VALIDATE[1]}",
+        log_loss=None,
+        brier=None,
+    )
+    return row, result
+
+
 def prop_versions(session: Session) -> list[ModelVersion]:
     return [
         row
@@ -155,7 +191,8 @@ def _due(session: Session, version: ModelVersion, now: datetime) -> list[tuple[P
             select(PropPull, Game)
             .join(Game, Game.id == PropPull.game_id)
             .where(
-                Game.sport == Sport.NFL,
+                Game.sport == sport_of(version.artifact or {}),
+                Game.status != GameStatus.DUPLICATE,  # set aside (services/repair)
                 Game.commence_time > now,
                 PropPull.id.not_in(taken),
             )
@@ -178,10 +215,10 @@ def snapshot_pulls(
         due = _due(session, version, now)
         if not due:
             continue
-        games = pm.load_player_games(session)
-        model = load_model(version.artifact or {}, games)
-        teams = {t.id: t for t in session.scalars(select(Team).where(Team.sport == Sport.NFL))}
-        history = pp._history(session, Sport.NFL, list(teams), now + timedelta(days=1))
+        sport = sport_of(version.artifact or {})
+        model = load_model(version.artifact or {}, load_games(session, sport))
+        teams = {t.id: t for t in session.scalars(select(Team).where(Team.sport == sport))}
+        history = pp._history(session, sport, list(teams), now + timedelta(days=1))
         books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
         for pull, game in due:
             written = _snapshot(session, version, model, history, books, pull, game)
@@ -271,19 +308,33 @@ def scored(session: Session, version_id: int) -> list[ScoredProp]:
     if not rows:
         return []
     game_ids = {g.id for _, g in rows}
-    stats = {
-        (r.game_id, r.player_id): r
-        for r in session.scalars(
-            select(NflPlayerGameStat).where(NflPlayerGameStat.game_id.in_(game_ids))
-        )
-    }
+    nba = rows[0][1].sport == Sport.NBA
+    fns: Mapping[str, Any] = pp.NBA_STATS if nba else pm.STATS
+    if nba:
+        # A player who didn't play: the prop is void (left out).
+        stats: dict[tuple[int, str], Any] = {
+            (r.game_id, r.player_id): r
+            for r in session.scalars(
+                select(PlayerGameStat).where(
+                    PlayerGameStat.game_id.in_(game_ids), PlayerGameStat.played.is_(True)
+                )
+            )
+        }
+    else:
+        stats = {
+            (r.game_id, r.player_id): r
+            for r in session.scalars(
+                select(NflPlayerGameStat).where(NflPlayerGameStat.game_id.in_(game_ids))
+            )
+        }
     out = []
     for p, _ in rows:
         stat = stats.get((p.game_id, p.player_id))
-        fn = pm.STATS.get(p.market)
-        if stat is None or fn is None:
+        fn = fns.get(p.market)
+        value = fn(stat) if stat is not None and fn is not None else None
+        if value is None:
             continue  # stats not in yet, or no stat line (inactive / unrecorded)
-        actual = float(fn(stat))
+        actual = float(value)
         if actual == p.line:
             continue
         out.append(ScoredProp(p, actual, actual > p.line))

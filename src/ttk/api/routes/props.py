@@ -12,9 +12,15 @@ from sqlalchemy.orm import Session
 from ttk.api.common import EASTERN, SessionDep
 from ttk.db.models import utcnow
 from ttk.domain import Sport
-from ttk.research import prop_model as pm
 from ttk.services.player_props import props_for_games, upcoming_games
-from ttk.services.prop_forward import PropModel, load_model, model_view, prop_versions
+from ttk.services.prop_forward import (
+    PropModel,
+    load_games,
+    load_model,
+    model_view,
+    prop_versions,
+    sport_of,
+)
 
 router = APIRouter()
 
@@ -22,24 +28,27 @@ router = APIRouter()
 PROP_MODEL_TTL = timedelta(hours=6)
 
 
-def _prop_model(app: Any, session: Session) -> tuple[str, PropModel] | None:
-    """The newest frozen NFL prop model (the matchup one when registered), loaded
-    once and kept ``PROP_MODEL_TTL`` (its state - the players' games - moves on)."""
-    cached = getattr(app.state, "prop_model", None)
+def _prop_model(app: Any, session: Session, sport: Sport) -> tuple[str, PropModel] | None:
+    """The sport's newest frozen prop model (NFL: the matchup one when registered),
+    loaded once and kept ``PROP_MODEL_TTL`` (its state - the players' games - moves on)."""
+    cache: dict[Sport, tuple[datetime, tuple[str, PropModel] | None]] = getattr(
+        app.state, "prop_models", {}
+    )
+    app.state.prop_models = cache
+    cached = cache.get(sport)
     if cached is not None and utcnow() - cached[0] < PROP_MODEL_TTL:
-        hit: tuple[str, PropModel] | None = cached[1]
-        return hit
-    versions = prop_versions(session)
+        return cached[1]
+    versions = [v for v in prop_versions(session) if sport_of(v.artifact or {}) == sport]
     if not versions:
-        app.state.prop_model = (utcnow(), None)
+        cache[sport] = (utcnow(), None)
         return None
     matchup = [v for v in versions if (v.artifact or {}).get("kind") == "nfl_prop_matchup"]
     version = (matchup or versions)[-1]
     loaded = (
         f"{version.name} {version.version}",
-        load_model(version.artifact or {}, pm.load_player_games(session)),
+        load_model(version.artifact or {}, load_games(session, sport)),
     )
-    app.state.prop_model = (utcnow(), loaded)
+    cache[sport] = (utcnow(), loaded)
     return loaded
 
 
@@ -62,11 +71,17 @@ def player_props(
     games = upcoming_games(session, start, end, str(sport) if sport else None)
     rows = props_for_games(session, games, milestones=kind == "milestones")
     by_id = {g.id: g for g in games}
-    loaded = _prop_model(request.app, session) if any(r.sport == Sport.NFL for r in rows) else None
-    if loaded is not None:
+    names = []
+    for model_sport in (Sport.NFL, Sport.NBA):
+        if not any(r.sport == model_sport for r in rows):
+            continue
+        loaded = _prop_model(request.app, session, model_sport)
+        if loaded is None:
+            continue
         name, model = loaded
+        names.append(name)
         for r in rows:
-            if r.sport != Sport.NFL or r.player_id is None or r.opponent_id is None:
+            if r.sport != model_sport or r.player_id is None or r.opponent_id is None:
                 continue
             view = model_view(model, r.player_id, r.market, r.line, by_id[r.game_id], r.opponent_id)
             if view is None:
@@ -85,7 +100,7 @@ def player_props(
             }
             for r in rows
         ],
-        "model": loaded[0] if loaded else None,
+        "model": ", ".join(names) or None,
         "note": (
             "Hit rates describe past games; the prop model is in testing (it has not "
             "beaten the market), so none of these is a recommendation."

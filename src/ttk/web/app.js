@@ -99,6 +99,7 @@ function modelName(raw) {
     : name.endsWith("eff") ? "efficiency"
     : name.endsWith("wind") ? "market total and forecast wind"
     : name.endsWith("epa") ? "EPA"
+    : name === "nba-prop-usage" ? "usage x opponent"
     : name.endsWith("prop-usage") ? "recent usage"
     : name.endsWith("pace") ? "pace and efficiency" : "";
   const timing = opener ? "at the opening line" : "";
@@ -128,7 +129,7 @@ const TERMS = {
   data: ["Data quality", "How complete and fresh the inputs are: odds age, how many books, the model's inputs."],
   oddsage: ["Odds age", "Minutes since the books' prices were last confirmed. Stale prices can't qualify."],
   linemove: ["Line move", "The main line when first seen, and now. A move toward a side means money came in on it."],
-  propmodel: ["Matchup model (in testing)", "The prop model's chance of the over: the player's recent usage, adjusted for how much this defense has allowed his position (def x1.12 = 12% more than average). It is being forward-tested and has not beaten the market yet, so a lean is something to check, not value."],
+  propmodel: ["Matchup model (in testing)", "The prop model's chance of the over: the player's recent usage, adjusted for how much this opponent has allowed (NFL: to his position; NBA: to all players, pace included). def x1.12 = 12% more than average. It is being forward-tested and has not beaten the market yet, so a lean is something to check, not value."],
   nvp: ["Market chance of the over", "The books' own probability that the player goes over the line, with their cut removed (the median across books quoting both sides). A hit rate well above it isn't proof of value: past games don't know about tonight's matchup or minutes."],
   clv: ["Closing-line value", "How your price compares with the final price before kickoff. Beating the close again and again is the best early sign of real skill, long before wins and losses settle it."],
   vsmarket: ["Compared with the market", "How much worse (+) or better (−) the model's probabilities were than the closing market's, game by game (paired log loss)."],
