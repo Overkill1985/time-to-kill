@@ -8,6 +8,12 @@ The repair unlinks every ESPN event but the first (the unswapped link, which
 created the game), drops that game's ESPN-derived rows (lines, box scores), and
 returns the dates to re-ingest: re-running the schedule restores the kept game
 from its own event and creates a new game for each unlinked event.
+
+``set_aside_phantom_games``: odds events pairing teams that were not playing each
+other (2026-10-17 on, from two offshore books: eleven NBA teams "@ San Antonio
+Spurs" at the Spurs' real tip-off) each created a game. A game no schedule
+authority knows, one of whose teams has an authority game within BUSY_WINDOW, is
+set aside as DUPLICATE: hidden and never modeled, its odds rows kept.
 """
 
 from __future__ import annotations
@@ -19,7 +25,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ttk.db.models import Game, GameSourceId, PlayerGameStat, ReportedLine
-from ttk.services.identity import SCHEDULE_AUTHORITY
+from ttk.domain import GameStatus
+from ttk.services.identity import AUTHORITY_RANK, BUSY_WINDOW, SCHEDULE_AUTHORITY
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,53 @@ def split_merged_espn_games(session: Session, *, apply: bool = False) -> list[Me
                 session.delete(link)
             session.execute(delete(ReportedLine).where(espn_lines))
             session.execute(delete(PlayerGameStat).where(PlayerGameStat.game_id == game_id))
+    if apply:
+        session.flush()
+    return out
+
+
+@dataclass(frozen=True)
+class PhantomGame:
+    game_id: int
+    sport: str
+    commence_time: object
+    home_team_id: int
+    away_team_id: int
+
+
+def set_aside_phantom_games(session: Session, *, apply: bool = False) -> list[PhantomGame]:
+    authorities = tuple(AUTHORITY_RANK)
+    known = select(GameSourceId.game_id).where(GameSourceId.provider.in_(authorities))
+    out = []
+    for game in session.scalars(
+        select(Game)
+        .where(Game.status != GameStatus.DUPLICATE, Game.id.not_in(known))
+        .order_by(Game.id)
+    ):
+        teams = (game.home_team_id, game.away_team_id)
+        clash = session.scalar(
+            select(Game.id)
+            .where(
+                Game.id != game.id,
+                Game.sport == game.sport,
+                Game.id.in_(known),
+                Game.status != GameStatus.DUPLICATE,
+                (Game.home_team_id.in_(teams)) | (Game.away_team_id.in_(teams)),
+                Game.commence_time.between(
+                    game.commence_time - BUSY_WINDOW, game.commence_time + BUSY_WINDOW
+                ),
+            )
+            .limit(1)
+        )
+        if clash is None:
+            continue
+        out.append(
+            PhantomGame(
+                game.id, game.sport, game.commence_time, game.home_team_id, game.away_team_id
+            )
+        )
+        if apply:
+            game.status = GameStatus.DUPLICATE
     if apply:
         session.flush()
     return out

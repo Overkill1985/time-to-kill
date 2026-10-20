@@ -328,13 +328,16 @@ function nextKickoffText(upcoming) {
   return next ? `Next: ${sportName(next.sport)} ${untilText(next.next_kickoff)} (${eastern(next.next_kickoff)}).` : "No games on the schedule yet.";
 }
 
+const minDecided = (m, s) => m.min_decided ?? s.min_decided;
+const unitOf = (m) => m.unit ?? "games";
+
 function modelState(m, s) {
-  const need = s.min_decided;
+  const need = minDecided(m, s);
   if (m.snapshots === 0) {
     const u = s.upcoming.find((x) => x.sport === m.sport);
     return { text: u?.next_kickoff ? `Starts ${untilText(u.next_kickoff)}` : "Waiting for its season", cls: "" };
   }
-  if (m.z == null || m.decided < need) return { text: `${m.decided} of ${need} games`, cls: "" };
+  if (m.z == null || m.decided < need) return { text: `${m.decided} of ${need} ${unitOf(m)}`, cls: "" };
   if (m.z <= -2) return { text: `Beating the market (z ${m.z.toFixed(1)})`, cls: "pos" };
   if (m.z >= 2) return { text: `Worse than the market (z +${m.z.toFixed(1)})`, cls: "neg" };
   return { text: `Level with the market (z ${m.z >= 0 ? "+" : ""}${m.z.toFixed(1)})`, cls: "" };
@@ -347,10 +350,10 @@ const sortModels = (models) => [...models].sort((a, b) =>
 function progressRow(m, s, names) {
   const n = names.get(m.model) || modelName(m.model);
   const state = modelState(m, s);
-  const share = Math.min(1, m.decided / s.min_decided);
+  const share = Math.min(1, m.decided / minDecided(m, s));
   return el("div", { class: "progress-row" },
     el("div", { class: "label" }, el("span", { text: n.title }), el("span", { text: n.detail })),
-    el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${s.min_decided} games` },
+    el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${minDecided(m, s)} ${unitOf(m)}` },
       el("div", { class: "bar-fill", style: `width:${(share * 100).toFixed(1)}%` })),
     el("div", { class: `state ${state.cls}`, text: state.text }));
 }
@@ -1548,7 +1551,7 @@ function renderModels() {
   $("#model-cards").replaceChildren(...models.map((m) => {
     const n = names.get(m.model);
     const state = modelState(m, status);
-    const share = Math.min(1, m.decided / status.min_decided);
+    const share = Math.min(1, m.decided / minDecided(m, status));
     const scores = forward.scores.filter((s) => s.model === m.model);
     const table = scores.length ? el("details", {},
       el("summary", { text: "Details by timing" }),
@@ -1571,7 +1574,7 @@ function renderModels() {
         el("span", { class: "chip sport", text: sportName(m.sport) }),
         el("span", { class: "chip", text: MARKET_NAMES[m.market] ?? m.market }),
         el("span", { class: "chip warn", text: m.status === "DEVELOPMENT" ? "in testing" : m.status.toLowerCase() }), term("testing")),
-      el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${status.min_decided} games` },
+      el("div", { class: "bar-track", role: "img", "aria-label": `${m.decided} of ${minDecided(m, status)} ${unitOf(m)}` },
         el("div", { class: "bar-fill", style: `width:${(share * 100).toFixed(1)}%` })),
       el("p", { class: `verdict ${state.cls}`, text: state.text }),
       el("p", { class: "muted small", text: m.snapshots ? `${m.snapshots} prediction${m.snapshots === 1 ? "" : "s"} recorded so far.` : "No predictions recorded yet." }),

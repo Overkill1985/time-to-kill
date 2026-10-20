@@ -21,13 +21,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ttk.db.models import Game, GameSourceId, Team, TeamAlias
-from ttk.domain import Sport
+from ttk.domain import GameStatus, Sport
 from ttk.providers.base import NormalizedGame, TeamRef
 from ttk.teams import CURATED_ALIASES, normalize_team_name
 
@@ -37,6 +37,11 @@ SCHEDULE_AUTHORITY = "espn"
 # NFL history that ESPN was never asked for, but never overrides ESPN.
 AUTHORITY_RANK = {"espn": 2, "nflverse": 1}
 MATCH_WINDOW = timedelta(hours=24)
+BUSY_WINDOW = timedelta(hours=12)
+"""A team plays one game at a time: an odds event that would create a game for a
+team already scheduled within this window is a phantom (on 2026-10-17 two offshore
+books listed eleven NBA teams "@ San Antonio Spurs" at the Spurs' real tip-off).
+Shorter than a back-to-back (about 24 h apart)."""
 
 
 def _add_alias(session: Session, provider: str, sport: Sport, name: str, team: Team) -> None:
@@ -211,12 +216,45 @@ def _apply_results(session: Session, game: Game, g: NormalizedGame, swapped: boo
 
 def resolve_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> ResolvedGame:
     resolved = _find_game(session, g, stats)
+    assert resolved is not None
     _apply_results(session, resolved.game, g, resolved.swapped)
     session.flush()
     return resolved
 
 
-def _find_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> ResolvedGame:
+def resolve_odds_game(
+    session: Session, g: NormalizedGame, stats: Counter[str]
+) -> ResolvedGame | None:
+    """``resolve_game`` for live odds: None (its quotes are skipped) for an event
+    that would create a game for a team already playing within ``BUSY_WINDOW``,
+    or one linked to a game set aside as DUPLICATE."""
+    resolved = _find_game(session, g, stats, refuse_busy=True)
+    if resolved is None:
+        return None
+    _apply_results(session, resolved.game, g, resolved.swapped)
+    session.flush()
+    return resolved
+
+
+def _busy(session: Session, sport: str, team_ids: tuple[int, int], at: datetime) -> bool:
+    return (
+        session.scalar(
+            select(Game.id)
+            .where(
+                Game.sport == sport,
+                Game.status != GameStatus.DUPLICATE,
+                or_(Game.home_team_id.in_(team_ids), Game.away_team_id.in_(team_ids)),
+                Game.commence_time.between(at - BUSY_WINDOW, at + BUSY_WINDOW),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _find_game(
+    session: Session, g: NormalizedGame, stats: Counter[str], *, refuse_busy: bool = False
+) -> ResolvedGame | None:
     link = session.scalar(
         select(GameSourceId).where(
             GameSourceId.provider == g.provider,
@@ -225,6 +263,9 @@ def _find_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> Reso
     )
     if link is not None:
         game = session.get_one(Game, link.game_id)
+        if refuse_busy and game.status == GameStatus.DUPLICATE:
+            stats["linked_to_set_aside_game"] += 1
+            return None
         if g.provider == SCHEDULE_AUTHORITY:
             # Keep display names current even for games already linked.
             home_ref, away_ref = (g.away, g.home) if link.swapped else (g.home, g.away)
@@ -276,6 +317,13 @@ def _find_game(session: Session, g: NormalizedGame, stats: Counter[str]) -> Reso
         return _link(session, g, game, swapped=game.home_team_id != home.id)
     if len(candidates) > 1:
         stats["ambiguous_game_match"] += 1  # never guess: fall through to a new game
+    if (
+        refuse_busy
+        and g.provider not in AUTHORITY_RANK  # a schedule authority's event is real
+        and _busy(session, g.sport, (home.id, away.id), g.commence_time)
+    ):
+        stats["team_already_playing"] += 1
+        return None
 
     game = Game(
         sport=g.sport,

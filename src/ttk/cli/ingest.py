@@ -47,6 +47,27 @@ def _repair_espn_lines(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _repair_phantom_games(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.repair import set_aside_phantom_games
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        phantoms = set_aside_phantom_games(session, apply=args.apply)
+        if args.apply:
+            session.commit()
+    for p in phantoms:
+        print(
+            f"game {p.game_id} {p.sport} {p.commence_time}: "
+            f"teams {p.away_team_id} @ {p.home_team_id}"
+        )
+    print(
+        f"{len(phantoms)} phantom games"
+        + (" set aside as DUPLICATE" if args.apply else " (dry run; --apply to set aside)")
+    )
+    return 0
+
+
 def _repair_merged_games(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.providers.espn import EspnScheduleProvider
@@ -104,6 +125,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.services.parlay_lab import settle_parlays
     from ttk.services.prop_forward import snapshot_due
     from ttk.services.props import PropsProvider, collect_props
+    from ttk.services.runs import close_abandoned
 
     log_file = None
     if args.log is not None:
@@ -132,6 +154,13 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
         f"collector started: {provider.name}, sports={[str(s) for s in sports]}, "
         f"every {args.loop_minutes or 0:g} min"
     )
+    with factory() as session:
+        for run in close_abandoned(session):
+            emit(
+                f"closed run {run.id} ({run.provider}/{run.kind}, "
+                f"{run.started_at:%m-%d %H:%M}) as ABANDONED"
+            )
+        session.commit()
 
     def one_pass() -> list[str]:
         """One collection pass; returns the statuses of the odds polls."""
@@ -544,6 +573,12 @@ def register(sub: Any) -> None:
     )
     fix_lines.add_argument("--apply", action="store_true")
     fix_lines.add_argument("--delay", type=float, default=0.25)
+    phantom = sub.add_parser(
+        "repair-phantom-games",
+        help="Set aside games from odds events pairing teams that were not playing each other "
+        "(dry run unless --apply)",
+    )
+    phantom.add_argument("--apply", action="store_true")
     repair = sub.add_parser(
         "repair-merged-games",
         help="Split games that wrongly joined two ESPN events (dry run unless --apply)",
@@ -568,4 +603,5 @@ HANDLERS: dict[str, Handler] = {
     "backfill-threes": _backfill_threes,
     "repair-espn-lines": _repair_espn_lines,
     "repair-merged-games": _repair_merged_games,
+    "repair-phantom-games": _repair_phantom_games,
 }

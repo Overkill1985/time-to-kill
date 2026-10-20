@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 
 from ttk.api.common import SessionDep
 from ttk.config import Settings
-from ttk.db.models import Game, IngestionRun, ModelVersion, PropPrediction, PropPull, utcnow
+from ttk.db.models import Game, IngestionRun, ModelVersion, PropPull, utcnow
 from ttk.domain import GameStatus, Sport
 from ttk.services.alerts import check_health
 from ttk.services.bankroll import bankroll_state
@@ -86,18 +86,21 @@ def status(session: SessionDep, request: Request) -> dict[str, object]:
             p["decided"] = sc["decided"]
             p["z"] = sc["z"]
 
-    from ttk.services.prop_forward import prop_versions, scored
+    from ttk.services.prop_forward import MIN_FOR_Z, prop_report, prop_versions
 
     for version in prop_versions(session):
         key = f"{version.name} {version.version}"
         if key in progress:
-            progress[key]["snapshots"] = (
-                session.scalar(
-                    select(func.count()).where(PropPrediction.model_version_id == version.id)
-                )
-                or 0
+            # Props, not games: judged per prop, with a z from MIN_FOR_Z decided.
+            report = prop_report(session, version)
+            overall = report.scores[0]
+            progress[key].update(
+                snapshots=report.recorded,
+                decided=report.decided,
+                z=overall.z,
+                unit="props",
+                min_decided=MIN_FOR_Z,
             )
-            progress[key]["decided"] = len(scored(session, version.id))
 
     upcoming = []
     for sport in Sport:

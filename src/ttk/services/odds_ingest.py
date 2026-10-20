@@ -13,7 +13,7 @@ from ttk import betting_math as bm
 from ttk.db.models import BookObservation, IngestionRun, OddsSnapshot, Sportsbook, utcnow
 from ttk.domain import Selection, Sport
 from ttk.providers.base import NormalizedOddsQuote, OddsFetch, OddsProvider
-from ttk.services.identity import resolve_game
+from ttk.services.identity import resolve_odds_game
 from ttk.services.odds_state import QuoteKey, latest_rows
 from ttk.services.runs import RunResult, audited_run
 
@@ -103,7 +103,11 @@ def store_odds(
     withdrawn. Games absent from the fetch are left as they were (e.g. finished).
     Returns the number of change rows written."""
     provider = run.provider
-    games = {g.source_identifier: resolve_game(session, g, stats) for g in fetch.games}
+    games = {
+        g.source_identifier: r
+        for g in fetch.games
+        if (r := resolve_odds_game(session, g, stats)) is not None
+    }
     books: dict[str, Sportsbook] = {}
 
     # This poll's quotes: (game, book) -> key -> quote (last one wins on duplicates).

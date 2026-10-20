@@ -410,3 +410,36 @@ def test_repair_splits_games_merged_before_the_fix(
             (96, 91, second.commence_time),
         ]
         assert split_merged_espn_games(session) == []
+
+
+def test_odds_event_pairing_a_team_already_playing_is_refused(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.repair import set_aside_phantom_games
+
+    ingest_schedule(session_factory, espn_game())  # Air Force @ Boise State
+    # A phantom: Boise State "hosting" someone else at its own kickoff.
+    odds = Odds(
+        books_game("Boise St.", "Utah State"),
+        (Selection.HOME, -3.5, -110),
+        (Selection.AWAY, 3.5, -110),
+    )
+    run = run_odds_ingestion(session_factory, odds, Sport.CFB)
+    assert run.stats is not None and run.stats["team_already_playing"] == 1
+    assert count(session_factory, Game) == 1 and count(session_factory, OddsSnapshot) == 0
+
+    # One stored before the check existed is set aside, not deleted.
+    with session_factory() as s:
+        boise = s.scalars(select(Team).where(Team.name == "Boise State Broncos")).one()
+        other = Team(sport=Sport.CFB, name="Utah State Aggies")
+        s.add(other)
+        s.flush()
+        s.add(
+            Game(sport=Sport.CFB, home_team_id=boise.id, away_team_id=other.id, commence_time=KICK)
+        )
+        s.commit()
+        assert len(set_aside_phantom_games(s)) == 1  # dry run
+        assert len(set_aside_phantom_games(s, apply=True)) == 1
+        s.commit()
+        statuses = sorted(s.scalars(select(Game.status)))
+    assert statuses == [GameStatus.DUPLICATE, GameStatus.SCHEDULED]
