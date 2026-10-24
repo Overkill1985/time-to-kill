@@ -569,6 +569,7 @@ def build_forward_models(
             "nfl_prop_usage",
             "nfl_prop_matchup",
             "nba_prop_usage",
+            "nba_prop_anchored",
         ):
             continue  # a prop model: forward-tested by services/prop_forward, not here
         if (row.artifact or {}).get("kind") == "nfl_wind":

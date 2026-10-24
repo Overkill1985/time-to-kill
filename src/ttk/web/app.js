@@ -100,6 +100,7 @@ function modelName(raw) {
     : name.endsWith("wind") ? "market total and forecast wind"
     : name.endsWith("epa") ? "EPA"
     : name === "nba-prop-usage" ? "usage x opponent"
+    : name === "nba-prop-anchored" ? "market plus a share of the usage model's lean"
     : name.endsWith("prop-usage") ? "recent usage"
     : name.endsWith("pace") ? "pace and efficiency" : "";
   const timing = opener ? "at the opening line" : "";

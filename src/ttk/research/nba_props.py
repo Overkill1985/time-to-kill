@@ -611,3 +611,70 @@ class FrozenNbaPropModel:
         f = self.defenses.factor(opponent_id, market, before) if opponent_id else 1.0
         mean = usage * f**beta
         return NbaView(mean, usage, f, dist.p_over(mean, line), r.count)
+
+
+# ------------------------------------------------------------------ market-anchored
+
+ANCHORED_KIND = "nba_prop_anchored"
+"""v0.1 anchored to the market: logit P = logit(market) + weight x (logit(model) -
+logit(market)). The forward test showed v0.1's lean carries information (lines moved
+its way 340 to 203) but far too confidently (10+ points over the market: 67% said,
+48% happened); ``weight`` is the share of the lean worth keeping."""
+
+
+def _logit(p: float) -> float:
+    p = min(max(p, 1e-4), 1 - 1e-4)
+    return math.log(p / (1 - p))
+
+
+def anchored(market_over: float, model_over: float, weight: float) -> float:
+    z = _logit(market_over) + weight * (_logit(model_over) - _logit(market_over))
+    return 1 / (1 + math.exp(-z))
+
+
+def fit_weight(rows: Sequence[tuple[float, float, bool]]) -> tuple[float, float]:
+    """(weight, standard error) by maximum likelihood over (market, model, over)
+    rows. No intercept: a week's over/under imbalance is not built in."""
+    lm = np.array([_logit(m) for m, _, _ in rows])
+    dz = np.array([_logit(p) for _, p, _ in rows]) - lm
+    y = np.array([o for _, _, o in rows], dtype=float)
+
+    def nll(w: float) -> float:
+        q = 1 / (1 + np.exp(-(lm + w * dz)))
+        return -float(np.sum(y * np.log(q) + (1 - y) * np.log(1 - q)))
+
+    w = float(optimize.minimize_scalar(nll, bounds=(-1.0, 2.0), method="bounded").x)
+    q = 1 / (1 + np.exp(-(lm + w * dz)))
+    info = float(np.sum(q * (1 - q) * dz**2))
+    return w, (1 / math.sqrt(info) if info > 0 else math.inf)
+
+
+class FrozenAnchoredNbaPropModel:
+    """v0.1's view, its chance pulled to the market's by ``weight``."""
+
+    def __init__(self, artifact: Mapping[str, Any], games: Sequence[PlayerGame]) -> None:
+        if artifact.get("artifact_version") != ARTIFACT_VERSION or artifact.get("kind") != (
+            ANCHORED_KIND
+        ):
+            raise ValueError("not an anchored NBA prop model artifact of a known version")
+        self.base = FrozenNbaPropModel(artifact["base"], games)
+        self.weight = float(artifact["weight"])
+        self.dists = self.base.dists
+
+    def view(
+        self,
+        player_id: str,
+        market: str,
+        line: float,
+        before: datetime,
+        season: int,
+        opponent_id: int,
+        market_over: float | None,
+    ) -> NbaView | None:
+        if market_over is None:
+            return None  # anchored to the market: no market, no view
+        v = self.base.view(player_id, market, line, before, season, opponent_id)
+        if v is None:
+            return None
+        p = anchored(market_over, v.p_over, self.weight)
+        return NbaView(v.mean, v.usage_mean, v.defense_factor, p, v.games)

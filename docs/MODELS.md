@@ -729,3 +729,10 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **Against the market:** not yet. No NBA prop had been pulled on a finished game, so the forward test is the first check (212 props recorded at 24 h for the opener's late games; a z from 100 decided).
 - **Known gaps:** it knows nothing about roster changes beyond the games played. A player on a new team carries his old team's usage (on opening night it leaned over on most of the reshuffled 76ers), and teammates' absences don't raise anyone's usage. Injuries, rest and blowouts (minutes) are not modeled. Expect it to trail the market until those are in.
 - **Next:** score the first weeks forward; then minutes from the injury report (who is out, and their usage redistributed), and early-season weighting of a new team's games.
+
+### Market-anchored: `nba-prop-anchored 0.1.0` (2026-10-24)
+
+- **Why:** v0.1's first 4,882 decided props (2026-10-20..24) were worse than the market (log loss 0.701 vs 0.684, z +5.2), yet its lean carried information: lines moved toward it from 24 h to 1 h 340 times and away 203, and a logistic of the outcome on the market plus v0.1's disagreement gave the disagreement +0.14 (t +2.4). It was far too confident: 10+ points over the market it said 67%, and 48% went over.
+- **Model:** logit P(over) = logit(market no-vig) + weight x (logit(v0.1) - logit(market)), with v0.1 frozen as it was. No intercept: the first week's unders (55% against a market 49%) are not built in.
+- **Fitted** on those 4,882 v0.1 forward props: weight **0.174** (se 0.061). Time split inside them: the weight from the first days (0.166), on the last 2,135 props, log loss 0.6830 against the market's 0.6838 and v0.1's 0.6985: level with the market, not better.
+- **Test:** forward only, on games after the freeze (those props were v0.1's test; they are this model's training data). v0.1 keeps being recorded beside it.

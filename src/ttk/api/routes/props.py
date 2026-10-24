@@ -83,7 +83,15 @@ def player_props(
         for r in rows:
             if r.sport != model_sport or r.player_id is None or r.opponent_id is None:
                 continue
-            view = model_view(model, r.player_id, r.market, r.line, by_id[r.game_id], r.opponent_id)
+            view = model_view(
+                model,
+                r.player_id,
+                r.market,
+                r.line,
+                by_id[r.game_id],
+                r.opponent_id,
+                r.over_probability,
+            )
             if view is None:
                 continue
             r.model_name, r.model_over, r.model_mean = name, view.p_over, view.mean

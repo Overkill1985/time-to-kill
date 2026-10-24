@@ -52,12 +52,19 @@ MATCHUP_NAME = "nfl-prop-matchup"
 MATCHUP_VERSION = "0.2.0"
 NBA_NAME = "nba-prop-usage"
 NBA_VERSION = "0.1.0"
+ANCHORED_NAME = "nba-prop-anchored"
+ANCHORED_VERSION = "0.1.0"
 SHRUNK_VERSION = "0.3.0"
-KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup", nb.KIND})
+KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup", nb.KIND, nb.ANCHORED_KIND})
 MIN_BOOKS = 2
 MIN_FOR_Z = 100
 
-PropModel = pm.FrozenPropModel | mu.FrozenMatchupModel | nb.FrozenNbaPropModel
+PropModel = (
+    pm.FrozenPropModel
+    | mu.FrozenMatchupModel
+    | nb.FrozenNbaPropModel
+    | nb.FrozenAnchoredNbaPropModel
+)
 
 
 def sport_of(artifact: Mapping[str, Any]) -> Sport:
@@ -66,6 +73,8 @@ def sport_of(artifact: Mapping[str, Any]) -> Sport:
 
 def load_model(artifact: Mapping[str, Any], games: Sequence[Any]) -> PropModel:
     """``games``: the sport's player games (``load_games``)."""
+    if artifact.get("kind") == nb.ANCHORED_KIND:
+        return nb.FrozenAnchoredNbaPropModel(artifact, games)
     if artifact.get("kind") == nb.KIND:
         return nb.FrozenNbaPropModel(artifact, games)
     if artifact.get("kind") == "nfl_prop_matchup":
@@ -80,8 +89,25 @@ def load_games(session: Session, sport: Sport) -> Sequence[Any]:
 
 
 def model_view(
-    model: PropModel, player_id: str, market: str, line: float, game: Game, opponent_id: int
+    model: PropModel,
+    player_id: str,
+    market: str,
+    line: float,
+    game: Game,
+    opponent_id: int,
+    market_over: float | None = None,
 ) -> pm.PropView | mu.MatchupView | nb.NbaView | None:
+    """``market_over``: the market's no-vig P(over) (an anchored model needs it)."""
+    if isinstance(model, nb.FrozenAnchoredNbaPropModel):
+        return model.view(
+            player_id,
+            market,
+            line,
+            game.commence_time,
+            game.season or 0,
+            opponent_id,
+            market_over,
+        )
     if isinstance(model, (mu.FrozenMatchupModel, nb.FrozenNbaPropModel)):
         return model.view(
             player_id, market, line, game.commence_time, game.season or 0, opponent_id
@@ -174,6 +200,96 @@ def freeze_nba_and_register(session: Session) -> tuple[ModelVersion, nb.NbaBackt
     return row, result
 
 
+@dataclass
+class AnchoredFit:
+    weight: float
+    weight_se: float
+    props: int
+    window: tuple[str, str]
+    check: dict[str, float]
+    """Time split inside the window: weight from the first three quarters of the
+    days, log loss on the last quarter for the anchored model, v0.1 and the market."""
+
+
+def fit_anchored(session: Session, base: ModelVersion, cutoff: datetime) -> AnchoredFit:
+    """The weight from ``base``'s forward-test props decided on games before
+    ``cutoff``. Those props stay ``base``'s test; the anchored model is judged only
+    on games after its freeze."""
+    rows = sorted(
+        (r for r in scored(session, base.id) if r.prediction.created_at < cutoff),
+        key=lambda r: r.prediction.game_id,
+    )
+    if len(rows) < MIN_FOR_Z:
+        raise ValueError(f"{len(rows)} decided props for {base.name}: need {MIN_FOR_Z}")
+    games = {
+        g.id: g.commence_time
+        for g in session.scalars(
+            select(Game).where(Game.id.in_({r.prediction.game_id for r in rows}))
+        )
+    }
+    if any(t >= cutoff for t in games.values()):
+        raise ValueError("a decided prop's game is after the cutoff")
+    triples = [(r.prediction.market_over, r.prediction.p_over, r.over) for r in rows]
+    weight, se = nb.fit_weight(triples)
+    days = sorted({games[r.prediction.game_id].date() for r in rows})
+    split = days[max(1, (3 * len(days)) // 4) - 1]
+    early = [
+        t for r, t in zip(rows, triples, strict=True) if games[r.prediction.game_id].date() <= split
+    ]
+    late = [
+        t for r, t in zip(rows, triples, strict=True) if games[r.prediction.game_id].date() > split
+    ]
+    check: dict[str, float] = {}
+    if early and late:
+        w_early, _ = nb.fit_weight(early)
+        check = {
+            "weight_first_part": w_early,
+            "props_last_part": float(len(late)),
+            "anchored": statistics.fmean(_ll(nb.anchored(m, p, w_early), o) for m, p, o in late),
+            "base": statistics.fmean(_ll(p, o) for _, p, o in late),
+            "market": statistics.fmean(_ll(m, o) for m, _, o in late),
+        }
+    return AnchoredFit(weight, se, len(rows), (str(days[0]), str(days[-1])), check)
+
+
+def freeze_anchored_and_register(
+    session: Session, now: datetime | None = None
+) -> tuple[ModelVersion, AnchoredFit]:
+    now = now or utcnow()
+    base = session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.name == NBA_NAME, ModelVersion.version == NBA_VERSION
+        )
+    ).first()
+    if base is None or not base.artifact:
+        raise ValueError(f"register {NBA_NAME} {NBA_VERSION} first (--model nba)")
+    fit = fit_anchored(session, base, now)
+    row = register(
+        session,
+        name=ANCHORED_NAME,
+        version=ANCHORED_VERSION,
+        sport=Sport.NBA,
+        algorithm="logit(market) + weight x (logit(nba-prop-usage) - logit(market))",
+        features=[f"{NBA_NAME} {NBA_VERSION}", "market no-vig P(over)"],
+        artifact={
+            "artifact_version": nb.ARTIFACT_VERSION,
+            "kind": nb.ANCHORED_KIND,
+            "market": "PLAYER_PROP",
+            "sport": "NBA",
+            "base_version": f"{NBA_NAME} {NBA_VERSION}",
+            "base": base.artifact,
+            "weight": fit.weight,
+            "weight_se": fit.weight_se,
+            "fit": {"props": fit.props, "window": list(fit.window), "check": fit.check},
+        },
+        training_window=f"{NBA_NAME} forward props {fit.window[0]}..{fit.window[1]}",
+        validation_window="forward test from the freeze",
+        log_loss=None,
+        brier=None,
+    )
+    return row, fit
+
+
 def prop_versions(session: Session) -> list[ModelVersion]:
     return [
         row
@@ -264,7 +380,9 @@ def _snapshot(
         player_id = pp._match(history, team_id, prop.name)
         if player_id is None or (player_id, market) in seen:
             continue
-        view = model_view(model, player_id, market, line, game, opponent_id)
+        view = model_view(
+            model, player_id, market, line, game, opponent_id, statistics.median(no_vigs)
+        )
         if view is None:
             continue
         seen.add((player_id, market))

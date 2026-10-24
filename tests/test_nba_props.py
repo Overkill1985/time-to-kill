@@ -217,3 +217,34 @@ def test_nba_model_is_forward_tested_scored_and_shown(
         s.commit()
         report = prop_report(s, prop_versions(s)[0])
         assert (report.recorded, report.decided) == (2, 1)
+
+
+def test_anchored_model_keeps_a_fitted_share_of_the_lean() -> None:
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    rows = []
+    for _ in range(4000):
+        market = float(rng.uniform(0.3, 0.7))
+        model_p = float(np.clip(market + rng.normal(0, 0.15), 0.02, 0.98))
+        truth = nb.anchored(market, model_p, 0.25)  # the lean is worth a quarter
+        rows.append((market, model_p, bool(rng.random() < truth)))
+    weight, se = nb.fit_weight(rows)
+    assert abs(weight - 0.25) < 3 * se and se < 0.1
+    assert nb.anchored(0.5, 0.8, 0.0) == pytest.approx(0.5)  # weight 0: the market
+    assert nb.anchored(0.5, 0.8, 1.0) == pytest.approx(0.8)  # weight 1: the model
+
+    games = [pg("p1", i, 5, 20.0) for i in range(10)]
+    a = {
+        "artifact_version": nb.ARTIFACT_VERSION,
+        "kind": nb.ANCHORED_KIND,
+        "base": artifact(0.0, 0.0),
+        "weight": 0.25,
+    }
+    model = nb.FrozenAnchoredNbaPropModel(a, games)
+    before = T0 + timedelta(days=40)
+    base = model.base.view("p1", PTS, 17.5, before, 2026, 5)
+    view = model.view("p1", PTS, 17.5, before, 2026, 5, 0.5)
+    assert base is not None and view is not None
+    assert view.p_over == pytest.approx(nb.anchored(0.5, base.p_over, 0.25))
+    assert model.view("p1", PTS, 17.5, before, 2026, 5, None) is None  # needs the market
