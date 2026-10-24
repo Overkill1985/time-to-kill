@@ -1714,17 +1714,46 @@ function renderReport({ report, days }) {
 
   fill($("#report-body"), models, ...totals, ...props,
     el("p", { class: "muted small", text: report.note }),
-    el("p", { class: "muted small", text: `Built ${new Date(report.generated_at).toLocaleString()}.` }));
+    el("p", { class: "muted small", text: `Built ${new Date(report.generated_at).toLocaleString()}. This page checks for a newer report every 5 minutes and when you come back to it.` }));
 }
+
+// The report shown: which day was asked for (none = the latest) and when it was built,
+// so the automatic refresh redraws only when a newer report exists.
+const REPORT_REFRESH_MS = 5 * 60 * 1000;
+let reportShown = null;
+const reportUrl = (day) => `/api/daily-report${day ? `?date=${encodeURIComponent(day)}` : ""}`;
 
 async function loadReport(day) {
   $("#report-body").replaceChildren(el("div", { class: "skeleton-card" }));
   try {
-    renderReport(await api(`/api/daily-report${day ? `?date=${encodeURIComponent(day)}` : ""}`));
+    const data = await api(reportUrl(day));
+    reportShown = { day, generated: data.report.generated_at, latest: data.days[0] };
+    renderReport(data);
   } catch (error) {
+    reportShown = { day, generated: null, latest: null };
     $("#report-body").replaceChildren(empty("No daily report yet", error.message));
   }
 }
+
+/** Redraw the open Daily report page if a newer report was built (the 9:00 task). */
+async function refreshReport() {
+  if ($("#page-report").hidden || document.hidden || !reportShown) return;
+  try {
+    const data = await api(reportUrl(reportShown.day));
+    const newer = data.report.generated_at !== reportShown.generated || data.days[0] !== reportShown.latest;
+    if (!newer) return;
+    reportShown = { day: reportShown.day, generated: data.report.generated_at, latest: data.days[0] };
+    renderReport(data);
+  } catch { /* none yet, or the server is restarting: try again next time */ }
+}
+setInterval(refreshReport, REPORT_REFRESH_MS);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshReport(); });
+// Clicking "Daily report" while on it reloads it (the address doesn't change, so
+// there is no hashchange).
+$('.nav a[data-page="report"]').addEventListener("click", () => {
+  if (location.hash === "#report") loadReport();
+});
+
 loaders.report = (sub) => loadReport(sub);
 $("#report-select").addEventListener("change", (event) => { location.hash = `report/${event.currentTarget.value}`; });
 
