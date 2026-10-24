@@ -551,7 +551,7 @@ def evaluate_parlay(
     if any(leg.market is Market.PLAYER_PROP for leg in legs):
         warnings.append(
             "Player props have no tested model: each prop leg uses the market's no-vig chance "
-            "from the latest props pull (24 h or 1 h before kickoff), so it adds the book's "
+            "from the latest props pull before the game, so it adds the book's "
             "margin and no edge."
         )
     if any(
