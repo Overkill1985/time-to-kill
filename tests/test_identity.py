@@ -443,3 +443,34 @@ def test_odds_event_pairing_a_team_already_playing_is_refused(
         s.commit()
         statuses = sorted(s.scalars(select(Game.status)))
     assert statuses == [GameStatus.DUPLICATE, GameStatus.SCHEDULED]
+
+
+def test_a_provider_reversing_home_and_away_reorients_the_link(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ingest_schedule(session_factory, espn_game())  # Air Force @ Boise State
+    # First listed the wrong way round: "home" Air Force +7.5.
+    first = Odds(
+        books_game("Air Force", "Boise St."),
+        (Selection.HOME, 7.5, -110),
+        (Selection.AWAY, -7.5, -110),
+    )
+    run_odds_ingestion(session_factory, first, Sport.CFB)
+    # The provider corrects the event (same id): home Boise State -7.5.
+    fixed = Odds(
+        books_game("Boise St.", "Air Force"),
+        (Selection.HOME, -7.5, -105),
+        (Selection.AWAY, 7.5, -115),
+    )
+    run = run_odds_ingestion(session_factory, fixed, Sport.CFB)
+    assert run.stats is not None and run.stats["link_orientation_fixed"] == 1
+    with session_factory() as s:
+        link = s.scalars(select(GameSourceId).where(GameSourceId.provider == "books")).one()
+        assert link.swapped is False
+        live = {
+            (r.selection, r.line, r.american_odds)
+            for r in s.scalars(select(OddsSnapshot).where(OddsSnapshot.withdrawn.is_(False)))
+        }
+    # Boise State (our home) is the favorite both times.
+    assert {("HOME", -7.5, -110.0), ("AWAY", 7.5, -110.0)} <= live
+    assert {("HOME", -7.5, -105.0), ("AWAY", 7.5, -115.0)} <= live

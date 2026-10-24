@@ -187,6 +187,27 @@ def _link(session: Session, g: NormalizedGame, game: Game, swapped: bool) -> Res
     return ResolvedGame(game, swapped)
 
 
+def _reorient(
+    session: Session, g: NormalizedGame, game: Game, link: GameSourceId, stats: Counter[str]
+) -> None:
+    """A provider can reverse an event's home and away after we linked it (PropLine
+    merging two listings, 2026-10: Texas Tech @ Cincinnati was stored with each
+    side's spread on the other team). Check the orientation on every fetch, and
+    correct the link when both teams now resolve the other way round."""
+    home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)
+    away = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.away, stats=stats)
+    if (home.id, away.id) == (game.home_team_id, game.away_team_id):
+        swapped = False
+    elif (home.id, away.id) == (game.away_team_id, game.home_team_id):
+        swapped = True
+    else:
+        stats["link_teams_unclear"] += 1  # leave it: never guess
+        return
+    if swapped != link.swapped:
+        link.swapped = swapped
+        stats["link_orientation_fixed"] += 1
+
+
 def _apply_results(session: Session, game: Game, g: NormalizedGame, swapped: bool) -> None:
     """Only schedule authorities write schedule and result fields, and a lower-ranked
     authority never overrides a higher-ranked one linked to the same game."""
@@ -273,6 +294,8 @@ def _find_game(
                 team = session.get_one(Team, team_id)
                 if ref.espn_id and team.espn_id == ref.espn_id:
                     _use_espn_name(session, g.sport, team, ref)
+        else:
+            _reorient(session, g, game, link, stats)
         return ResolvedGame(game, link.swapped)
 
     home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)
