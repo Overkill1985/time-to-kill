@@ -83,6 +83,7 @@ src/ttk/
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     daily_report.py    Daily report (9:00 task): model hit rates, team over/unders vs the closing total, player-prop over rates; saved as JSON
+    orientation_audit.py Forward records taken on a line stored with the teams reversed, judged against ESPN's close: excluded (append-only)
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
@@ -107,7 +108,7 @@ src/ttk/
                        record-a-bet dialog with game search and one-tap lines), Simulator (#sim), Model report (#models). Light and
                        dark themes. Data is inserted as text only (textContent), never as HTML.
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
-                       - ops.py: migrate, serve, alerts, summary, daily-report, props-report, teams-unmatched, link-team
+                       - ops.py: migrate, serve, alerts, summary, daily-report, audit-orientation, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
                        - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check, injury-moves, backtest-nfl-opener
                        - forward.py: forward-freeze(-ml/-totals/-nfl-wind/-opener), prop-model-freeze, prop-report, forward-snapshot/run/report, lab
@@ -116,6 +117,7 @@ migrations/            Alembic.
                        - 0001: the schema and append-only triggers.
                        - 0002: ESPN team identity and swapped game links.
                        - 0003–0004: NFL history, play-by-play aggregates and starters.
+                       - 0021: forward_exclusions (append-only marks leaving bad forward records out of scoring).
                        - 0020: prop_predictions (append-only prop-model forward-test records).
                        - 0019: bets.player, prop_market, actual_value (player-prop parlay legs).
                        - 0018: player_game_stats.fg3m/fg3a; nfl_player_game_stats.

@@ -660,6 +660,24 @@ class ForwardScore(Base):
     scored_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class ForwardExclusion(Base):
+    """A forward-test record left out of scoring, and why: the record stays as it was
+    taken (append-only), this mark says not to count it. First use (2026-10-24):
+    records taken on a line stored with the teams reversed (a provider event whose
+    home/away flipped after linking), judged against ESPN's close. Append-only."""
+
+    __tablename__ = "forward_exclusions"
+
+    forward_prediction_id: Mapped[int] = mapped_column(
+        ForeignKey("forward_predictions.id"), primary_key=True
+    )
+    reason: Mapped[str] = mapped_column(String(200))
+    reference_line: Mapped[float | None] = mapped_column(Float)
+    """The reference home spread the record's line was judged against."""
+    reference_provider: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Prediction(Base):
     """Immutable prediction snapshot. A re-run writes a new row."""
 

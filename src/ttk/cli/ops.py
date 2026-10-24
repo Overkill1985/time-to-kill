@@ -116,12 +116,21 @@ def _summary(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.models import utcnow
     from ttk.db.session import make_engine, make_session_factory
     from ttk.services.alerts import windows_notify
     from ttk.services.daily_report import REPORT_DIR, build_report, save_report
+    from ttk.services.orientation_audit import daily_audit
 
     _, data_dir = _db_paths(settings)
     factory = make_session_factory(make_engine(settings.database_url))
+    if not args.no_audit:
+        # Before scoring: leave out records taken on a reversed line (orientation_audit).
+        try:
+            for line in daily_audit(factory, utcnow()):
+                print(line)
+        except Exception as exc:  # the report still goes out
+            print(f"orientation audit failed: {type(exc).__name__}: {exc}")
     with factory() as session:
         report = build_report(
             session, args.date, cache=data_dir / REPORT_DIR / "closing_totals.json"
@@ -141,6 +150,27 @@ def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
             f"Time-to-Kill daily report, {report.day}",
             report.headline + " Open the Daily report page for the details.",
         )
+    return 0
+
+
+def _audit_orientation(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.orientation_audit import exclude_flipped
+
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        flipped = exclude_flipped(session, apply=args.apply)
+        if args.apply:
+            session.commit()
+    for f in flipped:
+        print(
+            f"{f.model:44s} game {f.game_id} {f.horizon_hours:3d} h: line {f.home_line:+.1f} "
+            f"vs {f.reference_provider} {f.reference_line:+.1f}"
+        )
+    print(
+        f"{len(flipped)} records on reversed lines"
+        + (" excluded" if args.apply else " (dry run; --apply to exclude)")
+    )
     return 0
 
 
@@ -196,6 +226,17 @@ def register(sub: Any) -> None:
         "--date", type=date.fromisoformat, help="Eastern day to report (default: yesterday)"
     )
     daily.add_argument("--notify", action="store_true", help="Also send a Windows notification")
+    daily.add_argument(
+        "--no-audit",
+        action="store_true",
+        help="Skip importing ESPN closes and excluding records on reversed lines first",
+    )
+    audit = sub.add_parser(
+        "audit-orientation",
+        help="Exclude forward-test records taken on a line stored with the teams reversed "
+        "(dry run unless --apply)",
+    )
+    audit.add_argument("--apply", action="store_true")
     sub.add_parser(
         "teams-unmatched",
         help="List provider team names not linked to an ESPN team, with their games",
@@ -217,6 +258,7 @@ HANDLERS: dict[str, Handler] = {
     "summary": _summary,
     "props-report": _props_report,
     "daily-report": _daily_report,
+    "audit-orientation": _audit_orientation,
     "teams-unmatched": _teams,
     "link-team": _teams,
 }

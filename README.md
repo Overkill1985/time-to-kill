@@ -75,7 +75,7 @@ A scheduled task, **"Time-to-Kill daily report"**, runs `.venv\Scripts\pythonw.e
 - **Team over/unders:** each team's games against the closing total, season and last 10 (NFL, NBA, college football and college basketball, in season);
 - **Player props:** how often the over hit, by prop market, and the players hitting overs or unders most.
 
-`ttk daily-report --date 2026-10-23` rebuilds a day by hand.
+Before building, the job imports ESPN's closing lines for newly finished games and leaves out any forward-test record taken on a line stored with the teams reversed (`ttk audit-orientation`; docs/MODEL-GOVERNANCE.md). `ttk daily-report --date 2026-10-23` rebuilds a day by hand (`--no-audit` skips that step).
 
 ### Background odds collection (Windows)
 

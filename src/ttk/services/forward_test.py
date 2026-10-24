@@ -25,7 +25,15 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from ttk import betting_math as bm
-from ttk.db.models import ForwardPrediction, ForwardScore, Game, ModelVersion, Team, utcnow
+from ttk.db.models import (
+    ForwardExclusion,
+    ForwardPrediction,
+    ForwardScore,
+    Game,
+    ModelVersion,
+    Team,
+    utcnow,
+)
 from ttk.domain import GameStatus, Market, Selection, Sport
 from ttk.services.line_history import ClosingSnapshot, closing_snapshot
 from ttk.services.market import SideMarket, main_lines, side_markets
@@ -471,13 +479,18 @@ def scored_rows(
 ) -> list[ScoredRow]:
     """Every forward snapshot on a finished game, oldest kickoff first, with its
     result and closing-line value (stored by ``score_finished``; replayed, without
-    writing, for any snapshot not stored yet). ``model`` is "name version"."""
+    writing, for any snapshot not stored yet). ``model`` is "name version". Records
+    in ``forward_exclusions`` are left out."""
     query = (
         select(ForwardPrediction, Game, ModelVersion, ForwardScore)
         .join(Game, Game.id == ForwardPrediction.game_id)
         .join(ModelVersion, ModelVersion.id == ForwardPrediction.model_version_id)
         .outerjoin(ForwardScore, ForwardScore.forward_prediction_id == ForwardPrediction.id)
-        .where(Game.status == GameStatus.FINAL)
+        .where(
+            Game.status == GameStatus.FINAL,
+            # Records marked as not to count (services/orientation_audit) stay stored.
+            ForwardPrediction.id.not_in(select(ForwardExclusion.forward_prediction_id)),
+        )
         .order_by(ModelVersion.name, ForwardPrediction.horizon_hours, Game.commence_time)
     )
     if sport is not None:
