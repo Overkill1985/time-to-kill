@@ -84,7 +84,7 @@ src/ttk/
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
     daily_report.py    Daily report (9:00 task): model hit rates, team over/unders vs the closing total, player-prop over rates; saved as JSON
     orientation_audit.py Forward records taken on a line stored with the teams reversed, judged against ESPN's close: excluded (append-only)
-    props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
+    props.py           Player-prop snapshots (24 h / 1 h; NBA also 6 h, game day): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
     player_props.py    Player props page: each prop's main line, no-vig P(over), best prices, the player's hit rate on it, and the newest matchup model's chance (in testing)

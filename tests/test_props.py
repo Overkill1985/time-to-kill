@@ -168,3 +168,26 @@ def test_roster_fallback_needs_one_surname_and_initial_fit() -> None:
     # Two players fit: no guess.
     two = teams(["Chris Jones"], ["Cameron Jones"])
     assert roster_sides(player_key("Christopher Jones"), two) == []
+
+
+def test_nba_games_also_get_a_game_day_pull(session_factory: sessionmaker[Session]) -> None:
+    # NBA books post player props on game day: a 6 h pull besides 24 h and 1 h.
+    seed(session_factory)  # an NFL game at KICK
+    with session_factory() as s:
+        heat = Team(sport="NBA", name="Miami Heat", espn_id="14")
+        hornets = Team(sport="NBA", name="Charlotte Hornets", espn_id="30")
+        s.add_all([heat, hornets])
+        s.flush()
+        g = Game(
+            sport="NBA",
+            home_team_id=hornets.id,
+            away_team_id=heat.id,
+            commence_time=KICK,
+            season_type="REG",
+        )
+        s.add(g)
+        s.flush()
+        s.add(GameSourceId(provider="propline", source_identifier="520151", game_id=g.id))
+        s.commit()
+        due = {(d.sport, d.horizon) for d in due_pulls(s, KICK - timedelta(hours=5))}
+    assert due == {(Sport.NBA, 6), (Sport.NFL, 24)}  # the NFL has no 6 h pull

@@ -517,7 +517,7 @@ def prop_report(session: Session, version: ModelVersion) -> PropReport:
     rows = scored(session, version.id)
     report = PropReport(f"{version.name} {version.version}", int(recorded), len(rows))
     report.scores.append(_score("all", rows))
-    for h in (24, 1):
+    for h in sorted({r.prediction.horizon_hours for r in rows}, reverse=True):
         report.scores.append(_score(f"{h} h", [r for r in rows if r.prediction.horizon_hours == h]))
     for market in sorted({r.prediction.market for r in rows}):
         report.scores.append(_score(market, [r for r in rows if r.prediction.market == market]))

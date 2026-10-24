@@ -1,6 +1,7 @@
 """Player props: snapshots, not a stream. PropLine prices props per event (1
 request each), so instead of polling every 15 minutes the collector takes one
-pull per game at each horizon (24 h and 1 h before kickoff), NFL and NBA,
+pull per game at each horizon (``HORIZONS_BY_SPORT``: 24 h and 1 h before kickoff;
+the NBA also 6 h, since its books post player props on game day), NFL and NBA,
 regular season only. A pull is 2 requests: the event's market list, then its
 player markets' odds. Pulls stop while fewer than ``MIN_REMAINING`` requests are
 left, so props never starve the game-odds polling.
@@ -36,7 +37,13 @@ from ttk.services.forward_test import due_horizon
 
 PROP_SPORTS = (Sport.NFL, Sport.NBA)
 MAX_DROPPED_NAMES = 30
-HORIZONS = (24, 1)
+HORIZONS_BY_SPORT: dict[Sport, tuple[int, ...]] = {
+    Sport.NFL: (24, 1),
+    # 2026-10-19..24: 20 of 48 NBA 24 h pulls had no props at all, the rest 5 books on
+    # average against 13 at 1 h; the books had posted by midday (6 h) on game day.
+    Sport.NBA: (24, 6, 1),
+}
+HORIZONS = tuple(sorted({h for hs in HORIZONS_BY_SPORT.values() for h in hs}, reverse=True))
 MIN_REMAINING = 100
 NOT_SPORTSBOOKS = frozenset(
     {
@@ -134,7 +141,7 @@ def due_pulls(session: Session, now: datetime) -> list[DuePull]:
     ).all()
     out = []
     for g in games:
-        h = due_horizon(g.commence_time, now, HORIZONS)
+        h = due_horizon(g.commence_time, now, HORIZONS_BY_SPORT[Sport(g.sport)])
         if h is None:
             continue
         taken = session.scalar(
