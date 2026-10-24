@@ -221,7 +221,9 @@ def snapshot_pulls(
         history = pp._history(session, sport, list(teams), now + timedelta(days=1))
         books = dict(session.execute(select(Sportsbook.id, Sportsbook.key)).all())
         for pull, game in due:
-            written = _snapshot(session, version, model, history, books, pull, game)
+            # Written once per pull, not row by row (forward_test.snapshot).
+            with session.no_autoflush:
+                written = _snapshot(session, version, model, history, books, pull, game)
             lines.append(
                 f"prop model {version.name} {version.version}: game {game.id} "
                 f"{pull.horizon_hours} h: {written} props recorded"

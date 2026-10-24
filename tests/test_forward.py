@@ -273,3 +273,40 @@ def test_register_opener_copies_a_key_spread_artifact_with_its_horizon(
         for bad in ("nba-spread-anchored-test", "nba-spread-key-injury-test", "missing"):
             with pytest.raises(ValueError):
                 register_opener(s, bad, 48)
+
+
+def test_snapshot_writes_once_at_the_end_not_row_by_row(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # Autoflushing each row took SQLite's write lock for the whole pass and failed
+    # the collector's odds writes (2026-10-20..23): rows wait in the session.
+    now = KICK - timedelta(hours=20)
+    odds(session_factory, now - timedelta(minutes=5))
+    pending_seen: list[int] = []
+    with session_factory() as s:
+        first = model(s)
+        row = register(
+            s,
+            name="cfb-spread-test-2",
+            version="1",
+            sport=Sport.CFB,
+            algorithm="test",
+            features=["x"],
+            artifact={"artifact_version": 1},
+            training_window="2015-2022",
+            validation_window="2023-2024",
+            log_loss=0.69,
+            brier=0.25,
+        )
+        s.commit()
+
+        def view(
+            game_id: int, home_line: float, market: float, at: datetime, horizon: int
+        ) -> ModelView:
+            pending_seen.append(sum(isinstance(o, ForwardPrediction) for o in s.new))
+            return ModelView(0.55, 0.01, 4.0, {"x": 1.0})
+
+        second = ForwardModel(row, Sport.CFB, view, KICK - timedelta(days=7))
+        stats = snapshot(s, [first, second], now=now)
+        assert stats.written == 2 and pending_seen == [1]  # the first row not yet written
+        assert not s.new  # both written by the final flush

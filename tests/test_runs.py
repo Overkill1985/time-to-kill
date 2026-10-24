@@ -36,3 +36,18 @@ def test_close_abandoned_closes_only_old_running_runs(
         assert len(closed) == 1
         statuses = sorted(s.scalars(select(IngestionRun.status)))
     assert statuses == ["ABANDONED", "RUNNING", "SUCCESS"]
+
+
+def test_close_abandoned_odds_runs_after_30_minutes_only(
+    session_factory: sessionmaker[Session],
+) -> None:
+    from ttk.services.runs import ODDS_ABANDONED_AFTER
+
+    add_run(session_factory, NOW - timedelta(minutes=45), status="RUNNING")  # odds
+    add_run(session_factory, NOW - timedelta(minutes=45), status="RUNNING", kind="odds-history")
+    with session_factory() as s:
+        closed = close_abandoned(s, NOW, after=ODDS_ABANDONED_AFTER, kind="odds")
+        s.commit()
+        assert [r.kind for r in closed] == ["odds"]
+        statuses = sorted(s.scalars(select(IngestionRun.status)))
+    assert statuses == ["ABANDONED", "RUNNING"]

@@ -72,18 +72,28 @@ def _record_failure(session: Session, run: IngestionRun, error: str) -> None:
 ABANDONED_AFTER = timedelta(hours=6)
 
 
-def close_abandoned(session: Session, now: datetime | None = None) -> list[IngestionRun]:
-    """Close runs left RUNNING longer than ``ABANDONED_AFTER``: their process ended
-    (killed, or a failure that could not be recorded). Call it where only one
-    process writes runs, at the collector's start."""
+ODDS_ABANDONED_AFTER = timedelta(minutes=30)
+"""An odds poll takes seconds: one RUNNING this long failed without being recorded."""
+
+
+def close_abandoned(
+    session: Session,
+    now: datetime | None = None,
+    *,
+    after: timedelta = ABANDONED_AFTER,
+    kind: str | None = None,
+) -> list[IngestionRun]:
+    """Close runs (of ``kind``, if given) left RUNNING longer than ``after``: their
+    process ended (killed, or a failure that could not be recorded, e.g. with the
+    database still locked). The collector calls it at its start for all runs, and
+    each pass for its own odds runs."""
     now = now or utcnow()
-    stale = list(
-        session.scalars(
-            select(IngestionRun).where(
-                IngestionRun.status == "RUNNING", IngestionRun.started_at < now - ABANDONED_AFTER
-            )
-        )
+    query = select(IngestionRun).where(
+        IngestionRun.status == "RUNNING", IngestionRun.started_at < now - after
     )
+    if kind is not None:
+        query = query.where(IngestionRun.kind == kind)
+    stale = list(session.scalars(query))
     for run in stale:
         run.status, run.finished_at = "ABANDONED", now
         run.error = run.error or "the process ended before the run finished"

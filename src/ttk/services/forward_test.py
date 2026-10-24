@@ -204,6 +204,23 @@ def snapshot(
 ) -> SnapshotStats:
     now = now or utcnow()
     stats = SnapshotStats()
+    # No autoflush: each add would otherwise be written by the next query, taking
+    # SQLite's write lock for the whole pass (minutes) and failing the collector's
+    # odds writes behind it (2026-10-20..23). Everything is written at the end.
+    with session.no_autoflush:
+        _snapshot_models(session, models, now, horizons, bettable_books, stats)
+    session.flush()
+    return stats
+
+
+def _snapshot_models(
+    session: Session,
+    models: Sequence[ForwardModel],
+    now: datetime,
+    horizons: Sequence[int],
+    bettable_books: frozenset[str] | None,
+    stats: SnapshotStats,
+) -> None:
     for model in models:
         model_horizons = model.horizons or tuple(horizons)
         longest = max(model_horizons)
@@ -291,8 +308,6 @@ def snapshot(
                 )
             )
             stats.written += 1
-    session.flush()
-    return stats
 
 
 # --------------------------------------------------------------------------- scoring
@@ -439,11 +454,14 @@ def score_finished(session: Session) -> int:
         .order_by(ForwardPrediction.game_id)
     ).all()
     closes: dict[tuple[int, Market], ClosingSnapshot] = {}
-    for fp in pending:
-        price_clv, points = _clv(session, fp, closes)
-        session.add(
-            ForwardScore(forward_prediction_id=fp.id, price_clv=price_clv, points_vs_close=points)
-        )
+    with session.no_autoflush:  # write at the end, not one row per closing query (snapshot)
+        for fp in pending:
+            price_clv, points = _clv(session, fp, closes)
+            session.add(
+                ForwardScore(
+                    forward_prediction_id=fp.id, price_clv=price_clv, points_vs_close=points
+                )
+            )
     session.flush()
     return len(pending)
 

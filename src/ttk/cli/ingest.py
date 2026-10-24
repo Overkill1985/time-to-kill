@@ -125,7 +125,7 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.services.parlay_lab import settle_parlays
     from ttk.services.prop_forward import snapshot_due
     from ttk.services.props import PropsProvider, collect_props
-    from ttk.services.runs import close_abandoned
+    from ttk.services.runs import ODDS_ABANDONED_AFTER, close_abandoned
 
     log_file = None
     if args.log is not None:
@@ -165,6 +165,10 @@ def _collect_odds(args: argparse.Namespace, settings: Settings) -> int:
     def one_pass() -> list[str]:
         """One collection pass; returns the statuses of the odds polls."""
         nonlocal remaining
+        with factory() as session:
+            for run in close_abandoned(session, after=ODDS_ABANDONED_AFTER, kind="odds"):
+                emit(f"closed odds run {run.id} ({run.started_at:%m-%d %H:%M}) as ABANDONED")
+            session.commit()
         # Provider errors (including 429/503 rate limits) are recorded on the run as
         # FAILED inside each step; that sport waits for the next pass.
         for run in refresh_schedules(factory, schedule_provider, sports):
