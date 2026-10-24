@@ -441,3 +441,6 @@ dialog form { display: grid; grid-template-rows: auto 1fr auto; max-height: calc
 .dot-hit.over { background: var(--good); }
 .dot-hit.under { background: var(--bad); }
 .dot-hit.push { background: var(--muted); }
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.form { font-family: var(--mono, ui-monospace, monospace); letter-spacing: .12em; }

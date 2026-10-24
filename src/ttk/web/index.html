@@ -45,6 +45,9 @@
         <li><a href="#models" data-page="models">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9M10 19V5M15 19v-7M20 19v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           <span>Model report</span></a></li>
+        <li><a href="#report" data-page="report">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 12h5M10 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Daily report</span></a></li>
       </ul>
       <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Change color theme">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
@@ -330,6 +333,18 @@
       </section>
 
       <!-- MODEL REPORT -->
+      <section class="page" id="page-report" aria-labelledby="report-title" hidden>
+        <header class="page-head">
+          <p class="eyebrow" id="report-day">Daily report</p>
+          <h1 id="report-title">Daily report</h1>
+          <p class="lede" id="report-headline">How yesterday's games went for the models, the totals and the player props, beside the season so far. Built each morning at 9:00 ET.</p>
+        </header>
+        <div class="filter-row">
+          <label>Day <select id="report-select" aria-label="Report day"></select></label>
+        </div>
+        <div id="report-body"></div>
+      </section>
+
       <section class="page" id="page-models" aria-labelledby="models-title" hidden>
         <header class="page-head">
           <p class="eyebrow">Forward tests</p>

@@ -82,6 +82,7 @@ src/ttk/
     data_quality.py    Rule-based data quality and uncertainty, each with reasons
     nfl_spread_predictor.py  Live NFL spread probabilities from the validated artifact
     daily_card.py      The daily card, every sport (NFL predictor + frozen CardModels): evaluate, qualify, explain, snapshot
+    daily_report.py    Daily report (9:00 task): model hit rates, team over/unders vs the closing total, player-prop over rates; saved as JSON
     props.py           Player-prop snapshots (24 h / 1 h, NFL/NBA): sportsbooks only, roster-checked
     weather.py         Forecast wind for outdoor NFL games, taken once per (game, horizon) by the forward runner
     injury_moves.py    NFL: does the spread move after ESPN injury news? (`ttk injury-moves`)
@@ -98,7 +99,7 @@ src/ttk/
     frozen_simulator.py    Monte Carlo from a frozen card model (CFB, NBA, NCAAB), anchored to the market
     market.py          Current market per game: per-book latest, pairing, consensus, main line
   api/app.py           create_app: loopback only, cross-site writes refused (see Security); includes the routers
-  api/routes/          One APIRouter per area: games, card, bets, bankroll, forward, parlays, tools (simulator, math)
+  api/routes/          One APIRouter per area: games, card, bets, bankroll, forward, parlays, props, report (daily report), tools (simulator, math)
   api/common.py        Request/response models, conversions, the session dependency, cached models
   web/                 The browser UI (index.html, app.js, style.css): no build step, served at /. Pages (hash routes):
                        Home (#home: collection health, today, bankroll, model progress), Today's games (#today: one card per game,
@@ -106,7 +107,7 @@ src/ttk/
                        record-a-bet dialog with game search and one-tap lines), Simulator (#sim), Model report (#models). Light and
                        dark themes. Data is inserted as text only (textContent), never as HTML.
   cli/                 `ttk <command>` (37 commands; `ttk --help`). Each module registers its commands and a HANDLERS table:
-                       - ops.py: migrate, serve, alerts, summary, props-report, teams-unmatched, link-team
+                       - ops.py: migrate, serve, alerts, summary, daily-report, props-report, teams-unmatched, link-team
                        - ingest.py: ingest-odds, collect-odds (the collector loop), ingest-schedule, history imports, repairs
                        - research.py: backtest-nfl-elo/nba/cfb/ncaab/totals/cfb-wind, score-test, injury-check, injury-moves, backtest-nfl-opener
                        - forward.py: forward-freeze(-ml/-totals/-nfl-wind/-opener), prop-model-freeze, prop-report, forward-snapshot/run/report, lab
@@ -169,6 +170,7 @@ Built so far: every step, for NFL spreads, including Monte Carlo.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Status + last ingestion run |
+| GET | `/api/daily-report?date=` | The saved daily report (latest, or that day's) and the days available |
 | GET | `/api/status` | Home page: last odds poll, PropLine quota, health alerts, last props pull, every frozen model's forward progress, next games per sport, bankroll |
 | PATCH | `/api/bets/{id}` `{"result": ...}` | Settle a pending player-prop parlay leg by hand (an NFL player with no stat line: inactive, or played without one) |
 | GET | `/api/props?date=&kind=main\|milestones` | Player props for a day's NFL/NBA games: each main line, or every milestone rung ("N+", an over at N - 0.5; implied chance when one-sided), with market P(over), best prices, season and last-10 hit rates (description only; no prop model) |

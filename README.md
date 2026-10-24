@@ -67,6 +67,16 @@ Model results live in [docs/MODELS.md](docs/MODELS.md).
 
 Set `TTK_BETTABLE_BOOKS` in `.env` (for example `draftkings,fanduel,betmgm`) so the card's best price and EV use only books you can actually bet at. Otherwise they include exchanges and prediction markets, whose quoted prices can exclude fees and may not be fillable.
 
+### Daily report (Windows)
+
+A scheduled task, **"Time-to-Kill daily report"**, runs `.venv\Scripts\pythonw.exe -m ttk.cli daily-report --notify` at 9:00 every morning (working directory: this folder; it runs late if the computer was off). For yesterday's games and the season so far it saves `data\reports\daily\<date>.json`, shown on the app's **Daily report** page, and sends a Windows notification with the headline:
+
+- **Model hit rates:** each forward-tested model's record on the side it favored against the market, and whether it beats the market (every model is in testing: records, not recommendations);
+- **Team over/unders:** each team's games against the closing total, season and last 10 (NFL, NBA, college football and college basketball, in season);
+- **Player props:** how often the over hit, by prop market, and the players hitting overs or unders most.
+
+`ttk daily-report --date 2026-10-23` rebuilds a day by hand.
+
 ### Background odds collection (Windows)
 
 A scheduled task, **"Time-to-Kill odds collector"**, runs the collector at logon without a console window:

@@ -203,7 +203,7 @@ $("#theme-label").textContent = `Theme: ${currentTheme()}`;
 
 // ------------------------------------------------------------------ routing
 
-const PAGES = ["home", "today", "players", "slip", "bets", "sim", "models"];
+const PAGES = ["home", "today", "players", "slip", "bets", "sim", "models", "report"];
 const loaders = {};
 
 function route() {
@@ -1645,6 +1645,88 @@ async function loadLab(pick = $("#lab-pick").value) {
     cell(signedPct(w.cumulative_clv, 2), `num ${signClass(w.cumulative_clv)}`))));
 }
 $("#lab-pick").addEventListener("change", (event) => loadLab(event.currentTarget.value));
+
+// ------------------------------------------------------------------ daily report
+
+const record = (r) => `${r.wins}-${r.losses}${r.pushes ? `-${r.pushes}` : ""}`;
+const hitClass = (r) => (r.hit_rate == null || r.wins + r.losses < 20 ? "" : r.hit_rate >= 0.524 ? "pos" : r.hit_rate < 0.476 ? "neg" : "");
+const verdictClass = (v) => (v.startsWith("beating") ? "pos" : v.startsWith("worse") ? "neg" : "muted");
+const reportTable = (headers, rows) => el("div", { class: "table-wrap" }, el("table", {},
+  el("thead", {}, el("tr", {}, ...headers.map(([text, num]) => el("th", { class: num ? "num" : "", text })))),
+  el("tbody", {}, ...rows)));
+
+function lastTen(marks) {
+  return el("span", { class: "form", "aria-label": `last ${marks.length}: ${marks}` },
+    ...[...marks].map((m) => el("span", { class: m === "O" ? "pos" : m === "U" ? "neg" : "muted", text: m })));
+}
+
+function renderReport({ report, days }) {
+  const select = $("#report-select");
+  select.replaceChildren(...days.map((d) => el("option", { value: d, text: d, selected: d === report.day })));
+  $("#report-day").textContent = `Games of ${new Date(`${report.day}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`;
+  $("#report-headline").textContent = report.headline;
+
+  const models = el("section", { class: "card" },
+    el("div", { class: "card-head" }, el("h2", { text: "Model hit rates" })),
+    el("p", { class: "muted small", text: "Each model's record on the side it favored against the market (game models at their last snapshot before the game; prop models on the over or under at the last pull). Green: above the 52.4% a -110 price needs, from 20 picks." }),
+    reportTable([["Model"], ["Sport"], ["Yesterday", 1], ["Season", 1], ["Hit %", 1], ["Against the market"]],
+      report.models.map((m) => {
+        const n = modelName(m.model);
+        return el("tr", {},
+          el("td", {}, el("strong", { text: n.title }), el("div", { class: "muted small", text: n.detail || m.model })),
+          el("td", { text: sportName(m.sport) }),
+          el("td", { class: `num ${hitClass(m.yesterday)}`, text: m.yesterday.wins + m.yesterday.losses ? record(m.yesterday) : "–" }),
+          el("td", { class: "num", text: record(m.season) }),
+          el("td", { class: `num ${hitClass(m.season)}`, text: pct(m.season.hit_rate) }),
+          el("td", { class: verdictClass(m.verdict), text: m.verdict }));
+      })));
+
+  const totals = report.totals.map((t) => el("section", { class: "card" },
+    el("div", { class: "card-head" }, el("h2", { text: `${sportName(t.sport)}: over/under vs the closing total` })),
+    el("div", { class: "metric-row" },
+      metric("Season over", pct(t.over_rate, 0), `${t.games} games`),
+      metric("Yesterday over", t.yesterday_games ? pct(t.yesterday_over_rate, 0) : "–", `${t.yesterday_games} games`)),
+    el("details", {}, el("summary", { text: `Teams (${t.teams.length}), most overs first` }),
+      reportTable([["Team"], ["Games", 1], ["O-U-P", 1], ["Over %", 1], ["Last 10 (latest last)"]],
+        t.teams.map((tm) => el("tr", {},
+          el("td", { text: tm.team }),
+          el("td", { class: "num", text: tm.games }),
+          el("td", { class: "num", text: `${tm.overs}-${tm.unders}-${tm.pushes}` }),
+          el("td", { class: "num", text: pct(tm.over_rate, 0) }),
+          el("td", {}, lastTen(tm.last10))))))));
+
+  const playerList = (title, list) => el("div", {}, el("h3", { text: title }),
+    list.length ? reportTable([["Player"], ["Props", 1], ["Over %", 1]],
+      list.map((p) => el("tr", {}, el("td", { text: p.player }), el("td", { class: "num", text: p.props }), el("td", { class: "num", text: pct(p.over_rate, 0) }))))
+      : el("p", { class: "muted small", text: "Not enough props per player yet." }));
+  const props = report.props.map((sp) => el("section", { class: "card" },
+    el("div", { class: "card-head" }, el("h2", { text: `${sportName(sp.sport)} player props: how often the over hit` })),
+    el("p", { class: "muted small", text: "Main lines with 2+ books on both sides, at the last pull before the game; pushes and players who didn't play left out." }),
+    reportTable([["Prop"], ["Yesterday", 1], ["Over %", 1], ["Season", 1], ["Over %", 1]],
+      sp.markets.map((m) => el("tr", {},
+        el("td", { text: m.market }),
+        el("td", { class: "num", text: m.yesterday_props || "–" }),
+        el("td", { class: "num", text: pct(m.yesterday_over_rate, 0) }),
+        el("td", { class: "num", text: m.season_props }),
+        el("td", { class: "num", text: pct(m.season_over_rate, 0) })))),
+    el("details", {}, el("summary", { text: "Players hitting the over or under most (8+ props)" }),
+      el("div", { class: "grid-2" }, playerList("Most overs", sp.most_over), playerList("Most unders", sp.most_under)))));
+
+  fill($("#report-body"), models, ...totals, ...props,
+    el("p", { class: "muted small", text: report.note }),
+    el("p", { class: "muted small", text: `Built ${new Date(report.generated_at).toLocaleString()}.` }));
+}
+
+async function loadReport(day) {
+  $("#report-body").replaceChildren(el("div", { class: "skeleton-card" }));
+  try {
+    renderReport(await api(`/api/daily-report${day ? `?date=${encodeURIComponent(day)}` : ""}`));
+  } catch (error) {
+    $("#report-body").replaceChildren(empty("No daily report yet", error.message));
+  }
+}
+loaders.report = (sub) => loadReport(sub);
+$("#report-select").addEventListener("change", (event) => { location.hash = `report/${event.currentTarget.value}`; });
 
 // ------------------------------------------------------------------ start
 

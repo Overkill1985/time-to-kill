@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +115,35 @@ def _summary(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.session import make_engine, make_session_factory
+    from ttk.services.alerts import windows_notify
+    from ttk.services.daily_report import REPORT_DIR, build_report, save_report
+
+    _, data_dir = _db_paths(settings)
+    factory = make_session_factory(make_engine(settings.database_url))
+    with factory() as session:
+        report = build_report(
+            session, args.date, cache=data_dir / REPORT_DIR / "closing_totals.json"
+        )
+    path = save_report(report, data_dir)
+    print(f"{report.day}: {report.headline}")
+    for m in report.models:
+        y, sn = m.yesterday, m.season
+        print(
+            f"  {m.model:44s} yesterday {y.wins}-{y.losses}-{y.pushes}  "
+            f"season {sn.wins}-{sn.losses}-{sn.pushes} "
+            f"({'-' if sn.hit_rate is None else f'{100 * sn.hit_rate:.1f}%'}), {m.verdict}"
+        )
+    print(f"saved {path}")
+    if args.notify:
+        windows_notify(
+            f"Time-to-Kill daily report, {report.day}",
+            report.headline + " Open the Daily report page for the details.",
+        )
+    return 0
+
+
 def _props_report(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.services.props import coverage
@@ -158,6 +188,14 @@ def register(sub: Any) -> None:
     summ.add_argument("--days", type=int, default=7)
     summ.add_argument("--write", type=Path, help="Also write it to this file")
     sub.add_parser("props-report", help="Player-prop snapshot coverage: books, markets and drops")
+    daily = sub.add_parser(
+        "daily-report",
+        help="Yesterday and the season: model hit rates, team over/unders, player-prop overs",
+    )
+    daily.add_argument(
+        "--date", type=date.fromisoformat, help="Eastern day to report (default: yesterday)"
+    )
+    daily.add_argument("--notify", action="store_true", help="Also send a Windows notification")
     sub.add_parser(
         "teams-unmatched",
         help="List provider team names not linked to an ESPN team, with their games",
@@ -178,6 +216,7 @@ HANDLERS: dict[str, Handler] = {
     "alerts": _alerts_check,
     "summary": _summary,
     "props-report": _props_report,
+    "daily-report": _daily_report,
     "teams-unmatched": _teams,
     "link-team": _teams,
 }
