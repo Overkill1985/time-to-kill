@@ -699,6 +699,13 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **Verdict:** each version improves on the one before (v0.2 on v0.1 z −3.9 against the market props; v0.3 on v0.2 by 0.010 log loss), and none beats the market. Receiving and rushing yards are now close (z +0.2); quarterback stats are well behind. The matchups are worth seeing when building a parlay, but a model lean is something to check, not value. The page's model sorts use only props with 2+ books quoting both sides: a lone book's line can be mislabeled (one listed 0.5- and 1.5-yard receiving lines).
 - **Next:** the forward test decides; 100 decided props per version for a z. Then game script (team totals and spreads from the stored odds), and quarterback-specific work.
 
+### Market-anchored receiving props: `nfl-prop-anchored 0.1.0` (2026-11-01)
+
+- **Why:** v0.3's forward props (2026-10-18..30, 2,311 decided) by stat: on receptions and receiving yards it was already level with the market (24 h: 0.683 vs 0.687 and 0.690 vs 0.693) and its lean carried information (a fitted weight about 0.5, t about +2.3, at 24 h and 1 h alike). On passing stats it said about 40% over where 57-58% went over; on rushing and touchdowns its lean carried little or nothing. Fitted on every stat, the weight is 0.09 (se 0.07): the quarterback props drown the receiving signal.
+- **Model:** the NBA construction (`nba_props.anchored`): logit P(over) = logit(market no-vig) + weight x (logit(v0.3) - logit(market)), with v0.3 frozen as it was, recorded on `player_receptions` and `player_reception_yds` only (`prop_matchup.ANCHORED_MARKETS`). No intercept.
+- **Fitted** (`ttk prop-model-freeze --model nfl-anchored`) on the 1,187 decided v0.3 receiving props: weight **0.491** (se 0.115). Time split: 0.470 from the first part; on the last 90 props log loss 0.6632 against v0.3's 0.6642 and the market's 0.6813.
+- **Caveat:** the two markets were chosen after looking at v0.3's forward props by stat, so the fitting sample is not evidence. **Test:** forward only, from Week 9 (2026-11-01), on games after the freeze; a z from 100 decided props. v0.3 keeps being recorded beside it.
+
 ## NBA player props (2026-10-20)
 
 `nba-prop-usage 0.1.0`, DEVELOPMENT (`research/nba_props.py`; `ttk prop-model-freeze --model nba`, `ttk prop-report`). Recorded on every NBA props pull (24 h and 1 h before tip) from the 2026-27 opener, and shown on the Player props page.

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -55,13 +55,18 @@ NBA_VERSION = "0.1.0"
 ANCHORED_NAME = "nba-prop-anchored"
 ANCHORED_VERSION = "0.1.0"
 SHRUNK_VERSION = "0.3.0"
-KINDS = frozenset({"nfl_prop_usage", "nfl_prop_matchup", nb.KIND, nb.ANCHORED_KIND})
+NFL_ANCHORED_NAME = "nfl-prop-anchored"
+NFL_ANCHORED_VERSION = "0.1.0"
+KINDS = frozenset(
+    {"nfl_prop_usage", "nfl_prop_matchup", mu.ANCHORED_KIND, nb.KIND, nb.ANCHORED_KIND}
+)
 MIN_BOOKS = 2
 MIN_FOR_Z = 100
 
 PropModel = (
     pm.FrozenPropModel
     | mu.FrozenMatchupModel
+    | mu.FrozenAnchoredMatchupModel
     | nb.FrozenNbaPropModel
     | nb.FrozenAnchoredNbaPropModel
 )
@@ -75,6 +80,8 @@ def load_model(artifact: Mapping[str, Any], games: Sequence[Any]) -> PropModel:
     """``games``: the sport's player games (``load_games``)."""
     if artifact.get("kind") == nb.ANCHORED_KIND:
         return nb.FrozenAnchoredNbaPropModel(artifact, games)
+    if artifact.get("kind") == mu.ANCHORED_KIND:
+        return mu.FrozenAnchoredMatchupModel(artifact, games)
     if artifact.get("kind") == nb.KIND:
         return nb.FrozenNbaPropModel(artifact, games)
     if artifact.get("kind") == "nfl_prop_matchup":
@@ -98,7 +105,7 @@ def model_view(
     market_over: float | None = None,
 ) -> pm.PropView | mu.MatchupView | nb.NbaView | None:
     """``market_over``: the market's no-vig P(over) (an anchored model needs it)."""
-    if isinstance(model, nb.FrozenAnchoredNbaPropModel):
+    if isinstance(model, (nb.FrozenAnchoredNbaPropModel, mu.FrozenAnchoredMatchupModel)):
         return model.view(
             player_id,
             market,
@@ -211,12 +218,22 @@ class AnchoredFit:
     days, log loss on the last quarter for the anchored model, v0.1 and the market."""
 
 
-def fit_anchored(session: Session, base: ModelVersion, cutoff: datetime) -> AnchoredFit:
+def fit_anchored(
+    session: Session,
+    base: ModelVersion,
+    cutoff: datetime,
+    markets: Collection[str] | None = None,
+) -> AnchoredFit:
     """The weight from ``base``'s forward-test props decided on games before
-    ``cutoff``. Those props stay ``base``'s test; the anchored model is judged only
-    on games after its freeze."""
+    ``cutoff`` (on ``markets`` only, if given). Those props stay ``base``'s test; the
+    anchored model is judged only on games after its freeze."""
     rows = sorted(
-        (r for r in scored(session, base.id) if r.prediction.created_at < cutoff),
+        (
+            r
+            for r in scored(session, base.id)
+            if r.prediction.created_at < cutoff
+            and (markets is None or r.prediction.market in markets)
+        ),
         key=lambda r: r.prediction.game_id,
     )
     if len(rows) < MIN_FOR_Z:
@@ -283,6 +300,49 @@ def freeze_anchored_and_register(
             "fit": {"props": fit.props, "window": list(fit.window), "check": fit.check},
         },
         training_window=f"{NBA_NAME} forward props {fit.window[0]}..{fit.window[1]}",
+        validation_window="forward test from the freeze",
+        log_loss=None,
+        brier=None,
+    )
+    return row, fit
+
+
+def freeze_nfl_anchored_and_register(
+    session: Session, now: datetime | None = None
+) -> tuple[ModelVersion, AnchoredFit]:
+    """``nfl-prop-anchored``: the market's chance plus a fitted share of v0.3's lean,
+    on the receiving props (``mu.ANCHORED_MARKETS``), the weight fitted on v0.3's
+    forward props decided before ``now``."""
+    now = now or utcnow()
+    base = session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.name == MATCHUP_NAME, ModelVersion.version == SHRUNK_VERSION
+        )
+    ).first()
+    if base is None or not base.artifact:
+        raise ValueError(f"register {MATCHUP_NAME} {SHRUNK_VERSION} first (--model shrunk)")
+    fit = fit_anchored(session, base, now, mu.ANCHORED_MARKETS)
+    row = register(
+        session,
+        name=NFL_ANCHORED_NAME,
+        version=NFL_ANCHORED_VERSION,
+        sport=Sport.NFL,
+        algorithm="logit(market) + weight x (logit(nfl-prop-matchup 0.3.0) - logit(market))",
+        features=[f"{MATCHUP_NAME} {SHRUNK_VERSION}", "market no-vig P(over)"],
+        artifact={
+            "artifact_version": mu.ARTIFACT_VERSION,
+            "kind": mu.ANCHORED_KIND,
+            "market": "PLAYER_PROP",
+            "sport": "NFL",
+            "base_version": f"{MATCHUP_NAME} {SHRUNK_VERSION}",
+            "base": base.artifact,
+            "markets": list(mu.ANCHORED_MARKETS),
+            "weight": fit.weight,
+            "weight_se": fit.weight_se,
+            "fit": {"props": fit.props, "window": list(fit.window), "check": fit.check},
+        },
+        training_window=f"{MATCHUP_NAME} {SHRUNK_VERSION} forward props "
+        f"{fit.window[0]}..{fit.window[1]}",
         validation_window="forward test from the freeze",
         log_loss=None,
         brier=None,

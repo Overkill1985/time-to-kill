@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from ttk.research import nba_props as nb
 from ttk.research import prop_model as pm
 
 ARTIFACT_VERSION = 2
@@ -395,3 +396,45 @@ class FrozenMatchupModel:
         )
         mean = usage * f ** self.beta.get(market, 0.0)
         return MatchupView(mean, usage, f, dist.p_over(mean, line), m[1])
+
+
+# ------------------------------------------------------------------ market-anchored
+
+ANCHORED_KIND = "nfl_prop_anchored"
+"""v0.3 anchored to the market, as ``nba_props.anchored`` does for the NBA, on the
+receiving props only. On v0.3's forward props (2026-10-18..30) its lean carried
+information there (weight about 0.5, t about +2.3, at 24 h and 1 h) and none, or a
+reversed one, on rushing, passing and touchdowns, where it trails the market."""
+ANCHORED_MARKETS = ("player_receptions", "player_reception_yds")
+
+
+class FrozenAnchoredMatchupModel:
+    """v0.3's view on ``markets``, its chance pulled to the market's by ``weight``."""
+
+    def __init__(self, artifact: Mapping[str, Any], games: Sequence[pm.PlayerGame]) -> None:
+        if artifact.get("artifact_version") != ARTIFACT_VERSION or artifact.get("kind") != (
+            ANCHORED_KIND
+        ):
+            raise ValueError("not an anchored NFL prop model artifact of a known version")
+        self.base = FrozenMatchupModel(artifact["base"], games)
+        self.weight = float(artifact["weight"])
+        markets = set(artifact["markets"])
+        self.dists = {m: d for m, d in self.base.dists.items() if m in markets}
+
+    def view(
+        self,
+        player_id: str,
+        market: str,
+        line: float,
+        before: datetime,
+        season: int,
+        opponent_id: int,
+        market_over: float | None,
+    ) -> MatchupView | None:
+        if market_over is None or market not in self.dists:
+            return None  # anchored to the market, on its own markets only
+        v = self.base.view(player_id, market, line, before, season, opponent_id)
+        if v is None:
+            return None
+        p = nb.anchored(market_over, v.p_over, self.weight)
+        return MatchupView(v.mean, v.usage_mean, v.defense_factor, p, v.games)

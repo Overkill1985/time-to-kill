@@ -72,14 +72,20 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             freeze_anchored_and_register,
             freeze_matchup_and_register,
             freeze_nba_and_register,
+            freeze_nfl_anchored_and_register,
             freeze_shrunk_and_register,
             snapshot_pulls,
         )
         from ttk.services.prop_forward import freeze_and_register as freeze_props
 
         with factory() as session:
-            if args.model == "nba-anchored":
-                prop_row, anchored_fit = freeze_anchored_and_register(session)
+            if args.model in ("nba-anchored", "nfl-anchored"):
+                freeze_anchored = (
+                    freeze_anchored_and_register
+                    if args.model == "nba-anchored"
+                    else freeze_nfl_anchored_and_register
+                )
+                prop_row, anchored_fit = freeze_anchored(session)
                 session.commit()
                 print(
                     f"weight {anchored_fit.weight:.3f} (se {anchored_fit.weight_se:.3f}) from "
@@ -92,7 +98,7 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                     print(
                         f"  time split: weight {c['weight_first_part']:.3f} on the first part; "
                         f"last {c['props_last_part']:.0f} props log loss anchored "
-                        f"{c['anchored']:.4f}, v0.1 {c['base']:.4f}, market {c['market']:.4f}"
+                        f"{c['anchored']:.4f}, base {c['base']:.4f}, market {c['market']:.4f}"
                     )
                 for line in snapshot_pulls(session):
                     print(line)
@@ -364,13 +370,14 @@ def register(sub: Any) -> None:
     )
     prop_freeze.add_argument(
         "--model",
-        choices=["usage", "matchup", "shrunk", "nba", "nba-anchored"],
+        choices=["usage", "matchup", "shrunk", "nba", "nba-anchored", "nfl-anchored"],
         default="usage",
         help=(
             "usage = v0.1 (recent usage); matchup = v0.2 (adds the opposing defense); "
             "shrunk = v0.3 (v0.2 with usage shrunk toward the position average); "
             "nba = NBA v0.1 (usage shrunk to role x the opponent); "
-            "nba-anchored = the market's chance plus a fitted share of NBA v0.1's lean"
+            "nba-anchored = the market's chance plus a fitted share of NBA v0.1's lean; "
+            "nfl-anchored = the same for NFL v0.3, on receptions and receiving yards"
         ),
     )
     sub.add_parser("prop-report", help="Score the prop model's forward test against the market")

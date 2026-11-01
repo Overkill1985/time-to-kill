@@ -144,6 +144,12 @@ def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
             f"season {sn.wins}-{sn.losses}-{sn.pushes} "
             f"({'-' if sn.hit_rate is None else f'{100 * sn.hit_rate:.1f}%'}), {m.verdict}"
         )
+    for r in report.rules:
+        value = "-" if r.value is None else f"{r.value:+.2f}"
+        print(
+            f"  rule {r.model} (registered {r.registered}): {r.rule}; "
+            f"{r.state}, {r.decided} of {r.needed} decided, z {value}"
+        )
     print(f"saved {path}")
     if args.notify:
         windows_notify(

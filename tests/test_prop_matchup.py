@@ -75,6 +75,33 @@ def test_v03_shrinks_a_short_history_toward_the_position_average() -> None:
     assert rebuilt.shrink == {RUSH: 2.0} and mu.freeze(rebuilt)["beta"] == a["beta"]
 
 
+def test_nfl_anchored_model_keeps_a_share_of_the_lean_on_receiving_props_only() -> None:
+    from ttk.research import nba_props as nb
+
+    games = []
+    for i in range(6):
+        g = rb_game(i, 5, 60.0)
+        g.values["player_receptions"] = 4.0
+        games.append(g)
+    a = {
+        "artifact_version": mu.ARTIFACT_VERSION,
+        "kind": mu.ANCHORED_KIND,
+        "base": artifact(0.0),
+        "markets": list(mu.ANCHORED_MARKETS),
+        "weight": 0.5,
+    }
+    model = mu.FrozenAnchoredMatchupModel(a, games)
+    before = T0 + timedelta(weeks=10)
+    assert set(model.dists) == set(mu.ANCHORED_MARKETS)  # only receiving props recorded
+    base = model.base.view("rb1", "player_receptions", 3.5, before, 2025, 9)
+    view = model.view("rb1", "player_receptions", 3.5, before, 2025, 9, 0.45)
+    assert base is not None and view is not None
+    assert view.p_over == pytest.approx(nb.anchored(0.45, base.p_over, 0.5))
+    assert view.mean == pytest.approx(base.mean)
+    assert model.view("rb1", "player_receptions", 3.5, before, 2025, 9, None) is None
+    assert model.view("rb1", RUSH, 59.5, before, 2025, 9, 0.5) is None  # not its market
+
+
 def test_matchup_model_is_forward_tested_and_shown_on_the_props_api(
     database_url: str, session_factory: sessionmaker[Session]
 ) -> None:

@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from ttk.db.models import Game, ModelVersion, ReportedLine, Team, utcnow
 from ttk.domain import GameStatus, Market, Selection, Sport
 from ttk.services.forward_test import forward_report, scored_rows
+from ttk.services.judging_rules import RuleStatus, rule_statuses
 from ttk.services.line_history import closing_snapshot
 from ttk.services.prop_forward import ScoredProp, prop_report, prop_versions, scored
 
@@ -146,6 +147,8 @@ class DailyReport:
         "Every model is DEVELOPMENT (in testing): a record here is not a recommendation. "
         "A hit rate needs about 52.4% to beat a -110 price, and a few dozen picks prove nothing."
     )
+    rules: list[RuleStatus] = field(default_factory=list)
+    """Pre-registered judging rules (services/judging_rules) and where each stands."""
 
 
 MIN_GAMES = 30
@@ -490,6 +493,7 @@ def build_report(
         totals,
         props,
         headline(models, totals, props),
+        rules=rule_statuses(session),
     )
 
 
