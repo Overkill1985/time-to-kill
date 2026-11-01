@@ -1,10 +1,12 @@
-"""Operations: migrations, the API server, alerts, health, props coverage, team links."""
+"""Operations: migrations, the API server, alerts, health, props coverage, team links,
+backups."""
 
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -167,6 +169,31 @@ def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _backup(args: argparse.Namespace, settings: Settings) -> int:
+    from ttk.db.models import utcnow
+    from ttk.services.backup import BackupError, backup_database
+
+    def emit(message: str) -> None:
+        line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {message}"
+        if sys.stdout is not None:  # None under pythonw (the scheduled task)
+            print(line, flush=True)
+        if args.log is not None:
+            args.log.parent.mkdir(parents=True, exist_ok=True)
+            with args.log.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+
+    db_path, data_dir = _db_paths(settings)
+    try:
+        result = backup_database(db_path, data_dir, now=utcnow(), keep=args.keep)
+    except (BackupError, OSError, sqlite3.Error) as exc:
+        emit(f"backup failed: {type(exc).__name__}: {exc}")
+        return 1
+    emit(f"backed up to {result.path} ({result.size / 1e9:.2f} GB, quick_check {result.check})")
+    for old in result.removed:
+        emit(f"removed older backup {old.name}")
+    return 0
+
+
 def _audit_orientation(args: argparse.Namespace, settings: Settings) -> int:
     from ttk.db.session import make_engine, make_session_factory
     from ttk.services.orientation_audit import exclude_flipped
@@ -261,6 +288,15 @@ def register(sub: Any) -> None:
     link.add_argument("--team-id", type=int, required=True, help="The unmatched team")
     link.add_argument("--espn-team-id", type=int, required=True, help="Its ESPN team (teams.id)")
     link.add_argument("--apply", action="store_true", help="Make the changes (default: show them)")
+    bak = sub.add_parser(
+        "backup", help="Copy the live database to data/backups (consistent, integrity-checked)"
+    )
+    bak.add_argument("--log", type=Path, help="Also append each line to this file")
+    bak.add_argument(
+        "--keep",
+        type=int,
+        help="Also remove the oldest timestamped backups beyond this many (default: keep all)",
+    )
     serve = sub.add_parser("serve", help="Run the API on loopback")
     serve.add_argument("--port", type=int, default=8800)
 
@@ -273,6 +309,7 @@ HANDLERS: dict[str, Handler] = {
     "props-report": _props_report,
     "daily-report": _daily_report,
     "audit-orientation": _audit_orientation,
+    "backup": _backup,
     "teams-unmatched": _teams,
     "link-team": _teams,
 }

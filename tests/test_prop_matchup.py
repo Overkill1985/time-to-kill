@@ -165,3 +165,30 @@ def test_matchup_model_is_forward_tested_and_shown_on_the_props_api(
     assert body["model"] == "nfl-prop-matchup 0.2.0"
     row = body["props"][0]
     assert row["model_over"] == pytest.approx(p.p_over) and row["model_mean"] > 260
+
+
+def test_game_model_builder_skips_every_prop_model_kind(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # Regression (2026-11-01): a new prop kind not on a hard-coded list crashed the
+    # forward runner (CONFIGS has no NFL entry) and stopped every game-model snapshot.
+    from ttk.services.forward_models import build_forward_models
+    from ttk.services.prop_forward import KINDS
+
+    with session_factory() as s:
+        for i, kind in enumerate(sorted(KINDS)):
+            register(
+                s,
+                name=f"prop-{i}",
+                version="1",
+                sport=Sport.NFL,
+                algorithm="test",
+                features=[],
+                artifact={"kind": kind},
+                training_window="-",
+                validation_window="-",
+                log_loss=None,
+                brier=None,
+            )
+        s.commit()
+        assert build_forward_models(s, {Sport.NFL}) == []

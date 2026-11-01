@@ -10,6 +10,7 @@ dependencies = [
     "alembic>=1.13",
     "pydantic-settings>=2.4",
     "httpx>=0.27",
+    "certifi>=2026.10.18",  # GHSA-6q48-6c7w-9gw2: compromised emSign roots (via httpx)
     "numpy>=2.0",
     "scipy>=1.13",
     "scikit-learn>=1.5",

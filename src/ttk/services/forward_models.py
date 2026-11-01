@@ -48,6 +48,7 @@ from ttk.services.daily_card import CardView
 from ttk.services.forward_test import ForwardModel, ModelView, register
 from ttk.services.frozen_simulator import FrozenSimulator
 from ttk.services.nfl_spread_predictor import NflSpreadPredictor
+from ttk.services.prop_forward import KINDS as PROP_KINDS
 from ttk.services.weather import WeatherState
 
 CONFIGS: dict[Sport, SportConfig] = {Sport.CFB: CFB, Sport.NBA: NBA, Sport.NCAAB: NCAAB}
@@ -565,12 +566,7 @@ def build_forward_models(
         sport = Sport(row.sport)
         if sports is not None and sport not in sports:
             continue
-        if (row.artifact or {}).get("kind") in (
-            "nfl_prop_usage",
-            "nfl_prop_matchup",
-            "nba_prop_usage",
-            "nba_prop_anchored",
-        ):
+        if (row.artifact or {}).get("kind") in PROP_KINDS:
             continue  # a prop model: forward-tested by services/prop_forward, not here
         if (row.artifact or {}).get("kind") == "nfl_wind":
             if weather is None:
