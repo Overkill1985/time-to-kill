@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from ttk.db.models import Game, ModelVersion, ReportedLine, Team, utcnow
 from ttk.domain import GameStatus, Market, Selection, Sport
+from ttk.services.coverage import CoverageLine, odds_coverage
 from ttk.services.forward_test import forward_report, scored_rows
 from ttk.services.judging_rules import RuleStatus, rule_statuses
 from ttk.services.line_history import closing_snapshot
@@ -149,7 +150,19 @@ class DailyReport:
     )
     rules: list[RuleStatus] = field(default_factory=list)
     """Pre-registered judging rules (services/judging_rules) and where each stands."""
+    coverage: list[CoverageLine] = field(default_factory=list)
+    """The day's games with a spread before kickoff, per sport (services/coverage)."""
+    retired: list[str] = field(default_factory=list)
+    """Models still recorded and scored (Forward tests page) but left out of this report."""
 
+
+RETIRED: dict[str, str] = {
+    "nfl-prop-usage 0.1.0": "its lean adds nothing to the market's (anchored weight 0.00, "
+    "se 0.07, on 2,311 forward props); v0.3 and v0.4 replace it",
+    "nfl-spread-key-epa-opener 0.1.0": "replaced by 0.2.0 (home lean removed); takes no "
+    "new snapshots",
+}
+"""Left out of the daily report and its headline, never out of the record."""
 
 MIN_GAMES = 30
 """As the app's model cards: a game model is judged from 30 decided games..."""
@@ -481,7 +494,11 @@ def build_report(
     day = day or (now.astimezone(EASTERN).date() - timedelta(days=1))
     before = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=EASTERN)
     models = sorted(
-        _game_models(session, day) + _prop_models(session, day),
+        (
+            m
+            for m in _game_models(session, day) + _prop_models(session, day)
+            if m.model not in RETIRED
+        ),
         key=lambda m: (m.sport, m.market, m.model),
     )
     totals = _totals(session, day, before, cache)
@@ -494,6 +511,8 @@ def build_report(
         props,
         headline(models, totals, props),
         rules=rule_statuses(session),
+        coverage=odds_coverage(session, before - timedelta(days=1), before),
+        retired=[f"{name}: {why}" for name, why in RETIRED.items()],
     )
 
 

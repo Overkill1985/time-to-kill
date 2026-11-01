@@ -150,6 +150,14 @@ def _daily_report(args: argparse.Namespace, settings: Settings) -> int:
             f"  rule {r.model} (registered {r.registered}): {r.rule}; "
             f"{r.state}, {r.decided} of {r.needed} decided, z {value}"
         )
+    for c in report.coverage:
+        share = "-" if c.share is None else f"{c.share:.0%}"
+        print(
+            f"  odds coverage {c.sport}: {c.with_spread} of {c.games} games had a spread "
+            f"before kickoff ({share}); {c.unmatched_teams} unmatched provider team names"
+        )
+    for line in report.retired:
+        print(f"  retired from this report (still recorded): {line}")
     print(f"saved {path}")
     if args.notify:
         windows_notify(

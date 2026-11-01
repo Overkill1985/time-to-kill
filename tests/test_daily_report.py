@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from ttk.db.models import Game, ReportedLine, Team
@@ -92,3 +93,21 @@ def test_daily_report_api(database_url: str, session_factory: sessionmaker[Sessi
         save_report(build_report(s, now=NOW), data_dir)
     body = client.get("/api/daily-report").json()
     assert body["days"] == [DAY.isoformat()] and body["report"]["day"] == DAY.isoformat()
+
+
+def test_retired_models_are_left_out_of_the_report_but_listed(
+    session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ttk.services import daily_report as dr
+
+    def lines(_: Session, __: date) -> list[dr.ModelLine]:
+        return [
+            dr.ModelLine(name, "NFL", "PLAYER_PROP", "1 h", Record(), Record(), None, "")
+            for name in ("nfl-prop-usage 0.1.0", "nfl-prop-matchup 0.4.0")
+        ]
+
+    monkeypatch.setattr(dr, "_prop_models", lines)
+    with session_factory() as s:
+        report = build_report(s, DAY, now=NOW)
+    assert [m.model for m in report.models] == ["nfl-prop-matchup 0.4.0"]
+    assert any(r.startswith("nfl-prop-usage 0.1.0:") for r in report.retired)

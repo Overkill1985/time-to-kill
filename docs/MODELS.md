@@ -699,6 +699,14 @@ Each frozen key-number model's expected home margin minus the ESPN closing line,
 - **Verdict:** each version improves on the one before (v0.2 on v0.1 z −3.9 against the market props; v0.3 on v0.2 by 0.010 log loss), and none beats the market. Receiving and rushing yards are now close (z +0.2); quarterback stats are well behind. The matchups are worth seeing when building a parlay, but a model lean is something to check, not value. The page's model sorts use only props with 2+ books quoting both sides: a lone book's line can be mislabeled (one listed 0.5- and 1.5-yard receiving lines).
 - **Next:** the forward test decides; 100 decided props per version for a z. Then game script (team totals and spreads from the stored odds), and quarterback-specific work.
 
+### Full-game starters: `nfl-prop-matchup 0.4.0` (2026-11-01)
+
+- **Why:** v0.3 said about 40% over on every passing prop where 57% went over (forward, 2026-10-18..30). On quarterback games with 15+ attempts (a start he finished, the games books post passing props for) v0.3's mean fell short in every season, TRAIN included: actual over model 1.05-1.08 (2023 to 2026, 420-535 games a season). Its history mixes in the games a quarterback left early or came in late; 2026's slightly higher passing adds a little.
+- **Model:** v0.3 unchanged, each passing stat's mean multiplied by a starter factor: total actual over total v0.3 mean on TRAIN (2023-2024) full games: yards **1.061**, attempts **1.071**, completions **1.071** (`prop_matchup.starter_factors`; `ttk prop-model-freeze --model starter`). Other stats untouched.
+- **Validation, 2025 full games:** actual over model 1.066 -> 1.004 (yards, 526 games), 1.072 -> 1.001 (attempts), 1.065 -> 0.994 (completions); log-likelihood per game better by z +3.0, +3.8, +3.0.
+- **On the forward passing props** (v0.3's test; the factors were not fitted on them, but they are why v0.4 exists, so this is a look, not evidence): P(over) 0.40 -> 0.46 against 0.56 actual; log loss 0.797 -> 0.764 at 24 h, the market 0.689. Better than v0.3, still well behind the market.
+- **Test:** forward from Week 9 (2026-11-01); the Player props page shows it (the newest matchup model).
+
 ### Market-anchored receiving props: `nfl-prop-anchored 0.1.0` (2026-11-01)
 
 - **Why:** v0.3's forward props (2026-10-18..30, 2,311 decided) by stat: on receptions and receiving yards it was already level with the market (24 h: 0.683 vs 0.687 and 0.690 vs 0.693) and its lean carried information (a fitted weight about 0.5, t about +2.3, at 24 h and 1 h alike). On passing stats it said about 40% over where 57-58% went over; on rushing and touchdowns its lean carried little or nothing. Fitted on every stat, the weight is 0.09 (se 0.07): the quarterback props drown the receiving signal.

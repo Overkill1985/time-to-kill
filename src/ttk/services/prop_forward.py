@@ -55,6 +55,7 @@ NBA_VERSION = "0.1.0"
 ANCHORED_NAME = "nba-prop-anchored"
 ANCHORED_VERSION = "0.1.0"
 SHRUNK_VERSION = "0.3.0"
+STARTER_VERSION = "0.4.0"
 NFL_ANCHORED_NAME = "nfl-prop-anchored"
 NFL_ANCHORED_VERSION = "0.1.0"
 KINDS = frozenset(
@@ -186,6 +187,38 @@ def freeze_shrunk_and_register(session: Session) -> tuple[ModelVersion, mu.Match
         brier=None,
     )
     return row, result
+
+
+def freeze_starter_and_register(
+    session: Session,
+) -> tuple[ModelVersion, dict[str, float], list[mu.StarterCheck]]:
+    """v0.4: the registered v0.3, its passing stats scaled to a full-game starter by
+    factors fitted on TRAIN full games; checked on VALIDATE against v0.3."""
+    previous = session.scalars(
+        select(ModelVersion).where(
+            ModelVersion.name == MATCHUP_NAME, ModelVersion.version == SHRUNK_VERSION
+        )
+    ).first()
+    if previous is None or not previous.artifact:
+        raise ValueError(f"register {MATCHUP_NAME} {SHRUNK_VERSION} first (--model shrunk)")
+    games = pm.load_player_games(session)
+    base = mu.FrozenMatchupModel(previous.artifact, games)
+    factors = mu.starter_factors(games, base)
+    checks = mu.check_starter(games, base, factors)
+    row = register(
+        session,
+        name=MATCHUP_NAME,
+        version=STARTER_VERSION,
+        sport=Sport.NFL,
+        algorithm="v0.3 x full-game starter factor on passing stats; nbinom / gamma",
+        features=[*pm.STATS, "defense_allowed_by_position", "position_prior", "starter_factor"],
+        artifact=mu.starter_artifact(previous.artifact, factors),
+        training_window=f"{pm.TRAIN[0]}-{pm.TRAIN[1]}",
+        validation_window=f"{pm.VALIDATE[0]}-{pm.VALIDATE[1]}",
+        log_loss=None,
+        brier=None,
+    )
+    return row, factors, checks
 
 
 def freeze_nba_and_register(session: Session) -> tuple[ModelVersion, nb.NbaBacktest]:

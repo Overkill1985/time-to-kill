@@ -349,10 +349,12 @@ class MatchupView:
 
 class FrozenMatchupModel:
     def __init__(self, artifact: Mapping[str, Any], games: Sequence[pm.PlayerGame]) -> None:
-        if artifact.get("artifact_version") not in (1, 2) or artifact.get("kind") != (
-            "nfl_prop_matchup"
+        if artifact.get("artifact_version") not in (1, 2, STARTER_ARTIFACT_VERSION) or (
+            artifact.get("kind") != "nfl_prop_matchup"
         ):
             raise ValueError("not an NFL prop matchup artifact of a known version")
+        # Version 3 (v0.4) scales the passing stats to a full-game starter.
+        self.starter = {k: float(v) for k, v in (artifact.get("starter_factor") or {}).items()}
         # Version 1 (v0.2) has no shrink: its predictions are unchanged.
         self.shrink = {k: float(v) for k, v in (artifact.get("shrink") or {}).items()}
         self.priors = {k: float(v) for k, v in (artifact.get("priors") or {}).items()}
@@ -394,8 +396,98 @@ class FrozenMatchupModel:
             self.priors.get(f"{group_of(position)}|{market}"),
             self.shrink.get(market, 0.0),
         )
-        mean = usage * f ** self.beta.get(market, 0.0)
+        mean = usage * f ** self.beta.get(market, 0.0) * self.starter.get(market, 1.0)
         return MatchupView(mean, usage, f, dist.p_over(mean, line), m[1])
+
+
+# ------------------------------------------------------------------ v0.4: full-game starters
+
+STARTER_ARTIFACT_VERSION = 3
+STARTER_MARKETS = ("player_pass_yds", "player_pass_attempts", "player_pass_completions")
+FULL_GAME_ATTEMPTS = 15.0
+"""A quarterback game with this many attempts counts as a start he finished: the
+population books offer passing props on. v0.3's history also holds the games he
+left early or came in late, so on full games it fell short by 5-8% in every season
+(TRAIN included) and its passing props leaned under (forward: 40% said, 57% over)."""
+
+
+@dataclass
+class StarterCheck:
+    market: str
+    games: int
+    ratio_before: float
+    """Actual over model mean, full-game starts, before the factor."""
+    ratio_after: float
+    log_lik_before: float
+    log_lik_after: float
+    z: float
+    """Paired per-game log-likelihood gain, after minus before."""
+
+
+def _full_starts(
+    games: Sequence[pm.PlayerGame],
+    model: FrozenMatchupModel,
+    market: str,
+    seasons: tuple[int, int],
+) -> list[tuple[float, float]]:
+    """(actual, model mean) on full-game quarterback starts in ``seasons``."""
+    out = []
+    for g in games:
+        if g.position != "QB" or not seasons[0] <= g.season <= seasons[1]:
+            continue
+        if g.values.get("player_pass_attempts", 0.0) < FULL_GAME_ATTEMPTS:
+            continue
+        view = model.view(g.player_id, market, 0.5, g.kickoff, g.season, g.opponent_id)
+        if view is not None:
+            out.append((g.values[market], view.mean))
+    return out
+
+
+def starter_factors(
+    games: Sequence[pm.PlayerGame],
+    model: FrozenMatchupModel,
+    seasons: tuple[int, int] = pm.TRAIN,
+) -> dict[str, float]:
+    """Per passing stat, total actual over total model mean on full-game starts."""
+    factors = {}
+    for market in STARTER_MARKETS:
+        rows = _full_starts(games, model, market, seasons)
+        factors[market] = sum(a for a, _ in rows) / sum(m for _, m in rows)
+    return factors
+
+
+def check_starter(
+    games: Sequence[pm.PlayerGame],
+    model: FrozenMatchupModel,
+    factors: Mapping[str, float],
+    seasons: tuple[int, int] = pm.VALIDATE,
+) -> list[StarterCheck]:
+    out = []
+    for market in STARTER_MARKETS:
+        rows = _full_starts(games, model, market, seasons)
+        dist, f = model.dists[market], factors[market]
+        before = [dist.log_lik(m, a) for a, m in rows]
+        after = [dist.log_lik(m * f, a) for a, m in rows]
+        gains = np.array(after) - np.array(before)
+        sd = float(np.std(gains, ddof=1))
+        actual, mean = sum(a for a, _ in rows), sum(m for _, m in rows)
+        out.append(
+            StarterCheck(
+                market,
+                len(rows),
+                actual / mean,
+                actual / (mean * f),
+                float(np.mean(before)),
+                float(np.mean(after)),
+                float(np.mean(gains)) / (sd / math.sqrt(len(gains))) if sd > 0 else 0.0,
+            )
+        )
+    return out
+
+
+def starter_artifact(base: Mapping[str, Any], factors: Mapping[str, float]) -> dict[str, Any]:
+    """v0.4: the v0.3 artifact unchanged, plus the passing stats' starter factors."""
+    return {**base, "artifact_version": STARTER_ARTIFACT_VERSION, "starter_factor": dict(factors)}
 
 
 # ------------------------------------------------------------------ market-anchored

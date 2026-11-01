@@ -75,6 +75,32 @@ def test_v03_shrinks_a_short_history_toward_the_position_average() -> None:
     assert rebuilt.shrink == {RUSH: 2.0} and mu.freeze(rebuilt)["beta"] == a["beta"]
 
 
+def test_v04_scales_passing_to_a_full_game_starter() -> None:
+    # A quarterback alternating finished starts (30 attempts, 300 yards) with games he
+    # left early (10, 100): his history averages 200, his finished starts 300.
+    games = []
+    for i in range(20):
+        full = i % 2 == 0
+        values = dict.fromkeys(pm.STATS, 0.0)
+        values["player_pass_attempts"] = 30.0 if full else 10.0
+        values["player_pass_yds"] = 300.0 if full else 100.0
+        values["player_pass_completions"] = 20.0 if full else 6.0
+        games.append(pm.PlayerGame("qb1", i, 2025, T0 + timedelta(weeks=i), values, 1, 5, "QB"))
+    base = mu.FrozenMatchupModel(artifact(0.0), games)
+    factors = mu.starter_factors(games, base, (2025, 2025))
+    assert factors["player_pass_yds"] > 1.3  # full starts beat the all-games average
+    v04 = mu.FrozenMatchupModel(mu.starter_artifact(artifact(0.0), factors), games)
+    before = T0 + timedelta(weeks=30)
+    old = base.view("qb1", "player_pass_yds", 249.5, before, 2025, 9)
+    new = v04.view("qb1", "player_pass_yds", 249.5, before, 2025, 9)
+    assert old is not None and new is not None
+    assert new.mean == pytest.approx(old.mean * factors["player_pass_yds"])
+    assert new.p_over > old.p_over
+    rush_old = base.view("qb1", RUSH, 0.5, before, 2025, 9)
+    rush_new = v04.view("qb1", RUSH, 0.5, before, 2025, 9)
+    assert rush_old == rush_new  # only the passing stats are scaled
+
+
 def test_nfl_anchored_model_keeps_a_share_of_the_lean_on_receiving_props_only() -> None:
     from ttk.research import nba_props as nb
 

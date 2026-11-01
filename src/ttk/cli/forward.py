@@ -74,6 +74,7 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
             freeze_nba_and_register,
             freeze_nfl_anchored_and_register,
             freeze_shrunk_and_register,
+            freeze_starter_and_register,
             snapshot_pulls,
         )
         from ttk.services.prop_forward import freeze_and_register as freeze_props
@@ -100,6 +101,25 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                         f"last {c['props_last_part']:.0f} props log loss anchored "
                         f"{c['anchored']:.4f}, base {c['base']:.4f}, market {c['market']:.4f}"
                     )
+                for line in snapshot_pulls(session):
+                    print(line)
+                session.commit()
+                return 0
+            if args.model == "starter":
+                prop_row, factors, checks = freeze_starter_and_register(session)
+                session.commit()
+                print(
+                    "starter factors (TRAIN full games): "
+                    + ", ".join(f"{m.removeprefix('player_')} {f:.3f}" for m, f in factors.items())
+                )
+                for check in checks:
+                    print(
+                        f"  {check.market:26s} VALIDATE n={check.games:4d}: actual/model "
+                        f"{check.ratio_before:.3f} -> {check.ratio_after:.3f}; log-lik "
+                        f"{check.log_lik_before:.4f} -> {check.log_lik_after:.4f} "
+                        f"(z {check.z:+.1f})"
+                    )
+                print(f"registered {prop_row.name} {prop_row.version} (DEVELOPMENT)")
                 for line in snapshot_pulls(session):
                     print(line)
                 session.commit()
@@ -213,6 +233,27 @@ def _forward(args: argparse.Namespace, settings: Settings) -> int:
                 f"log loss {vs.log_loss:.4f} vs moneyline market {vs.market_log_loss:.4f}, "
                 f"z {vs.z:+.2f})"
             )
+        return 0
+    if args.command == "forward-report" and args.by_games_played:
+        from ttk.services.early_season import games_played_split
+
+        with factory() as session:
+            buckets = games_played_split(session, args.sport)
+        for bucket in buckets:
+            z = "n/a" if bucket.z is None else f"{bucket.z:+.1f}"
+            diff = "n/a" if bucket.paired_diff is None else f"{bucket.paired_diff:+.4f}"
+            pts = (
+                ""
+                if bucket.points_vs_close is None
+                else f", points vs close {bucket.points_vs_close:+.2f} (n={bucket.points_n})"
+            )
+            print(
+                f"{bucket.model:40s} {bucket.horizon_hours:>3} h  {bucket.bucket:11s} "
+                f"{bucket.decided:4d} decided, {bucket.wins}-{bucket.losses}, "
+                f"log loss vs market {diff} (z {z}){pts}"
+            )
+        if not buckets:
+            print("No finished games with forward snapshots yet.")
         return 0
     if args.command == "forward-report":
         with factory() as session:
@@ -370,11 +411,12 @@ def register(sub: Any) -> None:
     )
     prop_freeze.add_argument(
         "--model",
-        choices=["usage", "matchup", "shrunk", "nba", "nba-anchored", "nfl-anchored"],
+        choices=["usage", "matchup", "shrunk", "starter", "nba", "nba-anchored", "nfl-anchored"],
         default="usage",
         help=(
             "usage = v0.1 (recent usage); matchup = v0.2 (adds the opposing defense); "
             "shrunk = v0.3 (v0.2 with usage shrunk toward the position average); "
+            "starter = v0.4 (v0.3, passing stats scaled to a full-game starter); "
             "nba = NBA v0.1 (usage shrunk to role x the opponent); "
             "nba-anchored = the market's chance plus a fitted share of NBA v0.1's lean; "
             "nfl-anchored = the same for NFL v0.3, on receptions and receiving yards"
@@ -429,6 +471,12 @@ def register(sub: Any) -> None:
         )
     fwd_report = sub.add_parser("forward-report", help="Score forward snapshots on finished games")
     fwd_report.add_argument("--sport", type=Sport, choices=list(Sport))
+    fwd_report.add_argument(
+        "--by-games-played",
+        action="store_true",
+        help="split each model's records by the games the less-experienced team had played "
+        "that season (0-4, 5-14, 15+)",
+    )
     lab = sub.add_parser(
         "lab", help="Performance Lab: thresholds, calibration and weekly drift (forward tests)"
     )
