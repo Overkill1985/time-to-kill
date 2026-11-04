@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -10,7 +12,29 @@ from ttk.db.models import Game, NflPlayerGameStat, PropPrediction
 from ttk.domain import GameStatus, Sport
 from ttk.research import prop_model as pm
 from ttk.services.forward_test import register
-from ttk.services.prop_forward import prop_report, prop_versions, scored, snapshot_pulls
+from ttk.services.prop_forward import _score, prop_report, prop_versions, scored, snapshot_pulls
+
+
+def _props(games: int, per_game: int) -> list[Any]:
+    """A model leaning over, right in two games of three."""
+    return [
+        SimpleNamespace(
+            prediction=SimpleNamespace(game_id=g, p_over=0.55, market_over=0.5), over=g % 3 != 0
+        )
+        for g in range(games)
+        for _ in range(per_game)
+    ]
+
+
+def test_z_counts_a_game_once_however_many_props_it_has() -> None:
+    few, many = _score("few", _props(30, 4)).z, _score("many", _props(30, 40)).z
+    assert few is not None and many == pytest.approx(few)
+
+
+def test_z_needs_enough_games() -> None:
+    assert _score("one game", _props(1, 200)).z is None
+    assert _score("nine games", _props(9, 20)).z is None
+    assert _score("ten games", _props(10, 20)).z is not None
 
 
 def test_distributions_give_sensible_over_chances() -> None:

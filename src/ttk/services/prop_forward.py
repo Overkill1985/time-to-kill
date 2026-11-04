@@ -11,13 +11,17 @@ and the report says whether the line moved toward the model in between.
 Scoring: the player's stat once his game is final and its stats are imported. A
 player with no stat line is left out (inactive, or played without one), as is a
 push. Log loss of the model and of the market, paired; a z is shown once
-``MIN_FOR_Z`` props are decided. DEVELOPMENT: never a recommendation.
+``MIN_FOR_Z`` props in ``MIN_GAMES_FOR_Z`` games are decided. Its standard error is
+clustered by game: props in a game move together, and a prop recorded at several
+horizons is one result, so counting each row as independent overstates the z.
+DEVELOPMENT: never a recommendation.
 """
 
 from __future__ import annotations
 
 import math
 import statistics
+from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -63,6 +67,7 @@ KINDS = frozenset(
 )
 MIN_BOOKS = 2
 MIN_FOR_Z = 100
+MIN_GAMES_FOR_Z = 10
 
 PropModel = (
     pm.FrozenPropModel
@@ -568,7 +573,7 @@ class PropScore:
     paired_diff: float | None
     """Model minus market log loss (negative = the model is better)."""
     z: float | None
-    """Shown from MIN_FOR_Z decided props."""
+    """Clustered by game; shown from MIN_FOR_Z decided props in MIN_GAMES_FOR_Z games."""
 
 
 @dataclass
@@ -583,6 +588,19 @@ class PropReport:
     lean at 24 h (a model that knows something sees lines move its way)."""
 
 
+def _clustered_z(diffs: Sequence[float], game_ids: Sequence[int]) -> float | None:
+    """Mean over its cluster-robust standard error, one cluster per game."""
+    mean = statistics.fmean(diffs)
+    residuals: dict[int, float] = defaultdict(float)
+    for d, game_id in zip(diffs, game_ids, strict=True):
+        residuals[game_id] += d - mean
+    games = len(residuals)
+    if games < MIN_GAMES_FOR_Z:
+        return None
+    variance = sum(r * r for r in residuals.values()) * games / (games - 1) / len(diffs) ** 2
+    return mean / math.sqrt(variance) if variance > 0 else None
+
+
 def _score(label: str, rows: Sequence[ScoredProp]) -> PropScore:
     if not rows:
         return PropScore(label, 0, None, None, None, None)
@@ -590,8 +608,7 @@ def _score(label: str, rows: Sequence[ScoredProp]) -> PropScore:
     mean = statistics.fmean(d)
     z = None
     if len(d) >= MIN_FOR_Z:
-        sd = statistics.stdev(d)
-        z = mean / (sd / math.sqrt(len(d))) if sd > 0 else None
+        z = _clustered_z(d, [r.prediction.game_id for r in rows])
     return PropScore(
         label,
         len(rows),

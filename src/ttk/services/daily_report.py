@@ -457,13 +457,22 @@ def _pct(x: float | None) -> str:
 def headline(
     models: Sequence[ModelLine], totals: Sequence[SportTotals], props: Sequence[SportProps]
 ) -> str:
-    games, prop_picks = Record(), Record()
+    games, moneylines, prop_picks = Record(), Record(), Record()
     for m in models:
-        r = prop_picks if m.market == "PLAYER_PROP" else games
+        r = {"PLAYER_PROP": prop_picks, "MONEYLINE": moneylines}.get(m.market, games)
         r.wins += m.yesterday.wins
         r.losses += m.yesterday.losses
         r.pushes += m.yesterday.pushes
-    parts = [f"Game-model picks yesterday {games.wins}-{games.losses} ({_pct(games.hit_rate)})"]
+    parts = [
+        f"Spread and total picks yesterday {games.wins}-{games.losses} ({_pct(games.hit_rate)})"
+    ]
+    # Kept apart: moneyline picks are often favorites, so their hit rate says nothing
+    # about the 52.4% a -110 price needs.
+    if moneylines.wins + moneylines.losses:
+        parts.append(
+            f"moneyline picks {moneylines.wins}-{moneylines.losses} "
+            f"({_pct(moneylines.hit_rate)}, often favorites)"
+        )
     if prop_picks.wins + prop_picks.losses:
         parts.append(
             f"prop-model picks {prop_picks.wins}-{prop_picks.losses} ({_pct(prop_picks.hit_rate)})"

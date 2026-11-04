@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from ttk.db.models import Game, ReportedLine, Team
 from ttk.domain import GameStatus, Sport
 from ttk.services.daily_report import (
+    ModelLine,
     Record,
     build_report,
+    headline,
     load_report,
     report_days,
     save_report,
@@ -68,6 +70,15 @@ def test_report_counts_overs_against_the_closing_total(
     loaded = load_report(tmp_path)
     assert loaded is not None and loaded["totals"][0]["games"] == 3
     assert load_report(tmp_path, DAY - timedelta(days=1)) is None
+
+
+def test_headline_keeps_moneyline_picks_apart() -> None:
+    def line(market: str, wins: int, losses: int) -> ModelLine:
+        return ModelLine("m", "NCAAB", market, "1 h", Record(wins, losses), Record(), None, "")
+
+    text = headline([line("SPREAD", 5, 5), line("TOTAL", 1, 1), line("MONEYLINE", 9, 1)], [], [])
+    assert "Spread and total picks yesterday 6-6 (50%)" in text
+    assert "moneyline picks 9-1 (90%, often favorites)" in text
 
 
 def test_record_hit_rate_ignores_pushes() -> None:
