@@ -106,6 +106,10 @@ def test_normalize_team_name() -> None:
     assert normalize_team_name("St. John's") == "saint john s"
     assert normalize_team_name("Texas A&M") == "texas a and m"
     assert normalize_team_name("San José State") == "san jose state"
+    assert normalize_team_name("(1) Florida Gators") == "florida gators"
+    assert normalize_team_name("(8|) Bucknell Bison") == "bucknell bison"
+    assert normalize_team_name("Milwaukee Panthers (D1)") == "milwaukee panthers"
+    assert normalize_team_name("Lincoln (MO) Blue Tigers") == "lincoln mo blue tigers"
 
 
 def test_odds_link_to_espn_game_by_normalized_name(session_factory: sessionmaker[Session]) -> None:
@@ -198,6 +202,25 @@ def test_curated_alias(session_factory: sessionmaker[Session]) -> None:
             s, provider="books", sport=Sport.CFB, ref=TeamRef("Miami (FL)"), stats=stats
         )
         assert team.espn_id == "2390"
+    assert stats == Counter()
+
+
+def test_rank_and_division_tag_resolve_to_the_espn_team(
+    session_factory: sessionmaker[Session],
+) -> None:
+    home = TeamRef("Boise State Broncos", "68")
+    away = TeamRef("Air Force Falcons", "2005")
+    ingest_schedule(session_factory, espn_game(home=home, away=away))
+    stats: Counter[str] = Counter()
+    with session_factory() as s:
+        for name, espn_id in (
+            ("(14) Boise State Broncos", "68"),
+            ("Air Force Falcons (D1)", "2005"),
+        ):
+            team = resolve_team(
+                s, provider="books", sport=Sport.CFB, ref=TeamRef(name), stats=stats
+            )
+            assert team.espn_id == espn_id
     assert stats == Counter()
 
 

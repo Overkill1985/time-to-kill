@@ -19,8 +19,11 @@ from ttk.domain import Sport
 
 def normalize_team_name(name: str) -> str:
     """Lowercase ASCII words. Trailing 'St.' is State; leading 'St.' is Saint
-    ('Boise St.' -> 'boise state', 'St. John's' -> 'saint john s')."""
+    ('Boise St.' -> 'boise state', 'St. John's' -> 'saint john s'). A poll rank and a
+    division tag are not part of a name: PropLine's '(1) Florida Gators' changes every
+    week, and 'Milwaukee Panthers (D1)' is ESPN's 'Milwaukee Panthers'."""
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    s = re.sub(r"^\s*\(\s*\d+\s*\|?\s*\)|\(d1\)\s*$", " ", s)
     s = s.replace("&", " and ")
     words = re.sub(r"[^a-z0-9 ]", " ", s).split()
     if words and words[-1] == "st":

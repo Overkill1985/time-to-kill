@@ -78,7 +78,20 @@ def test_headline_keeps_moneyline_picks_apart() -> None:
 
     text = headline([line("SPREAD", 5, 5), line("TOTAL", 1, 1), line("MONEYLINE", 9, 1)], [], [])
     assert "Spread and total picks yesterday 6-6 (50%)" in text
-    assert "moneyline picks 9-1 (90%, often favorites)" in text
+    assert "moneyline picks 9-1 (90%, often favorites) across 1 models" in text
+
+
+def test_headline_counts_each_prop_once() -> None:
+    def line(model: str, wins: int, losses: int) -> ModelLine:
+        return ModelLine(
+            model, "NBA", "PLAYER_PROP", "1 h", Record(wins, losses), Record(), None, ""
+        )
+
+    text = headline(
+        [line("nba-prop-anchored 0.1.0", 6, 4), line("nba-prop-usage 0.1.0", 6, 4)], [], []
+    )
+    assert "NBA anchored props 6-4 (60%)" in text
+    assert "12-8" not in text and "usage" not in text
 
 
 def test_record_hit_rate_ignores_pushes() -> None:

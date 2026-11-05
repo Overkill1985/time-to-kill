@@ -457,26 +457,41 @@ def _pct(x: float | None) -> str:
 def headline(
     models: Sequence[ModelLine], totals: Sequence[SportTotals], props: Sequence[SportProps]
 ) -> str:
-    games, moneylines, prop_picks = Record(), Record(), Record()
+    games, moneylines = Record(), Record()
+    game_models, moneyline_models = 0, 0
+    anchored_props: list[str] = []
     for m in models:
-        r = {"PLAYER_PROP": prop_picks, "MONEYLINE": moneylines}.get(m.market, games)
+        decided = m.yesterday.wins + m.yesterday.losses
+        if m.market == "PLAYER_PROP":
+            # One model per sport: prop models price the same props, and the anchored
+            # model's lean has the usage model's direction, so a sum counts each prop twice.
+            if decided and m.model.split()[0].endswith("-prop-anchored"):
+                anchored_props.append(
+                    f"{m.sport} anchored props {m.yesterday.wins}-{m.yesterday.losses} "
+                    f"({_pct(m.yesterday.hit_rate)})"
+                )
+            continue
+        r = moneylines if m.market == "MONEYLINE" else games
         r.wins += m.yesterday.wins
         r.losses += m.yesterday.losses
         r.pushes += m.yesterday.pushes
+        if decided and m.market == "MONEYLINE":
+            moneyline_models += 1
+        elif decided:
+            game_models += 1
+    # A game counts once per model, so the model count says how much these sums repeat.
     parts = [
-        f"Spread and total picks yesterday {games.wins}-{games.losses} ({_pct(games.hit_rate)})"
+        f"Spread and total picks yesterday {games.wins}-{games.losses} ({_pct(games.hit_rate)}) "
+        f"across {game_models} models"
     ]
     # Kept apart: moneyline picks are often favorites, so their hit rate says nothing
     # about the 52.4% a -110 price needs.
     if moneylines.wins + moneylines.losses:
         parts.append(
             f"moneyline picks {moneylines.wins}-{moneylines.losses} "
-            f"({_pct(moneylines.hit_rate)}, often favorites)"
+            f"({_pct(moneylines.hit_rate)}, often favorites) across {moneyline_models} models"
         )
-    if prop_picks.wins + prop_picks.losses:
-        parts.append(
-            f"prop-model picks {prop_picks.wins}-{prop_picks.losses} ({_pct(prop_picks.hit_rate)})"
-        )
+    parts.extend(anchored_props)
     overs = [
         f"{t.sport} {_pct(t.yesterday_over_rate)} of {t.yesterday_games}"
         for t in totals
