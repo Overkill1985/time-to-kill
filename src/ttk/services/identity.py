@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -38,6 +38,13 @@ SCHEDULE_AUTHORITY = "espn"
 AUTHORITY_RANK = {"espn": 2, "nflverse": 1}
 MATCH_WINDOW = timedelta(hours=24)
 BUSY_WINDOW = timedelta(hours=12)
+SAME_START = timedelta(hours=3)  # picks one of several games in MATCH_WINDOW
+
+
+def _as_utc(t: datetime) -> datetime:
+    return t if t.tzinfo is not None else t.replace(tzinfo=UTC)
+
+
 """A team plays one game at a time: an odds event that would create a game for a
 team already scheduled within this window is a phantom (on 2026-10-17 two offshore
 books listed eleven NBA teams "@ San Antonio Spurs" at the Spurs' real tip-off).
@@ -339,6 +346,16 @@ def _find_game(
         stats["linked_by_teams_and_time"] += 1
         return _link(session, g, game, swapped=game.home_team_id != home.id)
     if len(candidates) > 1:
+        # The same teams on consecutive nights (an NBA back-to-back rematch): the
+        # event is the one game starting at its own time, if exactly one does.
+        near = [
+            c
+            for c in candidates
+            if abs(_as_utc(c.commence_time) - _as_utc(g.commence_time)) <= SAME_START
+        ]
+        if len(near) == 1:
+            stats["linked_by_start_time"] += 1
+            return _link(session, g, near[0], swapped=near[0].home_team_id != home.id)
         stats["ambiguous_game_match"] += 1  # never guess: fall through to a new game
     if (
         refuse_busy

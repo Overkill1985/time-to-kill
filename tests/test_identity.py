@@ -435,6 +435,43 @@ def test_repair_splits_games_merged_before_the_fix(
         assert split_merged_espn_games(session) == []
 
 
+def test_rematch_the_next_night_links_by_start_time(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """The same teams 23 hours apart: each odds event belongs to the game starting
+    when it does; one starting between the two is still not guessed."""
+    second = KICK + timedelta(hours=23)
+    ingest_schedule(
+        session_factory,
+        espn_game(),
+        espn_game(source_identifier="401000002", espn_event_id="401000002", commence_time=second),
+    )
+    quotes = ((Selection.HOME, -7.5, -110.0), (Selection.AWAY, 7.5, -110.0))
+    for event, start in (("ev-1", KICK), ("ev-2", second)):
+        odds = Odds(
+            books_game("Boise St.", "Air Force", source_identifier=event, commence_time=start),
+            *quotes,
+        )
+        run = run_odds_ingestion(session_factory, odds, Sport.CFB)
+        assert run.stats is not None and run.stats["linked_by_start_time"] == 1
+    with session_factory() as s:
+        games = s.scalars(select(Game).order_by(Game.commence_time)).all()
+        assert len(games) == 2
+        for game, event in zip(games, ("ev-1", "ev-2"), strict=True):
+            link = s.scalars(select(GameSourceId).where(GameSourceId.provider == "books")).all()
+            assert {x.source_identifier: x.game_id for x in link}[event] == game.id
+
+    between = books_game(
+        "Boise St.",
+        "Air Force",
+        source_identifier="ev-3",
+        commence_time=KICK + timedelta(hours=11, minutes=30),
+    )
+    run = run_odds_ingestion(session_factory, Odds(between, *quotes), Sport.CFB)
+    assert run.stats is not None and run.stats["ambiguous_game_match"] == 1
+    assert count(session_factory, Game) == 2
+
+
 def test_odds_event_pairing_a_team_already_playing_is_refused(
     session_factory: sessionmaker[Session],
 ) -> None:
