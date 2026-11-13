@@ -1,10 +1,10 @@
 """Database backups: a consistent copy of the live SQLite file, checked before it counts.
 
-SQLite's online backup API copies the database page by page while the collector and
-the forward runner keep writing (the write-ahead log included), so nothing has to be
-stopped. The copy is written under a temporary name, checked with ``quick_check``
-and only then renamed, so a file named ``time_to_kill-<stamp>.db`` is always a whole,
-readable database.
+SQLite's online backup API copies the database in one pass from a single read
+snapshot while the collector and the forward runner keep writing (the write-ahead
+log included), so nothing has to be stopped. The copy is written under a temporary
+name, checked with ``quick_check`` and only then renamed, so a file
+named ``time_to_kill-<stamp>.db`` is always a whole, readable database.
 
 Retention is opt-in: ``keep`` removes the oldest timestamped backups beyond that
 number, and only files this module named. Anything else in the folder (a hand-made
@@ -22,8 +22,11 @@ from pathlib import Path
 BACKUP_DIR = "backups"
 PREFIX = "time_to_kill-"
 NAME = re.compile(r"^time_to_kill-\d{8}-\d{6}\.db$")
-PAGES_PER_STEP = 65_536
-"""About 256 MB a step at 4 KB pages: writers get the lock back between steps."""
+PAGES_PER_STEP = -1
+"""The whole database in one step. A stepped copy starts over whenever another
+connection writes between steps, and the collector and forward runner write often
+enough that a 12 GB copy never finished. The database is in write-ahead mode, so
+one long read does not block those writers."""
 
 
 class BackupError(RuntimeError):
