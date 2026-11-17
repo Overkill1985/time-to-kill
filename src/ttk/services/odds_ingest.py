@@ -116,6 +116,12 @@ def store_odds(
         resolved = games.get(q.game_source_identifier)
         if resolved is None:
             continue
+        if resolved.sides_unclear and q.selection in _FLIP:
+            # Which team is HOME is unknown: storing the quote risks the wrong side.
+            # Those on file are then written as withdrawn below, so nothing stale
+            # is read as a live price. Totals carry no side and are kept.
+            stats["sides_unclear_quote_skipped"] += 1
+            continue
         # A spread line is from the selection's own perspective, so flipping the
         # side (provider's HOME is our AWAY) leaves the line unchanged.
         selection = _FLIP.get(q.selection, q.selection) if resolved.swapped else q.selection

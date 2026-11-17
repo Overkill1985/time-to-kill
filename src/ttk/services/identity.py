@@ -180,6 +180,9 @@ class ResolvedGame:
     game: Game
     swapped: bool
     """Provider's home team is our away team: flip HOME/AWAY from this provider."""
+    sides_unclear: bool = False
+    """Neither of the provider's teams resolves to a team of this game, or they
+    disagree: ``swapped`` cannot be trusted, so HOME/AWAY quotes must not be stored."""
 
 
 def _link(session: Session, g: NormalizedGame, game: Game, swapped: bool) -> ResolvedGame:
@@ -196,23 +199,38 @@ def _link(session: Session, g: NormalizedGame, game: Game, swapped: bool) -> Res
 
 def _reorient(
     session: Session, g: NormalizedGame, game: Game, link: GameSourceId, stats: Counter[str]
-) -> None:
+) -> bool:
     """A provider can reverse an event's home and away after we linked it (PropLine
     merging two listings, 2026-10: Texas Tech @ Cincinnati was stored with each
     side's spread on the other team). Check the orientation on every fetch, and
-    correct the link when both teams now resolve the other way round."""
+    correct the link when the teams now resolve the other way round.
+
+    One team is enough when the other no longer resolves: 2026-11 PropLine reversed
+    Nicholls @ Ole Miss and renamed "Nicholls St." to "Nicholls State Colonels" in
+    the same change. The new name became an unmatched team, the check gave up, and
+    a day of correct quotes was stored on the wrong side. Home resolving to our
+    home team settles the orientation whatever the other name is.
+
+    Returns False when the orientation cannot be told (neither team belongs to the
+    game, or the two disagree): the link is left alone, never guessed, and the
+    caller must not store sided quotes."""
     home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)
     away = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.away, stats=stats)
-    if (home.id, away.id) == (game.home_team_id, game.away_team_id):
-        swapped = False
-    elif (home.id, away.id) == (game.away_team_id, game.home_team_id):
-        swapped = True
-    else:
-        stats["link_teams_unclear"] += 1  # leave it: never guess
-        return
+    votes: set[bool] = set()
+    if home.id == game.home_team_id or away.id == game.away_team_id:
+        votes.add(False)
+    if home.id == game.away_team_id or away.id == game.home_team_id:
+        votes.add(True)
+    if len(votes) != 1:
+        stats["link_teams_unclear"] += 1
+        return False
+    if {home.id, away.id} != {game.home_team_id, game.away_team_id}:
+        stats["link_oriented_by_one_team"] += 1
+    (swapped,) = votes
     if swapped != link.swapped:
         link.swapped = swapped
         stats["link_orientation_fixed"] += 1
+    return True
 
 
 def _apply_results(session: Session, game: Game, g: NormalizedGame, swapped: bool) -> None:
@@ -302,7 +320,8 @@ def _find_game(
                 if ref.espn_id and team.espn_id == ref.espn_id:
                     _use_espn_name(session, g.sport, team, ref)
         else:
-            _reorient(session, g, game, link, stats)
+            if not _reorient(session, g, game, link, stats):
+                return ResolvedGame(game, link.swapped, sides_unclear=True)
         return ResolvedGame(game, link.swapped)
 
     home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)

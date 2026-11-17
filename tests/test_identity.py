@@ -534,3 +534,72 @@ def test_a_provider_reversing_home_and_away_reorients_the_link(
     # Boise State (our home) is the favorite both times.
     assert {("HOME", -7.5, -110.0), ("AWAY", 7.5, -110.0)} <= live
     assert {("HOME", -7.5, -105.0), ("AWAY", 7.5, -115.0)} <= live
+
+
+def test_a_reversal_with_one_team_renamed_still_reorients_the_link(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Nicholls @ Ole Miss, 2026-11: the provider fixed home/away and renamed the
+    away team in one change. The new name is an unmatched team, but the home team
+    still settles the orientation."""
+    ingest_schedule(session_factory, espn_game())  # Air Force @ Boise State
+    first = Odds(
+        books_game("Air Force", "Boise St."),
+        (Selection.HOME, 7.5, -110),
+        (Selection.AWAY, -7.5, -110),
+    )
+    run_odds_ingestion(session_factory, first, Sport.CFB)
+    fixed = Odds(
+        books_game("Boise St.", "Air Force Academy Falcons Football"),
+        (Selection.HOME, -7.5, -105),
+        (Selection.AWAY, 7.5, -115),
+    )
+    run = run_odds_ingestion(session_factory, fixed, Sport.CFB)
+    assert run.stats is not None
+    assert run.stats["link_orientation_fixed"] == 1
+    assert run.stats["link_oriented_by_one_team"] == 1
+    with session_factory() as s:
+        link = s.scalars(select(GameSourceId).where(GameSourceId.provider == "books")).one()
+        assert link.swapped is False
+        live = {
+            (r.selection, r.line, r.american_odds)
+            for r in s.scalars(select(OddsSnapshot).where(OddsSnapshot.withdrawn.is_(False)))
+        }
+    assert {("HOME", -7.5, -105.0), ("AWAY", 7.5, -115.0)} <= live
+
+
+def test_sided_quotes_are_not_stored_when_neither_team_resolves(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ingest_schedule(session_factory, espn_game())  # Air Force @ Boise State
+    first = Odds(
+        books_game("Boise St.", "Air Force"),
+        (Selection.HOME, -7.5, -110),
+        (Selection.AWAY, 7.5, -110),
+    )
+    run_odds_ingestion(session_factory, first, Sport.CFB)
+    # Same event id, both names now unknown: the orientation cannot be told.
+    renamed = Odds(
+        books_game("Idaho Potato Bowl Hosts", "Colorado Springs Flyers"),
+        (Selection.HOME, 7.5, -105),
+        (Selection.AWAY, -7.5, -115),
+    )
+    run = run_odds_ingestion(session_factory, renamed, Sport.CFB)
+    assert run.stats is not None
+    assert run.stats["link_teams_unclear"] == 1
+    assert run.stats["sides_unclear_quote_skipped"] == 2
+    with session_factory() as s:
+        link = s.scalars(select(GameSourceId).where(GameSourceId.provider == "books")).one()
+        assert link.swapped is False  # left alone, never guessed
+        rows = [
+            (r.selection, r.line, r.american_odds, r.withdrawn)
+            for r in s.scalars(select(OddsSnapshot).order_by(OddsSnapshot.id))
+        ]
+    # Nothing new on either side, and the old sided prices are written as withdrawn.
+    assert run.stats["withdrawn"] == 2
+    assert rows == [
+        ("HOME", -7.5, -110.0, False),
+        ("AWAY", 7.5, -110.0, False),
+        ("HOME", -7.5, -110.0, True),
+        ("AWAY", 7.5, -110.0, True),
+    ]
