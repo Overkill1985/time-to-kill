@@ -109,6 +109,8 @@ def test_normalize_team_name() -> None:
     assert normalize_team_name("(1) Florida Gators") == "florida gators"
     assert normalize_team_name("(8|) Bucknell Bison") == "bucknell bison"
     assert normalize_team_name("Milwaukee Panthers (D1)") == "milwaukee panthers"
+    assert normalize_team_name("Indiana State (Neutral Venue)") == "indiana state"
+    assert normalize_team_name("Auburn (Neutral  Venue)") == "auburn"
     assert normalize_team_name("Lincoln (MO) Blue Tigers") == "lincoln mo blue tigers"
 
 

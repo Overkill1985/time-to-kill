@@ -411,7 +411,7 @@ def _due(session: Session, version: ModelVersion, now: datetime) -> list[tuple[P
                 PropPull.id.not_in(taken),
             )
             .order_by(PropPull.pulled_at)
-        ).tuples()
+        )
     )
 
 

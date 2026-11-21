@@ -41,6 +41,10 @@ from ttk.services.market import SideMarket, main_lines, side_markets
 HORIZONS_HOURS = (24, 1)
 MIN_DECIDED_FOR_Z = 30
 MAX_ODDS_AGE = timedelta(hours=2)
+MIN_BOOKS = 2
+"""A snapshot needs its line priced by at least this many books (2026-11-21): one
+book alone posts placeholder lines before the real ones (bookmaker_eu's NBA spread
+of -1 and total of 225 at -110), and about 100 records were taken on them."""
 EDGE_THRESHOLDS = (0.0, 0.02, 0.04, 0.06)
 
 
@@ -272,6 +276,9 @@ def _snapshot_models(
             if now - min(home.oldest_observation, away.oldest_observation) > MAX_ODDS_AGE:
                 stats.skipped["odds older than 2 hours"] += 1
                 continue
+            if home.consensus.books_reporting < MIN_BOOKS:
+                stats.skipped[f"fewer than {MIN_BOOKS} books"] += 1
+                continue
             assert home.line is not None
             market = home.consensus.consensus_no_vig_probability
             priced_home, priced_away = home, away
@@ -281,6 +288,9 @@ def _snapshot_models(
                     stats.skipped["no two-sided moneyline"] += 1
                     continue
                 priced_home, priced_away = moneyline
+                if priced_home.consensus.books_reporting < MIN_BOOKS:
+                    stats.skipped[f"fewer than {MIN_BOOKS} books"] += 1
+                    continue
                 if (
                     now - min(priced_home.oldest_observation, priced_away.oldest_observation)
                     > MAX_ODDS_AGE

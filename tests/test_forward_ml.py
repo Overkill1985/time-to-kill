@@ -23,16 +23,24 @@ from ttk.services.forward_test import (
 from ttk.services.odds_ingest import store_odds
 
 
-def odds(sf: sessionmaker[Session], observed: datetime, *, moneyline: bool = True) -> int:
+def odds(
+    sf: sessionmaker[Session],
+    observed: datetime,
+    *,
+    moneyline: bool = True,
+    spread_books: tuple[str, ...] = ("draftkings", "fanduel"),
+) -> int:
     game = NormalizedGame("espn", "g1", Sport.NCAAB, TeamRef("Duke"), TeamRef("UNC"), KICK, None)
 
     def q(market: Market, sel: Selection, line: float | None, price: float, book: str):  # type: ignore[no-untyped-def]
         return NormalizedOddsQuote("fake", "g1", book, book, market, sel, line, price, None)
 
-    quotes = [
-        q(Market.SPREAD, Selection.HOME, -4.5, -110, "draftkings"),
-        q(Market.SPREAD, Selection.AWAY, 4.5, -110, "draftkings"),
-    ]
+    quotes = []
+    for book in spread_books:
+        quotes += [
+            q(Market.SPREAD, Selection.HOME, -4.5, -110, book),
+            q(Market.SPREAD, Selection.AWAY, 4.5, -110, book),
+        ]
     if moneyline:
         quotes += [
             q(Market.MONEYLINE, Selection.HOME, None, -200, "draftkings"),
@@ -111,3 +119,14 @@ def test_moneyline_model_needs_a_moneyline_market(session_factory: sessionmaker[
     with session_factory() as s:
         stats = snapshot(s, [ml_model(s, 0.75, [])], now=now)
     assert stats.written == 0 and stats.skipped["no two-sided moneyline"] == 1
+
+
+def test_a_line_priced_by_one_book_is_not_snapshotted(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # One book alone may be showing a placeholder line (bookmaker_eu's NBA -1 / 225).
+    now = KICK - timedelta(hours=20)
+    odds(session_factory, now - timedelta(minutes=5), spread_books=("draftkings",))
+    with session_factory() as s:
+        stats = snapshot(s, [ml_model(s, 0.75, [])], now=now)
+    assert stats.written == 0 and stats.skipped["fewer than 2 books"] == 1
