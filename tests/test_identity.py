@@ -605,3 +605,73 @@ def test_sided_quotes_are_not_stored_when_neither_team_resolves(
         ("HOME", -7.5, -110.0, True),
         ("AWAY", 7.5, -110.0, True),
     ]
+
+
+TBD_HOME, TBD_AWAY = TeamRef("TBD", "-1"), TeamRef("TBD", "-2")
+
+
+def test_placeholder_game_takes_its_teams_when_espn_names_them(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ingest_schedule(session_factory, espn_game(home=TBD_HOME, away=TBD_AWAY))
+    ingest_schedule(
+        session_factory, espn_game(status=GameStatus.FINAL, home_score=31, away_score=17)
+    )
+    with session_factory() as s:
+        game = s.scalars(select(Game)).one()
+        assert s.get_one(Team, game.home_team_id).espn_id == "68"
+        assert s.get_one(Team, game.away_team_id).espn_id == "2005"
+        assert (game.status, game.home_score, game.away_score) == ("FINAL", 31, 17)
+
+
+def test_placeholder_event_moves_to_the_game_the_books_already_listed(
+    session_factory: sessionmaker[Session],
+) -> None:
+    # A tournament: ESPN still shows TBD v TBD while the books list the real
+    # teams, with home and away the other way round from ESPN's eventual listing.
+    ingest_schedule(session_factory, espn_game(home=TBD_HOME, away=TBD_AWAY))
+    odds = Odds(
+        books_game("Air Force", "Boise St."),
+        (Selection.HOME, -3.0, -110),
+        (Selection.AWAY, 3.0, -110),
+    )
+    run_odds_ingestion(session_factory, odds, Sport.CFB)
+    assert count(session_factory, Game) == 2  # the fault: one real game, two rows
+
+    ingest_schedule(
+        session_factory, espn_game(status=GameStatus.FINAL, home_score=31, away_score=17)
+    )
+    with session_factory() as s:
+        link = s.scalars(select(GameSourceId).where(GameSourceId.provider == "espn")).one()
+        game = s.get_one(Game, link.game_id)
+        # The books' game carries on, with its odds; ESPN's 31-17 for Boise at
+        # home is 17-31 on a game that has Air Force at home.
+        assert {o.game_id for o in s.scalars(select(OddsSnapshot))} == {game.id}
+        assert link.swapped is True
+        assert (game.status, game.home_score, game.away_score) == ("FINAL", 17, 31)
+        assert {
+            t.espn_id
+            for t in s.scalars(select(Team))
+            if t.id in (game.home_team_id, game.away_team_id)
+        } == {"68", "2005"}
+        (set_aside,) = s.scalars(select(Game).where(Game.id != game.id))
+        assert set_aside.status == GameStatus.DUPLICATE
+
+    # Later fetches follow the event to the surviving game.
+    ingest_schedule(
+        session_factory, espn_game(status=GameStatus.FINAL, home_score=33, away_score=17)
+    )
+    with session_factory() as s:
+        assert s.get_one(Game, game.id).away_score == 33
+    assert count(session_factory, Game) == 2
+
+
+def test_placeholder_stays_while_espn_still_says_tbd(
+    session_factory: sessionmaker[Session],
+) -> None:
+    for _ in range(2):
+        ingest_schedule(session_factory, espn_game(home=TBD_HOME, away=TBD_AWAY))
+    with session_factory() as s:
+        game = s.scalars(select(Game)).one()
+        assert s.get_one(Team, game.home_team_id).name.startswith("TBD")
+        assert game.status == GameStatus.SCHEDULED

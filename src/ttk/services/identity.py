@@ -11,7 +11,8 @@ Team resolution order (first hit wins; never guesses):
 5. Otherwise a new, unmatched team (espn_id NULL), counted as ``unmatched_team``.
 
 Game resolution order:
-1. This provider's event id, seen before.
+1. This provider's event id, seen before. (An ESPN event first listed as
+   TBD v TBD is settled once ESPN names its teams: ``_settle_placeholder``.)
 2. ESPN event id, when the provider supplies one.
 3. Same two teams, either orientation, commence time within ``MATCH_WINDOW``.
 4. Otherwise a new game.
@@ -298,6 +299,78 @@ def _busy(session: Session, sport: str, team_ids: tuple[int, int], at: datetime)
     )
 
 
+def _is_placeholder(name: str) -> bool:
+    """ESPN lists a tournament game before its teams are known as 'TBD' v 'TBD'."""
+    return normalize_team_name(name).split()[:1] in (["tbd"], ["tba"])
+
+
+def _settle_placeholder(
+    session: Session, g: NormalizedGame, game: Game, link: GameSourceId, stats: Counter[str]
+) -> ResolvedGame | None:
+    """ESPN creates a tournament game as TBD v TBD and names the teams later, under
+    the same event id. Following the event id alone left the game with its TBD
+    teams for good, so the sportsbooks' listing of the real game stayed a separate
+    row with no schedule, no model inputs and no result (2026-11: 17 such games
+    in four days).
+
+    Once the event names both teams: if another provider already created the game
+    (same teams, within ``MATCH_WINDOW``, no ESPN event), the event moves to that
+    game, which holds the odds history, and the placeholder is set aside as
+    DUPLICATE. Otherwise the placeholder takes the teams. None when there is
+    nothing to settle."""
+    held = (session.get_one(Team, game.home_team_id), session.get_one(Team, game.away_team_id))
+    if not any(_is_placeholder(t.name) for t in held):
+        return None
+    if _is_placeholder(g.home.name) or _is_placeholder(g.away.name):
+        return None
+    home = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.home, stats=stats)
+    away = resolve_team(session, provider=g.provider, sport=g.sport, ref=g.away, stats=stats)
+    others = session.scalars(
+        select(Game)
+        .where(
+            Game.sport == g.sport,
+            Game.id != game.id,
+            Game.status != GameStatus.DUPLICATE,
+            or_(
+                (Game.home_team_id == home.id) & (Game.away_team_id == away.id),
+                (Game.home_team_id == away.id) & (Game.away_team_id == home.id),
+            ),
+            Game.commence_time.between(
+                g.commence_time - MATCH_WINDOW, g.commence_time + MATCH_WINDOW
+            ),
+            ~select(GameSourceId.id)
+            .where(GameSourceId.game_id == Game.id, GameSourceId.provider == SCHEDULE_AUTHORITY)
+            .exists(),
+        )
+        .order_by(Game.id)
+    ).all()
+    if not others:
+        game.home_team_id, game.away_team_id = home.id, away.id
+        link.swapped = False
+        stats["placeholder_took_teams"] += 1
+        return ResolvedGame(game, False)
+
+    start = _as_utc(g.commence_time)
+    keep = min(others, key=lambda o: (abs(_as_utc(o.commence_time) - start), o.id))
+    for extra in others:
+        if extra.id == keep.id:
+            continue
+        # The same game listed twice by a provider: one row carries on. Odds
+        # already stored on the other stay there; they are append-only.
+        flipped = extra.home_team_id != keep.home_team_id
+        for moved in session.scalars(select(GameSourceId).where(GameSourceId.game_id == extra.id)):
+            moved.game_id = keep.id
+            moved.swapped = moved.swapped != flipped
+        extra.status = GameStatus.DUPLICATE
+        stats["placeholder_merged_duplicate"] += 1
+    link.game_id = keep.id
+    link.swapped = keep.home_team_id != home.id
+    game.status = GameStatus.DUPLICATE
+    stats["placeholder_adopted_game"] += 1
+    session.flush()
+    return ResolvedGame(keep, link.swapped)
+
+
 def _find_game(
     session: Session, g: NormalizedGame, stats: Counter[str], *, refuse_busy: bool = False
 ) -> ResolvedGame | None:
@@ -313,6 +386,9 @@ def _find_game(
             stats["linked_to_set_aside_game"] += 1
             return None
         if g.provider == SCHEDULE_AUTHORITY:
+            settled = _settle_placeholder(session, g, game, link, stats)
+            if settled is not None:
+                return settled
             # Keep display names current even for games already linked.
             home_ref, away_ref = (g.away, g.home) if link.swapped else (g.home, g.away)
             for team_id, ref in ((game.home_team_id, home_ref), (game.away_team_id, away_ref)):
